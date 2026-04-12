@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../models/inventory_history_entry.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
 
@@ -157,6 +158,22 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
           stockQuantity: qty,
         );
         await box.put(inv.id, inv);
+
+        await DBService.addInventoryHistoryEntry(
+          InventoryHistoryEntry(
+            id: '${DateTime.now().microsecondsSinceEpoch}_${inv.id}',
+            type: 'in',
+            itemId: inv.id,
+            itemName: inv.name,
+            unit: inv.unit,
+            quantityChange: qty,
+            beforeQuantity: 0,
+            afterQuantity: qty,
+            note: 'Tạo mặt hàng kho',
+            createdAt: DateTime.now(),
+          ),
+        );
+
         if (_imagePath != null) {
           await DBService.productImages().put(inv.id, _imagePath!);
         }

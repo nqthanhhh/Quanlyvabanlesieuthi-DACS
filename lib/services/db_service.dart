@@ -1,6 +1,7 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/product.dart';
 import '../models/inventory_item.dart';
+import '../models/inventory_history_entry.dart';
 import '../models/user.dart';
 import '../models/order.dart';
 import '../models/order_line.dart';
@@ -13,12 +14,14 @@ class DBService {
   static const String cartsBox = 'carts';
   static const String productImagesBox = 'product_images';
   static const String inventoryProductsBox = 'inventory_products';
+  static const String inventoryHistoryBox = 'inventory_history';
 
   static Future<void> init() async {
     // 1. Initialize Hive & Register Adapters
     await Hive.initFlutter();
     Hive.registerAdapter(ProductAdapter());
     Hive.registerAdapter(InventoryItemAdapter());
+    Hive.registerAdapter(InventoryHistoryEntryAdapter());
     Hive.registerAdapter(UserAdapter());
     Hive.registerAdapter(OrderAdapter());
     Hive.registerAdapter(OrderLineAdapter());
@@ -28,6 +31,7 @@ class DBService {
     await Hive.openBox<User>(usersBox);
     await Hive.openBox<Order>(ordersBox);
     await Hive.openBox<InventoryItem>(inventoryProductsBox);
+    await Hive.openBox<InventoryHistoryEntry>(inventoryHistoryBox);
     await Hive.openBox<String>(productImagesBox);
     await Hive.openBox(cartsBox);
     await Hive.openBox(settingsBox);
@@ -45,11 +49,17 @@ class DBService {
   static Box<Product> products() => Hive.box<Product>(productsBox);
   static Box<InventoryItem> inventoryProducts() =>
       Hive.box<InventoryItem>(inventoryProductsBox);
+  static Box<InventoryHistoryEntry> inventoryHistory() =>
+      Hive.box<InventoryHistoryEntry>(inventoryHistoryBox);
   static Box<User> users() => Hive.box<User>(usersBox);
   static Box<Order> orders() => Hive.box<Order>(ordersBox);
   static Box carts() => Hive.box(cartsBox);
   static Box settings() => Hive.box(settingsBox);
   static Box<String> productImages() => Hive.box<String>(productImagesBox);
+
+  static Future<void> addInventoryHistoryEntry(InventoryHistoryEntry entry) async {
+    await inventoryHistory().put(entry.id, entry);
+  }
 
   // --- LOGIC SEEDING ---
 

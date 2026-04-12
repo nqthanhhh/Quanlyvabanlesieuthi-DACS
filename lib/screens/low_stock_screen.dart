@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
-import 'add_inventory_item_screen.dart'; // Để có thể ấn vào sản phẩm và nhập thêm/sửa
 
 class LowStockScreen extends StatelessWidget {
   const LowStockScreen({super.key});

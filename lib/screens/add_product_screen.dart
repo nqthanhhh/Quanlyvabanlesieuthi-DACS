@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 // removed unused dart:io import because image UI was removed
 import 'dart:math' as math;
 import 'package:hive_flutter/hive_flutter.dart';
+import '../models/inventory_history_entry.dart';
 import '../models/product.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
@@ -153,6 +154,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final box = DBService.products();
       final invBox = DBService.inventoryProducts();
 
+      final invBefore = invBox.get(item.id)?.stockQuantity;
+
       // First, try to reduce inventory. This ensures we only add or update
       // product if inventory has enough quantity.
       final int reduceResult = await DBService.reduceInventoryStockIfAvailable(
@@ -218,6 +221,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
         );
       }
 
+      // History: warehouse export (out)
+      final beforeQty = invBefore ?? (reduceResult + takeAmount);
+      await DBService.addInventoryHistoryEntry(
+        InventoryHistoryEntry(
+          id: '${DateTime.now().microsecondsSinceEpoch}_${item.id}',
+          type: 'out',
+          itemId: item.id,
+          itemName: item.name,
+          unit: item.unit,
+          quantityChange: -takeAmount,
+          beforeQuantity: beforeQty,
+          afterQuantity: reduceResult,
+          note: 'Xuất kho sang sản phẩm',
+          createdAt: DateTime.now(),
+        ),
+      );
+
       // Clear ID field and selection state
       setState(() {
         _idController.clear();
@@ -260,6 +280,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
         final int oldQty = widget.product!.stockQuantity;
         final int delta = stockQuantity - oldQty;
         if (delta > 0) {
+          final invBefore =
+              DBService.inventoryProducts().get(widget.product!.id)?.stockQuantity;
           final int reduceResult =
               await DBService.reduceInventoryStockIfAvailable(
                 widget.product!.id,
@@ -291,6 +313,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
             );
             return;
           }
+
+          final beforeQty = invBefore ?? (reduceResult + delta);
+          await DBService.addInventoryHistoryEntry(
+            InventoryHistoryEntry(
+              id: '${DateTime.now().microsecondsSinceEpoch}_${widget.product!.id}',
+              type: 'out',
+              itemId: widget.product!.id,
+              itemName: name,
+              unit: unit,
+              quantityChange: -delta,
+              beforeQuantity: beforeQty,
+              afterQuantity: reduceResult,
+              note: 'Xuất kho do tăng tồn sản phẩm',
+              createdAt: DateTime.now(),
+            ),
+          );
         }
 
         widget.product!.name = name;
@@ -343,6 +381,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         // Nếu người dùng đã chọn số lượng lấy từ kho, sử dụng nó; nếu không,
         // sử dụng số lượng đang nhập trong ô Tồn kho.
         final int takeAmount = _selectedTakeAmount ?? stockQuantity;
+        final invBefore = invBox.get(id)?.stockQuantity;
         final int reduceResult =
             await DBService.reduceInventoryStockIfAvailable(id, takeAmount);
         if (reduceResult == -1) {
@@ -372,6 +411,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
         // Nếu giảm kho thành công, lưu product với số lượng bằng takeAmount
         newProduct.stockQuantity = takeAmount;
         await box.put(newProduct.id, newProduct);
+
+        final beforeQty = invBefore ?? (reduceResult + takeAmount);
+        await DBService.addInventoryHistoryEntry(
+          InventoryHistoryEntry(
+            id: '${DateTime.now().microsecondsSinceEpoch}_$id',
+            type: 'out',
+            itemId: id,
+            itemName: name,
+            unit: unit,
+            quantityChange: -takeAmount,
+            beforeQuantity: beforeQty,
+            afterQuantity: reduceResult,
+            note: 'Xuất kho sang sản phẩm',
+            createdAt: DateTime.now(),
+          ),
+        );
 
         // image support removed — productImages not modified here
 

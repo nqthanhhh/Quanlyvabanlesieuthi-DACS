@@ -2,12 +2,13 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sieuthimini/screens/import_inventory_screen.dart';
-import '../models/product.dart';
+
+import '../models/inventory_item.dart';
 import '../services/db_service.dart';
-import 'add_product_screen.dart';
+import 'add_inventory_item_screen.dart';
 import 'inventory_check_screen.dart';
-import 'low_stock_screen.dart'; // 💡 IMPORT MÀN HÌNH MỚI
 import 'inventory_history_screen.dart'; // Màn hình lịch sử xuất nhập kho
+import 'low_stock_screen.dart'; // 💡 IMPORT MÀN HÌNH MỚI
 
 class InventoryManagementScreen extends StatefulWidget {
   const InventoryManagementScreen({super.key});
@@ -20,16 +21,24 @@ class InventoryManagementScreen extends StatefulWidget {
 class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   static const int _MIN_STOCK = 50;
 
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   // --- HÀM TÍNH TOÁN VÀ ĐIỀU HƯỚNG ---
 
-  Map<String, dynamic> _calculateInventoryStats(Box<Product> box) {
+  Map<String, dynamic> _calculateInventoryStats(Box<InventoryItem> box) {
     double totalValue = 0;
     int lowStockCount = 0;
 
-    for (var product in box.values) {
-      totalValue += product.stockQuantity * product.price;
+    for (var item in box.values) {
+      totalValue += item.stockQuantity * item.price;
 
-      if (product.stockQuantity <= _MIN_STOCK) {
+      if (item.stockQuantity <= _MIN_STOCK) {
         lowStockCount++;
       }
     }
@@ -95,14 +104,14 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     );
   }
 
-  Widget _buildInventoryTile(BuildContext context, Product product) {
+  Widget _buildInventoryTile(BuildContext context, InventoryItem item) {
     String status;
     Color statusColor;
 
-    if (product.stockQuantity == 0) {
+    if (item.stockQuantity == 0) {
       status = 'Hết hàng';
       statusColor = Colors.red;
-    } else if (product.stockQuantity <= _MIN_STOCK) {
+    } else if (item.stockQuantity <= _MIN_STOCK) {
       status = 'Sắp hết';
       statusColor = Colors.orange;
     } else {
@@ -120,9 +129,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
       child: ListTile(
         onTap: () async {
           await Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => AddProductScreen(product: product),
-            ),
+            MaterialPageRoute(builder: (_) => AddInventoryItemScreen(item: item)),
           );
         },
 
@@ -138,15 +145,15 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         ),
 
         title: Text(
-          product.name,
+          item.name,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Mã: ${product.id}'),
+            Text('Mã: ${item.id}'),
             Text(
-              'Giá: ${product.price.toStringAsFixed(0)} đ / ${product.unit}',
+              'Giá: ${item.price.toStringAsFixed(0)} đ / ${item.unit}',
             ),
           ],
         ),
@@ -155,7 +162,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              'Tồn: ${product.stockQuantity} ${product.unit}',
+              'Tồn: ${item.stockQuantity} ${item.unit}',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
@@ -205,14 +212,16 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                 color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.search, color: Colors.black45, size: 20),
-                  SizedBox(width: 8),
+                  const Icon(Icons.search, color: Colors.black45, size: 20),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Tìm kiếm sản phẩm',
+                      controller: _searchController,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        hintText: 'Tìm kiếm mặt hàng trong kho',
                         border: InputBorder.none,
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
@@ -225,8 +234,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
           ),
 
           // --- PHẦN THỐNG KÊ ---
-          ValueListenableBuilder<Box<Product>>(
-            valueListenable: DBService.products().listenable(),
+          ValueListenableBuilder<Box<InventoryItem>>(
+            valueListenable: DBService.inventoryProducts().listenable(),
             builder: (context, box, _) {
               final stats = _calculateInventoryStats(box);
 
@@ -268,7 +277,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    '${totalValueStr} đ',
+                                    '$totalValueStr đ',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16,
@@ -311,7 +320,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      '${lowStockCount} SP',
+                                      '$lowStockCount SP',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
@@ -382,14 +391,28 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
 
           // PHẦN CUỘN: Danh sách sản phẩm (Giữ nguyên)
           Expanded(
-            child: ValueListenableBuilder<Box<Product>>(
-              valueListenable: DBService.products().listenable(),
+            child: ValueListenableBuilder<Box<InventoryItem>>(
+              valueListenable: DBService.inventoryProducts().listenable(),
               builder: (context, box, _) {
-                final List<Product> products = box.values.toList();
+                final query = _searchController.text.trim().toLowerCase();
+                final List<InventoryItem> items = box.values.where((it) {
+                  if (query.isEmpty) return true;
+                  return it.id.toLowerCase().contains(query) ||
+                      it.name.toLowerCase().contains(query);
+                }).toList();
 
-                if (products.isEmpty) {
+                // Sort: low stock first, then name
+                items.sort((a, b) {
+                  final cmp = a.stockQuantity.compareTo(b.stockQuantity);
+                  if (cmp != 0) return cmp;
+                  return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+                });
+
+                if (items.isEmpty) {
                   return const Center(
-                    child: Text('Kho hàng đang trống. Hãy thêm sản phẩm mới.'),
+                    child: Text(
+                      'Kho hàng đang trống hoặc không có kết quả phù hợp.',
+                    ),
                   );
                 }
 
@@ -399,9 +422,9 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                     right: 16.0,
                     bottom: 16.0,
                   ),
-                  itemCount: products.length,
+                  itemCount: items.length,
                   itemBuilder: (context, index) {
-                    return _buildInventoryTile(context, products[index]);
+                    return _buildInventoryTile(context, items[index]);
                   },
                 );
               },

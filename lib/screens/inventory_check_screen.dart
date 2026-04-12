@@ -1,7 +1,8 @@
 // lib/screens/inventory_check_screen.dart (ĐÃ CẬP NHẬT LOGIC TÌM KIẾM)
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../models/product.dart';
+import '../models/inventory_history_entry.dart';
+import '../models/inventory_item.dart';
 import '../services/db_service.dart';
 
 class InventoryCheckScreen extends StatefulWidget {
@@ -17,7 +18,7 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
   final _noteController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
-  Product? _selectedProduct;
+  InventoryItem? _selectedItem;
   int _systemStock = 0;
   int _difference = 0;
 
@@ -43,7 +44,7 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
     final query = _productSearchController.text.trim();
     if (query.isEmpty) {
       setState(() {
-        _selectedProduct = null;
+        _selectedItem = null;
         _systemStock = 0;
         _actualQuantityController.clear();
         _difference = 0;
@@ -51,17 +52,33 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
       return;
     }
 
-    final box = DBService.products();
-    final product = box.values.firstWhere(
-          (p) => p.id.toLowerCase() == query.toLowerCase() || p.name.toLowerCase().contains(query.toLowerCase()),
-      orElse: () => null as Product,
-    );
+    final Box<InventoryItem> box = DBService.inventoryProducts();
+    final lowerQuery = query.toLowerCase();
+
+    // Prefer exact id match first (case-insensitive)
+    InventoryItem? found;
+    for (final it in box.values) {
+      if (it.id.toLowerCase() == lowerQuery) {
+        found = it;
+        break;
+      }
+    }
+
+    // Fallback to name/id contains
+    if (found == null) {
+      for (final it in box.values) {
+        if (it.name.toLowerCase().contains(lowerQuery) ||
+            it.id.toLowerCase().contains(lowerQuery)) {
+          found = it;
+          break;
+        }
+      }
+    }
 
     setState(() {
-      _selectedProduct = product;
-      if (product != null) {
-        _systemStock = product.stockQuantity;
-        // Tự động tính chênh lệch nếu đã có số lượng thực tế
+      _selectedItem = found;
+      if (found != null) {
+        _systemStock = found.stockQuantity;
         _calculateDifference();
       } else {
         _systemStock = 0;
@@ -72,7 +89,7 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
 
   // HÀM TÍNH TOÁN CHÊNH LỆCH
   void _calculateDifference() {
-    if (_selectedProduct == null) {
+    if (_selectedItem == null) {
       setState(() => _difference = 0);
       return;
     }
@@ -86,8 +103,12 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
 
   // HÀM XÁC NHẬN ĐIỀU CHỈNH KHO
   void _onConfirmCheck() async {
-    if (!_formKey.currentState!.validate() || _selectedProduct == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng chọn sản phẩm và nhập đủ thông tin.')));
+    if (!_formKey.currentState!.validate() || _selectedItem == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng chọn mặt hàng và nhập đủ thông tin.'),
+        ),
+      );
       return;
     }
 
@@ -95,21 +116,42 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
 
     // 1. Chỉ cập nhật nếu có chênh lệch
     if (_difference == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không có chênh lệch, không cần điều chỉnh.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không có chênh lệch, không cần điều chỉnh.')),
+      );
       Navigator.pop(context);
       return;
     }
 
     try {
-      // 2. Cập nhật tồn kho hệ thống bằng số lượng thực tế
-      _selectedProduct!.stockQuantity = actualQuantity;
-      await _selectedProduct!.save();
+      // 2. Cập nhật tồn kho kho (inventory) bằng số lượng thực tế
+      final item = _selectedItem!;
+      final beforeQty = _systemStock;
+      item.stockQuantity = actualQuantity;
+      await DBService.inventoryProducts().put(item.id, item);
+
+      await DBService.addInventoryHistoryEntry(
+        InventoryHistoryEntry(
+          id: '${DateTime.now().microsecondsSinceEpoch}_${item.id}',
+          type: 'adjust',
+          itemId: item.id,
+          itemName: item.name,
+          unit: item.unit,
+          quantityChange: _difference,
+          beforeQuantity: beforeQty,
+          afterQuantity: actualQuantity,
+          note: _noteController.text.trim(),
+          createdAt: DateTime.now(),
+        ),
+      );
 
       // 3. Thông báo
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text('Điều chỉnh tồn kho thành công! Chênh lệch: ${_difference} ${_selectedProduct!.unit}'),
-            backgroundColor: _difference > 0 ? Colors.green : Colors.red
+          content: Text(
+            'Điều chỉnh tồn kho thành công! Chênh lệch: $_difference ${item.unit}',
+          ),
+          backgroundColor: _difference > 0 ? Colors.green : Colors.red,
         ),
       );
       Navigator.pop(context);
@@ -124,7 +166,9 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
   @override
   Widget build(BuildContext context) {
     Color differenceColor = _difference == 0 ? Colors.black54 : (_difference > 0 ? Colors.green : Colors.red);
-    String differenceText = _difference == 0 ? '0' : (_difference > 0 ? '+${_difference}' : '${_difference}');
+    String differenceText = _difference == 0
+        ? '0'
+        : (_difference > 0 ? '+$_difference' : '$_difference');
 
 
     return Scaffold(
@@ -153,14 +197,19 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide.none,
                   ),
-                  suffixIcon: _selectedProduct != null ? Icon(Icons.check_circle, color: Colors.green) : null,
+                  suffixIcon: _selectedItem != null
+                      ? const Icon(Icons.check_circle, color: Colors.green)
+                      : null,
                 ),
               ),
 
-              if (_selectedProduct != null)
+              if (_selectedItem != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 10.0),
-                  child: Text('Đơn vị: ${_selectedProduct!.unit}', style: TextStyle(fontWeight: FontWeight.w500)),
+                  child: Text(
+                    'Đơn vị: ${_selectedItem!.unit}',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
                 )
               else if (_productSearchController.text.isNotEmpty)
                 const Padding(
@@ -184,7 +233,9 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
                   border: Border.all(color: Colors.grey.shade300),
                 ),
                 child: Text(
-                  _selectedProduct != null ? '$_systemStock ${_selectedProduct!.unit}' : '...',
+                  _selectedItem != null
+                      ? '$_systemStock ${_selectedItem!.unit}'
+                      : '...',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
                 ),
               ),
@@ -197,7 +248,7 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
               TextFormField(
                 controller: _actualQuantityController,
                 keyboardType: TextInputType.number,
-                enabled: _selectedProduct != null, // Chỉ cho phép nhập khi đã chọn sản phẩm
+                enabled: _selectedItem != null, // Chỉ cho phép nhập khi đã chọn mặt hàng
                 decoration: InputDecoration(
                   fillColor: Colors.grey.shade100,
                   filled: true,
@@ -208,7 +259,7 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
                 ),
                 validator: (val) {
                   final int? quantity = int.tryParse(val ?? '');
-                  if (_selectedProduct != null && (quantity == null || quantity < 0)) {
+                  if (_selectedItem != null && (quantity == null || quantity < 0)) {
                     return 'Vui lòng nhập Số lượng thực tế hợp lệ.';
                   }
                   return null;
@@ -262,7 +313,7 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _selectedProduct != null ? _onConfirmCheck : null,
+                  onPressed: _selectedItem != null ? _onConfirmCheck : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.amber,
                     foregroundColor: Colors.black,

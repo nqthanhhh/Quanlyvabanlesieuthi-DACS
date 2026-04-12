@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../models/inventory_history_entry.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
 
@@ -90,8 +91,25 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
             ),
           );
         } else {
+          final beforeQty = existing.stockQuantity;
           existing.stockQuantity = existing.stockQuantity + result;
           await box.put(existing.id, existing);
+
+          await DBService.addInventoryHistoryEntry(
+            InventoryHistoryEntry(
+              id: '${DateTime.now().microsecondsSinceEpoch}_${existing.id}',
+              type: 'in',
+              itemId: existing.id,
+              itemName: existing.name,
+              unit: existing.unit,
+              quantityChange: result,
+              beforeQuantity: beforeQty,
+              afterQuantity: existing.stockQuantity,
+              note: '',
+              createdAt: DateTime.now(),
+            ),
+          );
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Đã nhập $result vào ${existing.name}'),
@@ -138,6 +156,21 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
         stockQuantity: qty,
       );
       await box.put(item.id, item);
+
+      await DBService.addInventoryHistoryEntry(
+        InventoryHistoryEntry(
+          id: '${DateTime.now().microsecondsSinceEpoch}_${item.id}',
+          type: 'in',
+          itemId: item.id,
+          itemName: item.name,
+          unit: item.unit,
+          quantityChange: qty,
+          beforeQuantity: 0,
+          afterQuantity: qty,
+          note: '',
+          createdAt: DateTime.now(),
+        ),
+      );
 
       if (_pickedImagePath != null) {
         await DBService.productImages().put(item.id, _pickedImagePath!);
@@ -196,6 +229,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _searchController,
+              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
                 hintText: 'Tìm theo mã hoặc tên',
@@ -222,13 +256,14 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                   return a.name.toLowerCase().compareTo(b.name.toLowerCase());
                 });
 
-                if (items.isEmpty)
+                if (items.isEmpty) {
                   return const Center(
                     child: Padding(
                       padding: EdgeInsets.all(8.0),
                       child: Text('Không tìm thấy trong kho'),
                     ),
                   );
+                }
 
                 return ListView.separated(
                   shrinkWrap: true,

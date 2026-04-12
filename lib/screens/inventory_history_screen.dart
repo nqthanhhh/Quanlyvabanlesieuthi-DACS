@@ -16,7 +16,11 @@ class InventoryHistoryScreen extends StatelessWidget {
   ({IconData icon, Color color, String label}) _typeUi(String type) {
     switch (type) {
       case 'in':
-        return (icon: Icons.call_received, color: Colors.green, label: 'Nhập kho');
+        return (
+          icon: Icons.call_received,
+          color: Colors.green,
+          label: 'Nhập kho',
+        );
       case 'out':
         return (icon: Icons.call_made, color: Colors.red, label: 'Xuất kho');
       case 'adjust':

@@ -129,7 +129,9 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
       child: ListTile(
         onTap: () async {
           await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => AddInventoryItemScreen(item: item)),
+            MaterialPageRoute(
+              builder: (_) => AddInventoryItemScreen(item: item),
+            ),
           );
         },
 
@@ -152,9 +154,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Mã: ${item.id}'),
-            Text(
-              'Giá: ${item.price.toStringAsFixed(0)} đ / ${item.unit}',
-            ),
+            Text('Giá: ${item.price.toStringAsFixed(0)} đ / ${item.unit}'),
           ],
         ),
         trailing: Column(

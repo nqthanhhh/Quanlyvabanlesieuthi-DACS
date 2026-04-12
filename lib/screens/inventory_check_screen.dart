@@ -94,7 +94,8 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
       return;
     }
 
-    final int actualQuantity = int.tryParse(_actualQuantityController.text) ?? 0;
+    final int actualQuantity =
+        int.tryParse(_actualQuantityController.text) ?? 0;
     setState(() {
       // Chênh lệch = Số lượng thực tế - Số lượng hệ thống
       _difference = actualQuantity - _systemStock;
@@ -112,12 +113,15 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
       return;
     }
 
-    final int actualQuantity = int.tryParse(_actualQuantityController.text) ?? 0;
+    final int actualQuantity =
+        int.tryParse(_actualQuantityController.text) ?? 0;
 
     // 1. Chỉ cập nhật nếu có chênh lệch
     if (_difference == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không có chênh lệch, không cần điều chỉnh.')),
+        const SnackBar(
+          content: Text('Không có chênh lệch, không cần điều chỉnh.'),
+        ),
       );
       Navigator.pop(context);
       return;
@@ -155,25 +159,31 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
         ),
       );
       Navigator.pop(context);
-
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi khi điều chỉnh kho: ${e.toString()}'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Lỗi khi điều chỉnh kho: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    Color differenceColor = _difference == 0 ? Colors.black54 : (_difference > 0 ? Colors.green : Colors.red);
+    Color differenceColor = _difference == 0
+        ? Colors.black54
+        : (_difference > 0 ? Colors.green : Colors.red);
     String differenceText = _difference == 0
         ? '0'
         : (_difference > 0 ? '+$_difference' : '$_difference');
 
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Kiểm kê', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Kiểm kê',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.amber,
         foregroundColor: Colors.black87,
       ),
@@ -185,7 +195,10 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Trường Tìm kiếm sản phẩm
-              const Text('Tìm kiếm sản phẩm', style: TextStyle(fontWeight: FontWeight.w600)),
+              const Text(
+                'Tìm kiếm sản phẩm',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _productSearchController,
@@ -214,13 +227,19 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
               else if (_productSearchController.text.isNotEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: 8.0),
-                  child: Text('Không tìm thấy sản phẩm.', style: TextStyle(color: Colors.red)),
+                  child: Text(
+                    'Không tìm thấy sản phẩm.',
+                    style: TextStyle(color: Colors.red),
+                  ),
                 ),
 
               const SizedBox(height: 20),
 
               // Trường Tồn kho hệ thống
-              const Text('Tồn kho hệ thống', style: TextStyle(fontWeight: FontWeight.w600)),
+              const Text(
+                'Tồn kho hệ thống',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 8),
               Container(
                 height: 50,
@@ -236,19 +255,28 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
                   _selectedItem != null
                       ? '$_systemStock ${_selectedItem!.unit}'
                       : '...',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.blue,
+                  ),
                 ),
               ),
 
               const SizedBox(height: 20),
 
               // Trường Số lượng thực tế
-              const Text('Số lượng thực tế', style: TextStyle(fontWeight: FontWeight.w600)),
+              const Text(
+                'Số lượng thực tế',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _actualQuantityController,
                 keyboardType: TextInputType.number,
-                enabled: _selectedItem != null, // Chỉ cho phép nhập khi đã chọn mặt hàng
+                enabled:
+                    _selectedItem !=
+                    null, // Chỉ cho phép nhập khi đã chọn mặt hàng
                 decoration: InputDecoration(
                   fillColor: Colors.grey.shade100,
                   filled: true,
@@ -259,7 +287,8 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
                 ),
                 validator: (val) {
                   final int? quantity = int.tryParse(val ?? '');
-                  if (_selectedItem != null && (quantity == null || quantity < 0)) {
+                  if (_selectedItem != null &&
+                      (quantity == null || quantity < 0)) {
                     return 'Vui lòng nhập Số lượng thực tế hợp lệ.';
                   }
                   return null;
@@ -269,7 +298,10 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
               const SizedBox(height: 20),
 
               // Trường Chênh lệch
-              const Text('Chênh lệch (Thực tế - Hệ thống)', style: TextStyle(fontWeight: FontWeight.w600)),
+              const Text(
+                'Chênh lệch (Thực tế - Hệ thống)',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 8),
               Container(
                 height: 50,
@@ -283,14 +315,21 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
                 ),
                 child: Text(
                   differenceText,
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: differenceColor),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: differenceColor,
+                  ),
                 ),
               ),
 
               const SizedBox(height: 20),
 
               // Trường Ghi chú/Lý do chênh lệch
-              const Text('Ghi chú/Lý do chênh lệch', style: TextStyle(fontWeight: FontWeight.w600)),
+              const Text(
+                'Ghi chú/Lý do chênh lệch',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _noteController,
@@ -321,7 +360,10 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: const Text('Xác nhận điều chỉnh', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Xác nhận điều chỉnh',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ],

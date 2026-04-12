@@ -57,7 +57,9 @@ class DBService {
   static Box settings() => Hive.box(settingsBox);
   static Box<String> productImages() => Hive.box<String>(productImagesBox);
 
-  static Future<void> addInventoryHistoryEntry(InventoryHistoryEntry entry) async {
+  static Future<void> addInventoryHistoryEntry(
+    InventoryHistoryEntry entry,
+  ) async {
     await inventoryHistory().put(entry.id, entry);
   }
 

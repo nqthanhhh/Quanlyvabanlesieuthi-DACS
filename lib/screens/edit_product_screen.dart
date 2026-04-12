@@ -200,8 +200,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                 autovalidateMode: AutovalidateMode.onUserInteraction,
                 decoration: InputDecoration(
                   labelText: 'Số lượng',
-                  helperText:
-                      'Chỉ được giảm (tối đa $_initialStockQuantity).',
+                  helperText: 'Chỉ được giảm (tối đa $_initialStockQuantity).',
                   border: const OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,

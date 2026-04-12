@@ -280,8 +280,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
         final int oldQty = widget.product!.stockQuantity;
         final int delta = stockQuantity - oldQty;
         if (delta > 0) {
-          final invBefore =
-              DBService.inventoryProducts().get(widget.product!.id)?.stockQuantity;
+          final invBefore = DBService.inventoryProducts()
+              .get(widget.product!.id)
+              ?.stockQuantity;
           final int reduceResult =
               await DBService.reduceInventoryStockIfAvailable(
                 widget.product!.id,

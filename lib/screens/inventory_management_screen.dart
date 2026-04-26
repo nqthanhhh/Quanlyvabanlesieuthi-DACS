@@ -1,15 +1,14 @@
-// lib/screens/inventory_management_screen.dart (ĐÃ SỬA LỖI TÌM KIẾM SẢN PHẨM)
+// lib/screens/inventory_management_screen.dart (ĐÃ CẬP NHẬT: Kết nối nút Sắp hết hàng)
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sieuthimini/screens/import_inventory_screen.dart';
-import '../models/product.dart';
+
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
-import 'add_product_screen.dart';
-import 'edit_product_screen.dart';
+import 'add_inventory_item_screen.dart';
 import 'inventory_check_screen.dart';
-import 'low_stock_screen.dart';
-import 'inventory_history_screen.dart';
+import 'inventory_history_screen.dart'; // Màn hình lịch sử xuất nhập kho
+import 'low_stock_screen.dart'; // 💡 IMPORT MÀN HÌNH MỚI
 
 class InventoryManagementScreen extends StatefulWidget {
   const InventoryManagementScreen({super.key});
@@ -22,29 +21,12 @@ class InventoryManagementScreen extends StatefulWidget {
 class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   static const int _MIN_STOCK = 50;
 
-  // 💡 KHAI BÁO CONTROLLER VÀ BIẾN TÌM KIẾM MỚI
   final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
-
-  @override
-  void initState() {
-    super.initState();
-    // Thêm listener để cập nhật _searchQuery khi người dùng nhập
-    _searchController.addListener(_onSearchChanged);
-  }
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
-  }
-
-  // HÀM XỬ LÝ KHI THAY ĐỔI TỪ KHÓA TÌM KIẾM
-  void _onSearchChanged() {
-    setState(() {
-      _searchQuery = _searchController.text;
-    });
   }
 
   // --- HÀM TÍNH TOÁN VÀ ĐIỀU HƯỚNG ---
@@ -63,11 +45,14 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     return {'totalValue': totalValue, 'lowStockCount': lowStockCount};
   }
 
+  // 💡 HÀM ĐIỀU HƯỚNG ĐẾN DANH SÁCH SẮP HẾT HÀNG
   void _onLowStockPressed() {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const LowStockScreen()));
   }
+
+  // (Giữ nguyên các hàm điều hướng khác: _onImportInventoryPressed, _onExportInventoryPressed, _onCheckInventoryPressed)
 
   void _onImportInventoryPressed() async {
     await Navigator.of(
@@ -76,6 +61,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   }
 
   void _onHistoryInventoryPressed() async {
+    // Chuyển sang màn hình Lịch sử xuất/nhập kho
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const InventoryHistoryScreen()));
@@ -94,6 +80,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     required IconData icon,
     required VoidCallback onTap,
   }) {
+    // ... (Giữ nguyên code của _buildQuickActionButton)
     return Expanded(
       child: Column(
         children: [
@@ -141,41 +128,11 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
       ),
       child: ListTile(
         onTap: () async {
-          // If there's already a Product that has the same logical id as this inventory item,
-          // open the edit screen. We search the products box values by the Product.id field
-          // rather than using prodBox.get(item.id) because Hive keys may differ from the
-          // Product.id field in some records.
-          final prodBox = DBService.products();
-
-          Product? existing;
-          for (var p in prodBox.values.cast<Product>()) {
-            if (p.id == item.id) {
-              existing = p;
-              break;
-            }
-          }
-
-          if (existing != null) {
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => EditProductScreen(product: existing!),
-              ),
-            );
-          } else {
-            // Otherwise open AddProductScreen with prefilled values (create new product from inventory)
-            final prod = Product(
-              id: item.id,
-              name: item.name,
-              price: item.price,
-              unit: item.unit,
-              stockQuantity: item.stockQuantity,
-            );
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => AddProductScreen(product: prod),
-              ),
-            );
-          }
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => AddInventoryItemScreen(item: item),
+            ),
+          );
         },
 
         leading: Container(
@@ -242,7 +199,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Thanh tìm kiếm (Đã sửa để hoạt động)
+          // Thanh tìm kiếm (Giữ nguyên)
           Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: 16.0,
@@ -261,34 +218,22 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: TextField(
-                      // 💡 GÁN CONTROLLER VÀO TEXTFIELD
                       controller: _searchController,
+                      onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
-                        hintText: 'Tìm kiếm sản phẩm',
+                        hintText: 'Tìm kiếm mặt hàng trong kho',
                         border: InputBorder.none,
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
                   ),
-                  // Nút xóa (clear) tìm kiếm
-                  if (_searchQuery.isNotEmpty)
-                    IconButton(
-                      icon: const Icon(
-                        Icons.clear,
-                        color: Colors.black45,
-                        size: 20,
-                      ),
-                      onPressed: () => _searchController.clear(),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
                 ],
               ),
             ),
           ),
 
-          // --- PHẦN THỐNG KÊ (dùng dữ liệu từ inventory) ---
+          // --- PHẦN THỐNG KÊ ---
           ValueListenableBuilder<Box<InventoryItem>>(
             valueListenable: DBService.inventoryProducts().listenable(),
             builder: (context, box, _) {
@@ -332,7 +277,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    '${totalValueStr} đ',
+                                    '$totalValueStr đ',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16,
@@ -352,7 +297,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                     ),
                     Expanded(
                       child: GestureDetector(
-                        onTap: _onLowStockPressed,
+                        // 💡 WRAP BẰNG GESTUREDETECTOR HOẶC INKWELL
+                        onTap: _onLowStockPressed, // GỌI HÀM MỚI
                         child: Card(
                           elevation: 1,
                           color: Colors.white,
@@ -374,7 +320,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      '${lowStockCount} SP',
+                                      '$lowStockCount SP',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
@@ -443,36 +389,29 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
             ),
           ),
 
-          // PHẦN CUỘN: Danh sách tồn kho (hiện lấy từ inventory)
+          // PHẦN CUỘN: Danh sách sản phẩm (Giữ nguyên)
           Expanded(
             child: ValueListenableBuilder<Box<InventoryItem>>(
               valueListenable: DBService.inventoryProducts().listenable(),
               builder: (context, box, _) {
-                // 1. Lấy tất cả items trong kho
-                final List<InventoryItem> allItems = box.values.toList();
+                final query = _searchController.text.trim().toLowerCase();
+                final List<InventoryItem> items = box.values.where((it) {
+                  if (query.isEmpty) return true;
+                  return it.id.toLowerCase().contains(query) ||
+                      it.name.toLowerCase().contains(query);
+                }).toList();
 
-                // 2. Áp dụng tìm kiếm (theo tên hoặc mã)
-                final queryLower = _searchQuery.trim().toLowerCase();
-                final List<InventoryItem> filteredItems = queryLower.isEmpty
-                    ? allItems
-                    : allItems
-                          .where(
-                            (it) =>
-                                it.name.toLowerCase().contains(queryLower) ||
-                                it.id.toLowerCase().contains(queryLower),
-                          )
-                          .toList();
+                // Sort: low stock first, then name
+                items.sort((a, b) {
+                  final cmp = a.stockQuantity.compareTo(b.stockQuantity);
+                  if (cmp != 0) return cmp;
+                  return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+                });
 
-                // 3. Hiển thị danh sách đã lọc
-                final List<InventoryItem> inventoryToDisplay = filteredItems;
-
-                if (inventoryToDisplay.isEmpty) {
-                  return Center(
+                if (items.isEmpty) {
+                  return const Center(
                     child: Text(
-                      _searchQuery.isEmpty
-                          ? 'Kho hàng đang trống. Hãy thêm sản phẩm mới.'
-                          : 'Không tìm thấy sản phẩm khớp với "${_searchQuery}".',
-                      textAlign: TextAlign.center,
+                      'Kho hàng đang trống hoặc không có kết quả phù hợp.',
                     ),
                   );
                 }
@@ -483,12 +422,9 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                     right: 16.0,
                     bottom: 16.0,
                   ),
-                  itemCount: inventoryToDisplay.length,
+                  itemCount: items.length,
                   itemBuilder: (context, index) {
-                    return _buildInventoryTile(
-                      context,
-                      inventoryToDisplay[index],
-                    );
+                    return _buildInventoryTile(context, items[index]);
                   },
                 );
               },

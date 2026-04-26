@@ -1,14 +1,11 @@
-// lib/screens/import_inventory_screen.dart (ĐÃ CHỈNH SỬA)
-
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../models/product.dart';
-import '../models/inventory_item.dart'; // <<< IMPORT InventoryItem
-import '../models/inventory_history.dart'; // <<< THÊM IMPORT MODEL LỊCH SỬ
-import '../services/db_service.dart'; // <<< Đảm bảo bạn có DBService và hàm inventoryHistory()
+import '../models/inventory_history_entry.dart';
+import '../models/inventory_item.dart';
+import '../services/db_service.dart';
 
 class ImportInventoryScreen extends StatefulWidget {
   const ImportInventoryScreen({super.key});
@@ -40,8 +37,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     }
   }
 
-  // --- HÀM GHI LỊCH SỬ CHO SẢN PHẨM ĐÃ CÓ ---
-  Future<void> _addToExisting(Product item) async {
+  Future<void> _addToExisting(InventoryItem item) async {
     final qtyController = TextEditingController(text: '1');
     final formKey = GlobalKey<FormState>();
     final result = await showDialog<int?>(
@@ -85,75 +81,45 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     if (result != null) {
       setState(() => _processing = true);
       try {
-        // Try to update Product first; if not present, update InventoryItem instead.
-        final prodBox = DBService.products();
-        final invBox = DBService.inventoryProducts();
-        final existingProd = prodBox.get(item.id);
-
-        if (existingProd != null) {
-          // Update product stock
-          existingProd.stockQuantity = existingProd.stockQuantity + result;
-          await prodBox.put(existingProd.id, existingProd);
-
-          final historyItem = InventoryHistory(
-            productId: existingProd.id,
-            productName: existingProd.name,
-            quantity: result,
-            timestamp: DateTime.now(),
-            transactionType: 'IN',
-            unitPrice: existingProd.price,
-          );
-          await DBService.inventoryHistory().add(historyItem);
-
+        final box = DBService.inventoryProducts();
+        final existing = box.get(item.id);
+        if (existing == null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Đã nhập $result vào ${existingProd.name} (product)',
-              ),
-              backgroundColor: Colors.green,
+            const SnackBar(
+              content: Text('Mục kho không tồn tại'),
+              backgroundColor: Colors.red,
             ),
           );
         } else {
-          final existingInv = invBox.get(item.id);
-          if (existingInv != null) {
-            existingInv.stockQuantity = existingInv.stockQuantity + result;
-            await invBox.put(existingInv.id, existingInv);
+          final beforeQty = existing.stockQuantity;
+          existing.stockQuantity = existing.stockQuantity + result;
+          await box.put(existing.id, existing);
 
-            final historyItem = InventoryHistory(
-              productId: existingInv.id,
-              productName: existingInv.name,
-              quantity: result,
-              timestamp: DateTime.now(),
-              transactionType: 'IN',
-              unitPrice: existingInv.price,
-            );
-            await DBService.inventoryHistory().add(historyItem);
+          await DBService.addInventoryHistoryEntry(
+            InventoryHistoryEntry(
+              id: '${DateTime.now().microsecondsSinceEpoch}_${existing.id}',
+              type: 'in',
+              itemId: existing.id,
+              itemName: existing.name,
+              unit: existing.unit,
+              quantityChange: result,
+              beforeQuantity: beforeQty,
+              afterQuantity: existing.stockQuantity,
+              note: '',
+              createdAt: DateTime.now(),
+            ),
+          );
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Đã nhập $result vào ${existingInv.name} (inventory)',
-                ),
-                backgroundColor: Colors.green,
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Lỗi: Sản phẩm không tồn tại trong product hoặc inventory.',
-                ),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đã nhập $result vào ${existing.name}'),
+              backgroundColor: Colors.green,
+            ),
+          );
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi khi nhập hàng: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
         );
       } finally {
         if (mounted) setState(() => _processing = false);
@@ -161,61 +127,58 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     }
   }
 
-  // --- HÀM GHI LỊCH SỬ CHO SẢN PHẨM MỚI ---
   Future<void> _createNewInventoryItem() async {
     if (!_newFormKey.currentState!.validate()) return;
     setState(() => _processing = true);
     try {
-      // Create / update only the InventoryItem (do NOT touch products box)
       final id = _idController.text.trim();
-      final invBox = DBService.inventoryProducts();
+      final name = _nameController.text.trim();
+      final price = double.parse(_priceController.text.trim());
+      final unit = _unitController.text.trim();
+      final qty = int.parse(_qtyController.text.trim());
 
-      // Kiểm tra trùng ID trong inventory
-      if (invBox.containsKey(id)) {
+      final box = DBService.inventoryProducts();
+      if (box.containsKey(id)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Mã sản phẩm đã tồn tại trong kho (inventory)!'),
+            content: Text('Mã đã tồn tại trong kho'),
             backgroundColor: Colors.red,
           ),
         );
         return;
       }
 
-      final name = _nameController.text.trim();
-      final price = double.parse(_priceController.text.trim());
-      final unit = _unitController.text.trim();
-      final qty = int.parse(_qtyController.text.trim());
-
-      final invItem = InventoryItem(
+      final item = InventoryItem(
         id: id,
         name: name,
         price: price,
         unit: unit,
         stockQuantity: qty,
       );
-      await invBox.put(invItem.id, invItem);
+      await box.put(item.id, item);
 
-      // Lưu ảnh (nếu có) sử dụng cùng key — ảnh được dùng khi hiển thị inventory/product
+      await DBService.addInventoryHistoryEntry(
+        InventoryHistoryEntry(
+          id: '${DateTime.now().microsecondsSinceEpoch}_${item.id}',
+          type: 'in',
+          itemId: item.id,
+          itemName: item.name,
+          unit: item.unit,
+          quantityChange: qty,
+          beforeQuantity: 0,
+          afterQuantity: qty,
+          note: '',
+          createdAt: DateTime.now(),
+        ),
+      );
+
       if (_pickedImagePath != null) {
-        await DBService.productImages().put(invItem.id, _pickedImagePath!);
+        await DBService.productImages().put(item.id, _pickedImagePath!);
       }
 
-      // Ghi lịch sử nhập kho
-      final historyItem = InventoryHistory(
-        productId: invItem.id,
-        productName: invItem.name,
-        quantity: invItem.stockQuantity,
-        timestamp: DateTime.now(),
-        transactionType: 'IN',
-        unitPrice: invItem.price,
-      );
-      await DBService.inventoryHistory().add(historyItem); // LƯU
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Đã thêm ${invItem.name} vào kho với SL: ${invItem.stockQuantity}',
-          ),
+        const SnackBar(
+          content: Text('Đã thêm mặt hàng vào kho'),
           backgroundColor: Colors.green,
         ),
       );
@@ -226,276 +189,174 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
       _priceController.clear();
       _unitController.clear();
       _qtyController.text = '0';
-      _newFormKey.currentState!.reset();
-      _pickedImagePath = null;
+      setState(() => _pickedImagePath = null);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Lỗi khi thêm hàng mới: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _processing = false);
     }
   }
 
-  // ... (Phần UI build giữ nguyên)
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _idController.dispose();
+    _nameController.dispose();
+    _priceController.dispose();
+    _unitController.dispose();
+    _qtyController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // UI
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Nhập hàng vào kho',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Nhập kho'),
         backgroundColor: Colors.blue.shade600,
-        foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Search & suggestions for existing products
             const Text(
-              'Sản phẩm đã có trong kho',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              'Tìm trong kho hiện có',
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _searchController,
+              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
-                hintText: 'Tìm theo tên hoặc mã ...',
+                hintText: 'Tìm theo mã hoặc tên',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() {});
-                  },
-                ),
               ),
-              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
+            ValueListenableBuilder(
+              valueListenable: DBService.inventoryProducts().listenable(),
+              builder: (context, Box<InventoryItem> box, _) {
+                final query = _searchController.text.trim().toLowerCase();
+                final List<InventoryItem> items = box.values.where((it) {
+                  if (query.isEmpty) return true;
+                  return it.id.toLowerCase().contains(query) ||
+                      it.name.toLowerCase().contains(query);
+                }).toList();
 
-            // ValueListenable để tự động cập nhật khi products hoặc inventory box thay đổi
-            SizedBox(
-              height: 240,
-              child: ValueListenableBuilder(
-                valueListenable: DBService.products().listenable(),
-                builder: (context, Box<Product> prodBox, _) {
-                  return ValueListenableBuilder(
-                    valueListenable: DBService.inventoryProducts().listenable(),
-                    builder: (context, Box invBox, __) {
-                      final allProducts = prodBox.values.toList();
-                      final allInventory = invBox.values.toList();
+                // Sort so items with the smallest stockQuantity appear first.
+                items.sort((a, b) {
+                  final cmp = a.stockQuantity.compareTo(b.stockQuantity);
+                  if (cmp != 0) return cmp;
+                  return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+                });
 
-                      // Merge: prefer inventory item data for display when available
-                      final Map<String, dynamic> merged = {};
-                      for (final inv in allInventory) {
-                        merged[inv.id] = inv;
-                      }
-                      for (final p in allProducts) {
-                        if (!merged.containsKey(p.id)) merged[p.id] = p;
-                      }
-
-                      final List<dynamic> source = merged.values.toList();
-                      final query = _searchController.text.trim();
-                      final results = DBService.searchProducts(
-                        query,
-                        source.whereType<Product>().toList(),
-                      );
-
-                      // If inventory-only results exist (ids in merged that are InventoryItem), include them too
-                      final invMatches = source
-                          .where(
-                            (s) =>
-                                s is InventoryItem &&
-                                (query.isEmpty ||
-                                    (s.name.toLowerCase().contains(
-                                          query.toLowerCase(),
-                                        ) ||
-                                        s.id.toLowerCase().contains(
-                                          query.toLowerCase(),
-                                        ))),
-                          )
-                          .toList();
-
-                      final displayList = <dynamic>[];
-                      displayList.addAll(invMatches);
-                      // add product matches that are not in inventory matches
-                      for (final r in results) {
-                        if (!displayList.any(
-                          (e) =>
-                              (e is InventoryItem ? e.id : (e as Product).id) ==
-                              r.id,
-                        ))
-                          displayList.add(r);
-                      }
-
-                      if (displayList.isEmpty) {
-                        return const Center(
-                          child: Text('Không tìm thấy sản phẩm phù hợp'),
-                        );
-                      }
-
-                      return ListView.separated(
-                        itemCount: displayList.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final item = displayList[index];
-                          final id = item is InventoryItem
-                              ? item.id
-                              : (item as Product).id;
-                          final name = item is InventoryItem
-                              ? item.name
-                              : (item as Product).name;
-                          final stock = item is InventoryItem
-                              ? item.stockQuantity
-                              : (item as Product).stockQuantity;
-                          final unit = item is InventoryItem
-                              ? item.unit
-                              : (item as Product).unit;
-                          final imgPath = DBService.productImages().get(id);
-                          Widget leading;
-                          if (imgPath != null && File(imgPath).existsSync()) {
-                            leading = SizedBox(
-                              width: 56,
-                              height: 56,
-                              child: Image.file(
-                                File(imgPath),
-                                fit: BoxFit.cover,
-                              ),
-                            );
-                          } else {
-                            leading = CircleAvatar(
-                              child: Text(
-                                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                              ),
-                            );
-                          }
-
-                          return ListTile(
-                            leading: leading,
-                            title: Text(name),
-                            subtitle: Text('Mã: $id • Tồn: $stock $unit'),
-                            trailing: ElevatedButton(
-                              onPressed: _processing
-                                  ? null
-                                  : () {
-                                      // If it's inventory item, open a dialog to add to inventory
-                                      if (item is InventoryItem) {
-                                        // create a temporary Product-like object to reuse _addToExisting
-                                        final temp = Product(
-                                          id: item.id,
-                                          name: item.name,
-                                          price: item.price,
-                                          unit: item.unit,
-                                          stockQuantity: item.stockQuantity,
-                                        );
-                                        _addToExisting(temp);
-                                      } else if (item is Product) {
-                                        _addToExisting(item);
-                                      }
-                                    },
-                              child: const Text('Nhập'),
-                            ),
-                            onTap: _processing
-                                ? null
-                                : () {
-                                    if (item is InventoryItem) {
-                                      final temp = Product(
-                                        id: item.id,
-                                        name: item.name,
-                                        price: item.price,
-                                        unit: item.unit,
-                                        stockQuantity: item.stockQuantity,
-                                      );
-                                      _addToExisting(temp);
-                                    } else if (item is Product) {
-                                      _addToExisting(item);
-                                    }
-                                  },
-                          );
-                        },
-                      );
-                    },
+                if (items.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: Text('Không tìm thấy trong kho'),
+                    ),
                   );
-                },
-              ),
+                }
+
+                return ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, idx) {
+                    final it = items[idx];
+                    return ListTile(
+                      title: Text(it.name),
+                      subtitle: Text(
+                        'Mã: ${it.id} — Tồn: ${it.stockQuantity} ${it.unit}',
+                      ),
+                      trailing: ElevatedButton(
+                        onPressed: () => _addToExisting(it),
+                        child: const Text('Nhập'),
+                      ),
+                      onTap: () => _addToExisting(it),
+                    );
+                  },
+                );
+              },
             ),
 
-            const SizedBox(height: 16),
-
-            const Text(
-              'Nhập hàng mới (Sản phẩm chưa có trong kho)',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            const SizedBox(height: 24),
+            const Divider(),
             const SizedBox(height: 12),
+            const Text(
+              'Thêm mặt hàng mới vào kho',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
             Form(
               key: _newFormKey,
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextFormField(
                     controller: _idController,
                     decoration: const InputDecoration(
-                      labelText: 'Mã SP (Dùng làm Key)',
+                      labelText: 'Mã (ID)',
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Nhập mã SP' : null,
+                        (v == null || v.trim().isEmpty) ? 'Nhập mã' : null,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(
-                      labelText: 'Tên sản phẩm',
+                      labelText: 'Tên',
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Nhập tên SP' : null,
+                        (v == null || v.trim().isEmpty) ? 'Nhập tên' : null,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _priceController,
                     decoration: const InputDecoration(
-                      labelText: 'Giá bán (đơn vị)',
+                      labelText: 'Giá',
                       border: OutlineInputBorder(),
                     ),
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     validator: (v) {
-                      if (v == null || v.isEmpty) return 'Nhập giá bán';
+                      if (v == null || v.trim().isEmpty) return 'Nhập giá';
                       final n = double.tryParse(v);
-                      if (n == null || n <= 0) return 'Số không hợp lệ';
+                      if (n == null || n <= 0) return 'Giá không hợp lệ';
                       return null;
                     },
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _unitController,
                     decoration: const InputDecoration(
-                      labelText: 'Đơn vị tính (kg, chiếc, hộp...)',
+                      labelText: 'Đơn vị',
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Nhập đơn vị' : null,
+                        (v == null || v.trim().isEmpty) ? 'Nhập đơn vị' : null,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _qtyController,
                     decoration: const InputDecoration(
-                      labelText: 'Số lượng nhập (ban đầu)',
+                      labelText: 'Số lượng nhập',
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.number,
                     validator: (v) {
-                      if (v == null || v.isEmpty) return 'Nhập số lượng';
+                      if (v == null || v.trim().isEmpty) return 'Nhập số lượng';
                       final n = int.tryParse(v);
                       if (n == null || n < 0) return 'Số không hợp lệ';
                       return null;

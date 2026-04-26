@@ -1,23 +1,33 @@
-// lib/screens/inventory_history_screen.dart (ĐÃ CHỈNH SỬA)
-
+// lib/screens/inventory_history_screen.dart
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:intl/intl.dart';
+
+import '../models/inventory_history_entry.dart';
 import '../services/db_service.dart';
-import '../models/inventory_history.dart';
 
 class InventoryHistoryScreen extends StatelessWidget {
   const InventoryHistoryScreen({super.key});
 
-  String _formatDate(DateTime date) {
-    return DateFormat('dd/MM/yyyy HH:mm').format(date);
+  String _formatDateTime(DateTime dt) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
   }
 
-  // Hàm định dạng tiền tệ (giả sử VNĐ)
-  String _formatCurrency(double? amount) {
-    if (amount == null) return 'N/A';
-    final formatter = NumberFormat('#,###', 'vi_VN');
-    return formatter.format(amount) + ' đ';
+  ({IconData icon, Color color, String label}) _typeUi(String type) {
+    switch (type) {
+      case 'in':
+        return (
+          icon: Icons.call_received,
+          color: Colors.green,
+          label: 'Nhập kho',
+        );
+      case 'out':
+        return (icon: Icons.call_made, color: Colors.red, label: 'Xuất kho');
+      case 'adjust':
+        return (icon: Icons.tune, color: Colors.orange, label: 'Điều chỉnh');
+      default:
+        return (icon: Icons.history, color: Colors.blueGrey, label: 'Lịch sử');
+    }
   }
 
   @override
@@ -25,37 +35,28 @@ class InventoryHistoryScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Lịch sử nhập kho', // Đổi tiêu đề tập trung vào nhập hàng
+          'Lịch sử xuất nhập kho',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.blue.shade600,
         foregroundColor: Colors.white,
         elevation: 1,
       ),
-      // SỬ DỤNG VALUELISTENABLEBUILDER ĐỂ ĐỌC DỮ LIỆU TỪ HIVE
-      body: ValueListenableBuilder(
+      body: ValueListenableBuilder<Box<InventoryHistoryEntry>>(
         valueListenable: DBService.inventoryHistory().listenable(),
-        builder: (context, Box<InventoryHistory> box, _) {
-          // Lấy tất cả các bản ghi
-          final List<InventoryHistory> history = box.values.toList();
+        builder: (context, box, _) {
+          final entries = box.values.toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-          // Lọc chỉ lấy giao dịch Nhập ("IN")
-          final List<InventoryHistory> importHistory = history
-              .where((item) => item.transactionType == 'IN')
-              .toList();
-
-          // Sắp xếp ngược theo thời gian (mới nhất lên đầu)
-          importHistory.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-          if (importHistory.isEmpty) {
-            return Center(
+          if (entries.isEmpty) {
+            return const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
+                children: [
                   Icon(Icons.history, size: 64, color: Colors.grey),
                   SizedBox(height: 12),
                   Text(
-                    'Chưa có lịch sử nhập hàng nào',
+                    'Chưa có lịch sử nào',
                     style: TextStyle(fontSize: 16, color: Colors.grey),
                   ),
                 ],
@@ -64,22 +65,41 @@ class InventoryHistoryScreen extends StatelessWidget {
           }
 
           return ListView.separated(
-            itemCount: importHistory.length,
-            separatorBuilder: (context, index) => const Divider(height: 1),
+            padding: const EdgeInsets.all(16),
+            itemCount: entries.length,
+            separatorBuilder: (_, __) => const Divider(height: 16),
             itemBuilder: (context, index) {
-              final item = importHistory[index];
-              final color = Colors.green.shade700;
+              final e = entries[index];
+              final ui = _typeUi(e.type);
+
+              final signedQty = e.quantityChange;
+              final qtyText = signedQty > 0 ? '+$signedQty' : '$signedQty';
+
+              final subtitleLines = <String>[
+                'Mã: ${e.itemId}',
+                'Tồn: ${e.beforeQuantity} → ${e.afterQuantity} ($qtyText ${e.unit})',
+                _formatDateTime(e.createdAt),
+              ];
+              if (e.note.trim().isNotEmpty) {
+                subtitleLines.add('Ghi chú: ${e.note.trim()}');
+              }
 
               return ListTile(
-                leading: Icon(Icons.call_received, color: color),
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: ui.color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(ui.icon, color: ui.color),
+                ),
                 title: Text(
-                  '[NHẬP] ${item.productName}',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: color),
+                  '${ui.label}: ${e.itemName}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                subtitle: Text(
-                  'SL: ${item.quantity} - Giá nhập (đơn vị): ${_formatCurrency(item.unitPrice)} • Tổng ước tính: ${_formatCurrency((item.unitPrice ?? 0) * item.quantity)}\n'
-                  'Mã: ${item.productId} | Thời gian: ${_formatDate(item.timestamp)}',
-                ),
+                subtitle: Text(subtitleLines.join('\n')),
                 isThreeLine: true,
               );
             },

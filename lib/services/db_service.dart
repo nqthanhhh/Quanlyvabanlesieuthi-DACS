@@ -1,10 +1,10 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/product.dart';
 import '../models/inventory_item.dart';
+import '../models/inventory_history_entry.dart';
 import '../models/user.dart';
 import '../models/order.dart';
 import '../models/order_line.dart';
-import '../models/inventory_history.dart'; // <<< THÊM IMPORT
 
 class DBService {
   static const String productsBox = 'products';
@@ -14,24 +14,24 @@ class DBService {
   static const String cartsBox = 'carts';
   static const String productImagesBox = 'product_images';
   static const String inventoryProductsBox = 'inventory_products';
-  static const String inventoryHistoryBox = 'inventory_history_box'; // <<< THÊM HẰNG SỐ BOX
+  static const String inventoryHistoryBox = 'inventory_history';
 
   static Future<void> init() async {
     // 1. Initialize Hive & Register Adapters
     await Hive.initFlutter();
     Hive.registerAdapter(ProductAdapter());
     Hive.registerAdapter(InventoryItemAdapter());
+    Hive.registerAdapter(InventoryHistoryEntryAdapter());
     Hive.registerAdapter(UserAdapter());
     Hive.registerAdapter(OrderAdapter());
     Hive.registerAdapter(OrderLineAdapter());
-    Hive.registerAdapter(InventoryHistoryAdapter()); // <<< ĐĂNG KÝ ADAPTER MỚI
 
     // 2. Open Boxes
     await Hive.openBox<Product>(productsBox);
     await Hive.openBox<User>(usersBox);
     await Hive.openBox<Order>(ordersBox);
     await Hive.openBox<InventoryItem>(inventoryProductsBox);
-    await Hive.openBox<InventoryHistory>(inventoryHistoryBox); // <<< MỞ BOX MỚI
+    await Hive.openBox<InventoryHistoryEntry>(inventoryHistoryBox);
     await Hive.openBox<String>(productImagesBox);
     await Hive.openBox(cartsBox);
     await Hive.openBox(settingsBox);
@@ -49,14 +49,19 @@ class DBService {
   static Box<Product> products() => Hive.box<Product>(productsBox);
   static Box<InventoryItem> inventoryProducts() =>
       Hive.box<InventoryItem>(inventoryProductsBox);
-  static Box<InventoryHistory> inventoryHistory() =>
-      Hive.box<InventoryHistory>(inventoryHistoryBox); // <<< ĐỊNH NGHĨA GETTER MỚI
+  static Box<InventoryHistoryEntry> inventoryHistory() =>
+      Hive.box<InventoryHistoryEntry>(inventoryHistoryBox);
   static Box<User> users() => Hive.box<User>(usersBox);
   static Box<Order> orders() => Hive.box<Order>(ordersBox);
   static Box carts() => Hive.box(cartsBox);
   static Box settings() => Hive.box(settingsBox);
   static Box<String> productImages() => Hive.box<String>(productImagesBox);
 
+  static Future<void> addInventoryHistoryEntry(
+    InventoryHistoryEntry entry,
+  ) async {
+    await inventoryHistory().put(entry.id, entry);
+  }
 
   // --- LOGIC SEEDING ---
 
@@ -133,7 +138,7 @@ class DBService {
           name: 'Chuối tây',
           price: 30000.0,
           unit: 'nải',
-          stockQuantity: 100,
+          stockQuantity: 10,
         ),
         InventoryItem(
           id: 'apple',
@@ -254,9 +259,9 @@ class DBService {
   }
 
   static Future<void> saveCartForUser(
-      String email,
-      Map<String, int> cart,
-      ) async {
+    String email,
+    Map<String, int> cart,
+  ) async {
     final Map<String, int> cleanCart = Map.from(cart)
       ..removeWhere((key, value) => value <= 0);
     await carts().put(email, cleanCart);
@@ -270,9 +275,9 @@ class DBService {
     return source
         .where(
           (p) =>
-      p.name.toLowerCase().contains(lowerQuery) ||
-          p.id.toLowerCase().contains(lowerQuery),
-    )
+              p.name.toLowerCase().contains(lowerQuery) ||
+              p.id.toLowerCase().contains(lowerQuery),
+        )
         .toList();
   }
 
@@ -316,9 +321,9 @@ class DBService {
   // - -1 if inventory item not found,
   // - -2 if not enough stock to reduce.
   static Future<int> reduceInventoryStockIfAvailable(
-      String id,
-      int amount,
-      ) async {
+    String id,
+    int amount,
+  ) async {
     final box = inventoryProducts();
     final existing = box.get(id);
     if (existing == null) return -1;

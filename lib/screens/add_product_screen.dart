@@ -1,10 +1,9 @@
-// lib/screens/add_product_screen.dart (ĐÃ CHỈNH SỬA HOÀN CHỈNH)
-
+// lib/screens/add_product_screen.dart (ĐÃ CHỈNH SỬA)
 import 'package:flutter/material.dart';
 // removed unused dart:io import because image UI was removed
 import 'dart:math' as math;
-import 'dart:io';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../models/inventory_history_entry.dart';
 import '../models/product.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
@@ -155,6 +154,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final box = DBService.products();
       final invBox = DBService.inventoryProducts();
 
+      final invBefore = invBox.get(item.id)?.stockQuantity;
+
       // First, try to reduce inventory. This ensures we only add or update
       // product if inventory has enough quantity.
       final int reduceResult = await DBService.reduceInventoryStockIfAvailable(
@@ -208,7 +209,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
           price: item.price,
           unit: item.unit,
           stockQuantity: takeAmount,
-          createdAt: DateTime.now(), // <-- ĐÃ THÊM
         );
 
         await box.put(newProduct.id, newProduct);
@@ -220,6 +220,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ),
         );
       }
+
+      // History: warehouse export (out)
+      final beforeQty = invBefore ?? (reduceResult + takeAmount);
+      await DBService.addInventoryHistoryEntry(
+        InventoryHistoryEntry(
+          id: '${DateTime.now().microsecondsSinceEpoch}_${item.id}',
+          type: 'out',
+          itemId: item.id,
+          itemName: item.name,
+          unit: item.unit,
+          quantityChange: -takeAmount,
+          beforeQuantity: beforeQty,
+          afterQuantity: reduceResult,
+          note: 'Xuất kho sang sản phẩm',
+          createdAt: DateTime.now(),
+        ),
+      );
 
       // Clear ID field and selection state
       setState(() {
@@ -263,6 +280,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
         final int oldQty = widget.product!.stockQuantity;
         final int delta = stockQuantity - oldQty;
         if (delta > 0) {
+          final invBefore = DBService.inventoryProducts()
+              .get(widget.product!.id)
+              ?.stockQuantity;
           final int reduceResult =
               await DBService.reduceInventoryStockIfAvailable(
                 widget.product!.id,
@@ -294,15 +314,28 @@ class _AddProductScreenState extends State<AddProductScreen> {
             );
             return;
           }
+
+          final beforeQty = invBefore ?? (reduceResult + delta);
+          await DBService.addInventoryHistoryEntry(
+            InventoryHistoryEntry(
+              id: '${DateTime.now().microsecondsSinceEpoch}_${widget.product!.id}',
+              type: 'out',
+              itemId: widget.product!.id,
+              itemName: name,
+              unit: unit,
+              quantityChange: -delta,
+              beforeQuantity: beforeQty,
+              afterQuantity: reduceResult,
+              note: 'Xuất kho do tăng tồn sản phẩm',
+              createdAt: DateTime.now(),
+            ),
+          );
         }
 
         widget.product!.name = name;
         widget.product!.price = price;
         widget.product!.unit = unit;
         widget.product!.stockQuantity = stockQuantity; // GHI ĐÈ số lượng
-
-        // Chúng ta KHÔNG cập nhật createdAt khi chỉnh sửa
-
         await widget.product!.save();
 
         // image support removed — productImages not modified here
@@ -330,61 +363,71 @@ class _AddProductScreenState extends State<AddProductScreen> {
           price: price,
           unit: unit,
           stockQuantity: stockQuantity, // Tồn kho ban đầu
-          createdAt: DateTime.now(), // <-- ĐÃ THÊM
         );
 
+        // Trước khi thêm sản phẩm mới, kiểm tra kho có bản ghi tương ứng không
         final invBox = DBService.inventoryProducts();
+        if (!invBox.containsKey(id)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Kho chưa có sản phẩm này. Vui lòng nhập kho trước.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
 
         // Nếu người dùng đã chọn số lượng lấy từ kho, sử dụng nó; nếu không,
         // sử dụng số lượng đang nhập trong ô Tồn kho.
         final int takeAmount = _selectedTakeAmount ?? stockQuantity;
-
-        if (invBox.containsKey(id)) {
-          // Nếu inventory có bản ghi, cố gắng trừ kho như trước
-          final int reduceResult =
-              await DBService.reduceInventoryStockIfAvailable(id, takeAmount);
-          if (reduceResult == -1) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Kho không có sản phẩm này. Vui lòng nhập kho trước.',
-                ),
-                backgroundColor: Colors.red,
+        final invBefore = invBox.get(id)?.stockQuantity;
+        final int reduceResult =
+            await DBService.reduceInventoryStockIfAvailable(id, takeAmount);
+        if (reduceResult == -1) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Kho không có sản phẩm này. Vui lòng nhập kho trước.',
               ),
-            );
-            return;
-          } else if (reduceResult == -2) {
-            final inv = invBox.get(id);
-            final available = inv?.stockQuantity ?? 0;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Kho chỉ còn $available, không đủ để lấy $takeAmount.',
-                ),
-                backgroundColor: Colors.red,
-              ),
-            );
-            return;
-          }
-
-          // Nếu giảm kho thành công, lưu product với số lượng bằng takeAmount
-          newProduct.stockQuantity = takeAmount;
-          await box.put(newProduct.id, newProduct);
-        } else {
-          // Nếu inventory chưa có bản ghi, tạo mới inventory với số lượng bằng takeAmount
-          final invItem = InventoryItem(
-            id: id,
-            name: name,
-            price: price,
-            unit: unit,
-            stockQuantity: takeAmount,
+              backgroundColor: Colors.red,
+            ),
           );
-          await invBox.put(invItem.id, invItem);
-
-          // Lưu product như bình thường với cùng tồn kho
-          newProduct.stockQuantity = takeAmount;
-          await box.put(newProduct.id, newProduct);
+          return;
+        } else if (reduceResult == -2) {
+          final inv = invBox.get(id);
+          final available = inv?.stockQuantity ?? 0;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Kho chỉ còn $available, không đủ để lấy $takeAmount.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
         }
+
+        // Nếu giảm kho thành công, lưu product với số lượng bằng takeAmount
+        newProduct.stockQuantity = takeAmount;
+        await box.put(newProduct.id, newProduct);
+
+        final beforeQty = invBefore ?? (reduceResult + takeAmount);
+        await DBService.addInventoryHistoryEntry(
+          InventoryHistoryEntry(
+            id: '${DateTime.now().microsecondsSinceEpoch}_$id',
+            type: 'out',
+            itemId: id,
+            itemName: name,
+            unit: unit,
+            quantityChange: -takeAmount,
+            beforeQuantity: beforeQty,
+            afterQuantity: reduceResult,
+            note: 'Xuất kho sang sản phẩm',
+            createdAt: DateTime.now(),
+          ),
+        );
 
         // image support removed — productImages not modified here
 
@@ -499,7 +542,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       const SizedBox(height: 8),
                       // make the suggestion list taller when there are more items
                       SizedBox(
-                        height: math.min(items.length * 80.0 + 8.0, 420.0),
+                        height: math.min(items.length * 72.0 + 8.0, 420.0),
                         child: ListView.separated(
                           itemCount: items.length,
                           separatorBuilder: (_, __) => const Divider(height: 1),
@@ -507,69 +550,36 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             final it = items[idx];
                             final bool isSelected =
                                 _selectedInventoryId == it.id;
-
-                            final imgPath = DBService.productImages().get(
-                              it.id,
-                            );
-                            Widget leading;
-                            try {
-                              if (imgPath != null &&
-                                  imgPath.isNotEmpty &&
-                                  File(imgPath).existsSync()) {
-                                leading = ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: SizedBox(
-                                    width: 56,
-                                    height: 56,
-                                    child: Image.file(
-                                      File(imgPath),
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                );
-                              } else {
-                                leading = CircleAvatar(
-                                  child: Text(
-                                    it.name.isNotEmpty
-                                        ? it.name[0].toUpperCase()
-                                        : '?',
-                                  ),
-                                );
-                              }
-                            } catch (_) {
-                              leading = CircleAvatar(
-                                child: Text(
-                                  it.name.isNotEmpty
-                                      ? it.name[0].toUpperCase()
-                                      : '?',
-                                ),
-                              );
-                            }
-
                             return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 4.0,
-                                horizontal: 8.0,
-                              ),
+                              contentPadding: EdgeInsets.zero,
                               leading: isSelected
                                   ? const Icon(
                                       Icons.check_circle,
                                       color: Colors.green,
                                     )
-                                  : leading,
+                                  : null,
                               title: Text(it.name),
-                              subtitle: Text(
-                                'Mã: ${it.id} • Tồn: ${it.stockQuantity} ${it.unit}',
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Mã: ${it.id} — Tồn: ${it.stockQuantity} ${it.unit}',
+                                  ),
+                                  if (isSelected && _selectedTakeAmount != null)
+                                    Text(
+                                      'Đã chọn: ${_selectedTakeAmount} ${it.unit}',
+                                      style: TextStyle(
+                                        color: Colors.green[700],
+                                      ),
+                                    ),
+                                ],
                               ),
-                              trailing: ElevatedButton(
-                                onPressed: _isProcessing
-                                    ? null
-                                    : () => _chooseQuantityFromInventory(it),
+                              trailing: TextButton(
+                                onPressed: () =>
+                                    _chooseQuantityFromInventory(it),
                                 child: const Text('Chọn'),
                               ),
-                              onTap: _isProcessing
-                                  ? null
-                                  : () => _chooseQuantityFromInventory(it),
+                              onTap: () => _chooseQuantityFromInventory(it),
                             );
                           },
                         ),

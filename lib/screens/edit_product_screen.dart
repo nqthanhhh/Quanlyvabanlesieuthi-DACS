@@ -18,10 +18,12 @@ class _EditProductScreenState extends State<EditProductScreen> {
   late TextEditingController _unitController;
   late TextEditingController _stockController;
   bool _isSaving = false;
+  late final int _initialStockQuantity;
 
   @override
   void initState() {
     super.initState();
+    _initialStockQuantity = widget.product.stockQuantity;
     _idController = TextEditingController(text: widget.product.id);
     _nameController = TextEditingController(text: widget.product.name);
     _priceController = TextEditingController(
@@ -195,15 +197,24 @@ class _EditProductScreenState extends State<EditProductScreen> {
               TextFormField(
                 controller: _stockController,
                 // readOnly: true,
-                decoration: const InputDecoration(
-                  labelText: 'Tồn kho',
-                  border: OutlineInputBorder(),
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                decoration: InputDecoration(
+                  labelText: 'Số lượng',
+                  helperText: 'Chỉ được giảm (tối đa $_initialStockQuantity).',
+                  border: const OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return 'Nhập tồn kho';
-                  final n = int.tryParse(v);
-                  if (n == null || n < 0) return 'Số không hợp lệ';
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Nhập số lượng';
+                  }
+                  final n = int.tryParse(v.trim());
+                  if (n == null || n < 0) {
+                    return 'Số không hợp lệ';
+                  }
+                  if (n > _initialStockQuantity) {
+                    return 'Chỉ được chỉnh số lượng nhỏ hơn hoặc bằng $_initialStockQuantity';
+                  }
                   return null;
                 },
               ),

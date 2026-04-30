@@ -5,7 +5,7 @@ import '../services/db_service.dart';
 import '../models/user.dart';
 
 // ⛔ LƯU Ý:
-// CSDL của bạn (model User) chỉ có 2 vai trò: 'owner' và 'staff'.
+// CSDL MySQL dùng vai trò: 'admin', 'employee', 'customer'.
 // Vì vậy, màn hình này sẽ chỉ hiển thị 2 vai trò đó với số lượng
 // nhân viên chính xác.
 //
@@ -22,8 +22,8 @@ class RoleManagementScreen extends StatefulWidget {
 
 class _RoleManagementScreenState extends State<RoleManagementScreen> {
   bool _isLoading = true;
-  int _ownerCount = 0; // Số lượng Quản lý (owner)
-  int _staffCount = 0; // Số lượng Nhân viên (staff)
+  int _ownerCount = 0; // Số lượng Quản lý (admin)
+  int _staffCount = 0; // Số lượng Nhân viên (employee)
 
   @override
   void initState() {
@@ -41,9 +41,9 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
       final usersBox = DBService.users();
       final allUsers = usersBox.values.cast<User>().toList();
 
-      // Đếm số lượng 'owner' và 'staff'
-      final owners = allUsers.where((u) => u.role == 'owner').length;
-      final staff = allUsers.where((u) => u.role == 'staff').length;
+      // Đếm số lượng 'admin' và 'employee'
+      final owners = allUsers.where((u) => u.role == 'admin').length;
+      final staff = allUsers.where((u) => u.role == 'employee').length;
 
       // Cập nhật state để hiển thị
       setState(() {
@@ -142,12 +142,12 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
           children: [
             // ✅ 7. Hiển thị 2 vai trò thật từ CSDL
             _buildRoleTile(
-              name: 'Quản lý', // 'owner' được map thành 'Quản lý'
+              name: 'Quản lý',
               description: 'Quản lý sản phẩm, kho hàng, và xem báo cáo doanh thu.',
               employeeCount: _ownerCount, // Số lượng thật
             ),
             _buildRoleTile(
-              name: 'Nhân viên', // 'staff' được map thành 'Nhân viên'
+              name: 'Nhân viên',
               description: 'Thực hiện giao dịch thanh toán và xem sản phẩm.',
               employeeCount: _staffCount, // Số lượng thật
             ),

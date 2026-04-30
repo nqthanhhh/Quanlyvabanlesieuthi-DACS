@@ -33,11 +33,11 @@ class InventoryItemAdapter extends TypeAdapter<InventoryItem> {
     }
 
     return InventoryItem(
-      id: fields[0] as String,
-      name: fields[1] as String,
+      id: fields[0].toString(),
+      name: fields[1].toString(),
       price: (fields[2] as num).toDouble(),
-      unit: fields[3] as String,
-      stockQuantity: fields[4] as int,
+      unit: fields[3].toString(),
+      stockQuantity: (fields[4] as num).toInt(),
     );
   }
 

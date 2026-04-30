@@ -32,4 +32,38 @@ class Order extends HiveObject {
     required this.status,
     required this.items,
   });
+
+  static double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  factory Order.fromJson(Map<String, dynamic> json) {
+    final rawItems = (json['items'] as List?) ?? const [];
+    return Order(
+      id: (json['order_id'] ?? json['id']).toString(),
+      orderDate: DateTime.tryParse(
+            (json['created_at'] ?? json['orderDate'] ?? '').toString(),
+          ) ??
+          DateTime.now(),
+      totalAmount: _toDouble(json['totalAmount'] ?? json['final_amount']),
+      customerName: (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ').toString(),
+      status: (json['status'] ?? '').toString(),
+      items: rawItems
+          .whereType<Map>()
+          .map((e) => OrderLine.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson({int? customerId, int? employeeId}) {
+    return {
+      'customer_id': customerId,
+      'employee_id': employeeId,
+      'order_type': 'offline',
+      'status': status,
+      'payment_status': 'paid',
+      'items': items.map((e) => e.toJson()).toList(),
+    };
+  }
 }

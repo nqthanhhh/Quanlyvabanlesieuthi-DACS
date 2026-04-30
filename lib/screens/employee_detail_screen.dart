@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/user.dart';
+import '../services/api_service.dart';
+import '../services/db_service.dart';
 import 'add_edit_employee_screen.dart';
 
 class EmployeeDetailScreen extends StatefulWidget {
@@ -53,7 +55,12 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     );
 
     if (confirmed == true) {
-      await user.delete();
+      if (user.userId != null) {
+        await ApiService.deleteUser(user.userId!);
+        await DBService.syncUsersFromApi();
+      } else {
+        await user.delete();
+      }
       Navigator.of(context).pop(true); // notify list to refresh
     }
   }

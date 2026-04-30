@@ -121,10 +121,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
 
   String _mapRole(String role) {
     switch (role.toLowerCase()) {
-      case 'owner':
+      case 'admin':
         return 'Quản lý';
-      case 'staff':
+      case 'employee':
         return 'Nhân viên';
+      case 'customer':
+        return 'Khách hàng';
       default:
         // Treat any unexpected role as regular staff
         return 'Nhân viên';
@@ -275,8 +277,8 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                   ? Center(child: Text(_error!))
                   : TabBarView(
                       children: [
-                        _buildRoleListView('owner'),
-                        _buildRoleListView('staff'),
+                        _buildRoleListView('admin'),
+                        _buildRoleListView('employee'),
                       ],
                     ),
             ),
@@ -293,7 +295,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     if (filtered.isEmpty) {
       return Center(
         child: Text(
-          'Không có nhân viên phù hợp cho ${roleKey == 'owner' ? 'Quản lý' : 'Nhân viên'}',
+          'Không có nhân viên phù hợp cho ${roleKey == 'admin' ? 'Quản lý' : 'Nhân viên'}',
         ),
       );
     }

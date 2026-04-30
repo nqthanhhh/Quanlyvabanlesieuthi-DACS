@@ -17,11 +17,11 @@ class ProductAdapter extends TypeAdapter<Product> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return Product(
-      id: fields[0] as String,
-      name: fields[1] as String,
-      price: fields[2] as double,
-      unit: fields[3] as String,
-      stockQuantity: fields[4] as int,
+      id: fields[0].toString(),
+      name: fields[1].toString(),
+      price: (fields[2] as num).toDouble(),
+      unit: fields[3].toString(),
+      stockQuantity: (fields[4] as num).toInt(),
     );
   }
 

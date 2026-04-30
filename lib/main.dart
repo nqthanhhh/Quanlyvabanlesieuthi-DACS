@@ -6,13 +6,11 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/welcome_screen.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await DBService.init();
   runApp(const MyApp());
 }
-
 
 class AuthState extends ChangeNotifier {
   String? _role;
@@ -60,6 +58,7 @@ class RootPage extends StatefulWidget {
 class _RootPageState extends State<RootPage> {
   bool _initialized = false;
   bool _welcomeSeen = false;
+  String? _initError;
 
   @override
   void initState() {
@@ -68,13 +67,23 @@ class _RootPageState extends State<RootPage> {
   }
 
   Future<void> _loadSettings() async {
-    // read flag from Hive settings box
-    final box = DBService.settings();
-    final seen = box.get('welcomeSeen', defaultValue: false) as bool;
-    setState(() {
-      _welcomeSeen = seen;
-      _initialized = true;
-    });
+    try {
+      await DBService.init();
+      // read flag from Hive settings box
+      final box = DBService.settings();
+      final seen = box.get('welcomeSeen', defaultValue: false) as bool;
+      if (!mounted) return;
+      setState(() {
+        _welcomeSeen = seen;
+        _initialized = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _initError = e.toString();
+        _initialized = true;
+      });
+    }
   }
 
   void _onStartPressed() async {
@@ -89,6 +98,46 @@ class _RootPageState extends State<RootPage> {
   Widget build(BuildContext context) {
     if (!_initialized) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_initError != null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Không khởi động được ứng dụng',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _initError!,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _initialized = false;
+                        _initError = null;
+                      });
+                      _loadSettings();
+                    },
+                    child: const Text('Thử lại'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     if (!_welcomeSeen) {

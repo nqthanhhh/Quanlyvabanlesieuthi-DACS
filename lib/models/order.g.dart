@@ -17,11 +17,11 @@ class OrderAdapter extends TypeAdapter<Order> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return Order(
-      id: fields[0] as String,
+      id: fields[0].toString(),
       orderDate: fields[1] as DateTime,
-      totalAmount: fields[2] as double,
-      customerName: fields[3] as String,
-      status: fields[4] as String,
+      totalAmount: (fields[2] as num).toDouble(),
+      customerName: fields[3].toString(),
+      status: fields[4].toString(),
       items: (fields[5] as List).cast<OrderLine>(),
     );
   }

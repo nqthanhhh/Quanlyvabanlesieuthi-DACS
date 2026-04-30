@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/user.dart';
 import '../services/db_service.dart';
+import '../services/api_service.dart';
 
 class AddEditEmployeeScreen extends StatefulWidget {
   final User? user; // if null -> create
@@ -17,7 +18,7 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
   late String _email;
   late String _password;
   bool _obscurePassword = true;
-  String _role = 'staff';
+  String _role = 'employee';
   String _fullName = '';
   String _phone = '';
   String _address = '';
@@ -60,23 +61,35 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     _formKey.currentState!.save();
-    // Check email uniqueness
-    final users = DBService.users().values.cast<User>().toList();
-    final emailExists = users.any((u) {
+    try {
       if (isEditing) {
-        // allow current user's email
-        return u.email == _email && u.key != widget.user!.key;
+      final u = widget.user!;
+      u.email = _email;
+      u.password = _password;
+      u.role = _role;
+      u.fullName = _fullName;
+      u.phone = _phone;
+      u.address = _address;
+        if (u.userId == null) throw Exception('Thiếu user_id');
+        await ApiService.updateUser(u.userId!, u);
+      } else {
+      final newUser = User(
+        email: _email,
+        password: _password,
+        role: _role,
+        fullName: _fullName,
+        phone: _phone,
+        address: _address,
+      );
+        await ApiService.createUser(newUser);
       }
-      return u.email == _email;
-    });
-
-    if (emailExists) {
-      // show error and abort save
+      await DBService.syncUsersFromApi();
+    } catch (e) {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Lỗi'),
-          content: const Text('Email này đã được sử dụng bởi tài khoản khác.'),
+          content: Text(e is ApiException ? e.message : e.toString()),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
@@ -86,31 +99,6 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
         ),
       );
       return;
-    }
-
-    if (isEditing) {
-      final u = widget.user!;
-      u.email = _email;
-      u.password = _password;
-      u.role = _role;
-      u.fullName = _fullName;
-      u.phone = _phone;
-      u.address = _address;
-      u.birthYear = _birthYear;
-      u.startDate = _startDate;
-      await u.save();
-    } else {
-      final newUser = User(
-        email: _email,
-        password: _password,
-        role: _role,
-        fullName: _fullName,
-        phone: _phone,
-        address: _address,
-        birthYear: _birthYear,
-        startDate: _startDate,
-      );
-      await DBService.users().add(newUser);
     }
 
     Navigator.of(context).pop(true); // notify caller to refresh
@@ -162,10 +150,11 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
               DropdownButtonFormField<String>(
                 value: _role,
                 items: const [
-                  DropdownMenuItem(value: 'owner', child: Text('Quản lý')),
-                  DropdownMenuItem(value: 'staff', child: Text('Nhân viên')),
+                  DropdownMenuItem(value: 'admin', child: Text('Quản lý')),
+                  DropdownMenuItem(value: 'employee', child: Text('Nhân viên')),
+                  DropdownMenuItem(value: 'customer', child: Text('Khách hàng')),
                 ],
-                onChanged: (v) => setState(() => _role = v ?? 'staff'),
+                onChanged: (v) => setState(() => _role = v ?? 'employee'),
                 decoration: const InputDecoration(labelText: 'Vai trò'),
               ),
               const SizedBox(height: 12),

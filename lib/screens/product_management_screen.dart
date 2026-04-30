@@ -41,7 +41,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     return {'status': status, 'color': statusColor};
   }
 
-  // Xóa sản phẩm khỏi Hive
+  // Xóa sản phẩm qua API rồi cập nhật cache Hive
   Future<void> _deleteProduct(BuildContext context, Product product) async {
     final bool confirm =
         await showDialog(
@@ -67,7 +67,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 
     if (confirm) {
       try {
-        await product.delete(); // Xóa trực tiếp từ HiveObject
+        await DBService.deleteProductRemote(product);
         // Sử dụng mounted check trước khi gọi ScaffoldMessenger
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

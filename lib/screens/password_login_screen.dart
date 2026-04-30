@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'register_screen.dart';
 import '../services/db_service.dart';
+import '../services/api_service.dart';
 
 class PasswordLoginScreen extends StatefulWidget {
   final void Function(String role) onLogin;
@@ -37,7 +38,7 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final email = _emailCtrl.text.trim();
     final pass = _passCtrl.text.trim();
     if (email.isEmpty || pass.isEmpty) {
@@ -46,13 +47,9 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       );
       return;
     }
-    // Check users box for matching credentials
-    final box = DBService.users();
-    final matches = box.values.where(
-      (u) => u.email == email && u.password == pass,
-    );
-    if (matches.isNotEmpty) {
-      final user = matches.first;
+    try {
+      final user = await ApiService.login(email, pass);
+      final role = (user['role_name'] ?? user['role'] ?? 'customer').toString();
       // persist credentials when remember is checked
       final settings = DBService.settings();
       if (_remember) {
@@ -68,12 +65,15 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       }
       // set current user email so other screens can load per-user data (e.g., cart)
       final settings2 = DBService.settings();
-      settings2.put('current_user_email', user.email);
-      widget.onLogin(user.role);
+      await settings2.put('current_user_id', user['user_id']);
+      await settings2.put('current_user_email', user['email']);
+      await settings2.put('current_role', role);
+      await DBService.syncAllFromApi();
+      widget.onLogin(role);
       Navigator.of(context).pop();
-    } else {
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Email hoặc mật khẩu không đúng')),
+        SnackBar(content: Text(e is ApiException ? e.message : 'Email hoặc mật khẩu không đúng')),
       );
     }
   }

@@ -79,14 +79,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Hàm tải giỏ hàng người dùng
-  void _loadCurrentUserCart() {
+  Future<void> _loadCurrentUserCart() async {
     final settings = DBService.settings();
     final email = settings.get('current_user_email') as String?;
     _currentUserEmail = email;
     if (email != null) {
-      final saved = DBService.getCartForUser(email);
+      final saved = await DBService.loadCartForCurrentUser(email);
       if (saved.isNotEmpty) {
-        _cart.addAll(saved);
+        setState(() {
+          _cart
+            ..clear()
+            ..addAll(saved);
+        });
       }
     }
   }
@@ -187,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ];
 
-    if (widget.role == 'owner') {
+    if (widget.role == 'admin') {
       items.insertAll(0, [
         // BỎ const ở ListTile vì nó gọi hàm instance và onTap không phải là const
         ListTile(

@@ -23,4 +23,36 @@ class OrderLine extends HiveObject {
     required this.quantity,
     required this.pricePerUnit,
   });
+
+  static double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  factory OrderLine.fromJson(Map<String, dynamic> json) {
+    return OrderLine(
+      productId: (json['product_id'] ?? json['productId']).toString(),
+      productName: (json['product_name'] ?? json['productName'] ?? '')
+          .toString(),
+      quantity: _toInt(json['quantity']),
+      pricePerUnit: _toDouble(
+        json['unitPrice'] ?? json['pricePerUnit'] ?? json['price'],
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'product_id': int.tryParse(productId),
+      'product_name': productName,
+      'quantity': quantity,
+      'price': pricePerUnit,
+    };
+  }
 }

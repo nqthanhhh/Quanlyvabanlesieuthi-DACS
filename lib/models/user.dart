@@ -4,6 +4,8 @@ part 'user.g.dart';
 
 @HiveType(typeId: 1)
 class User extends HiveObject {
+  int? userId;
+
   @HiveField(0)
   String email;
 
@@ -35,6 +37,7 @@ class User extends HiveObject {
   String? avatarPath; // local file path or asset
 
   User({
+    this.userId,
     required this.email,
     required this.password,
     required this.role,
@@ -46,4 +49,35 @@ class User extends HiveObject {
     this.startDate,
     this.avatarPath,
   });
+
+  static int? _toNullableInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      userId: _toNullableInt(json['user_id'] ?? json['id']),
+      email: (json['email'] ?? '').toString(),
+      password: (json['password'] ?? '').toString(),
+      role: (json['role_name'] ?? json['role'] ?? '').toString(),
+      fullName: (json['full_name'] ?? json['fullName'] ?? '').toString(),
+      phone: (json['phone'] ?? '').toString(),
+      address: (json['address'] ?? '').toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'full_name': fullName,
+      'user_id': userId,
+      'email': email,
+      'phone': phone.isEmpty ? null : phone,
+      'password': password,
+      'address': address.isEmpty ? null : address,
+      'role': role,
+    };
+  }
 }

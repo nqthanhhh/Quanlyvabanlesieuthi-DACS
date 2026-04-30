@@ -18,12 +18,10 @@ class _EditProductScreenState extends State<EditProductScreen> {
   late TextEditingController _unitController;
   late TextEditingController _stockController;
   bool _isSaving = false;
-  late final int _initialStockQuantity;
 
   @override
   void initState() {
     super.initState();
-    _initialStockQuantity = widget.product.stockQuantity;
     _idController = TextEditingController(text: widget.product.id);
     _nameController = TextEditingController(text: widget.product.name);
     _priceController = TextEditingController(
@@ -49,60 +47,17 @@ class _EditProductScreenState extends State<EditProductScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
-    final box = DBService.products();
-    final oldId = widget.product.id;
-    final newId = _idController.text.trim();
     final newName = _nameController.text.trim();
     final newPrice = double.parse(_priceController.text.trim());
     final newUnit = _unitController.text.trim();
     final newStock = int.parse(_stockController.text.trim());
 
     try {
-      if (newId != oldId) {
-        // If new id already exists, reject
-        if (box.containsKey(newId)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Mã mới đã tồn tại, chọn mã khác.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          return;
-        }
-
-        // Create new product under newId
-        final Product newProduct = Product(
-          id: newId,
-          name: newName,
-          price: newPrice,
-          unit: newUnit,
-          stockQuantity: newStock,
-        );
-        await box.put(newProduct.id, newProduct);
-
-        // Migrate product image mapping if present
-        final imgBox = DBService.productImages();
-        final oldImg = imgBox.get(oldId);
-        if (oldImg != null) {
-          await imgBox.put(newId, oldImg);
-          await imgBox.delete(oldId);
-        }
-
-        // Delete old product
-        await box.delete(oldId);
-
-        // Update inventory metadata for new product if needed
-        await DBService.updateInventoryMetadataForProduct(newProduct);
-      } else {
-        // Same id: update fields and save
-        widget.product.name = newName;
-        widget.product.price = newPrice;
-        widget.product.unit = newUnit;
-        widget.product.stockQuantity = newStock;
-        await widget.product.save();
-
-        await DBService.updateInventoryMetadataForProduct(widget.product);
-      }
+      widget.product.name = newName;
+      widget.product.price = newPrice;
+      widget.product.unit = newUnit;
+      widget.product.stockQuantity = newStock;
+      await DBService.updateProductRemote(widget.product);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -197,24 +152,15 @@ class _EditProductScreenState extends State<EditProductScreen> {
               TextFormField(
                 controller: _stockController,
                 // readOnly: true,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
-                decoration: InputDecoration(
-                  labelText: 'Số lượng',
-                  helperText: 'Chỉ được giảm (tối đa $_initialStockQuantity).',
-                  border: const OutlineInputBorder(),
+                decoration: const InputDecoration(
+                  labelText: 'Tồn kho',
+                  border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'Nhập số lượng';
-                  }
-                  final n = int.tryParse(v.trim());
-                  if (n == null || n < 0) {
-                    return 'Số không hợp lệ';
-                  }
-                  if (n > _initialStockQuantity) {
-                    return 'Chỉ được chỉnh số lượng nhỏ hơn hoặc bằng $_initialStockQuantity';
-                  }
+                  if (v == null || v.trim().isEmpty) return 'Nhập tồn kho';
+                  final n = int.tryParse(v);
+                  if (n == null || n < 0) return 'Số không hợp lệ';
                   return null;
                 },
               ),

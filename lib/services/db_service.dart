@@ -1,12 +1,14 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/product.dart';
 import '../models/inventory_item.dart';
-import '../models/inventory_history_entry.dart';
 import '../models/user.dart';
 import '../models/order.dart';
 import '../models/order_line.dart';
+import '../models/inventory_history_entry.dart';
+import 'api_service.dart';
 
 class DBService {
+  static const int cacheSchemaVersion = 2;
   static const String productsBox = 'products';
   static const String usersBox = 'users';
   static const String ordersBox = 'orders';
@@ -14,17 +16,21 @@ class DBService {
   static const String cartsBox = 'carts';
   static const String productImagesBox = 'product_images';
   static const String inventoryProductsBox = 'inventory_products';
-  static const String inventoryHistoryBox = 'inventory_history';
+  static const String inventoryHistoryBox =
+      'inventory_history_box'; // <<< THÊM HẰNG SỐ BOX
 
   static Future<void> init() async {
     // 1. Initialize Hive & Register Adapters
     await Hive.initFlutter();
-    Hive.registerAdapter(ProductAdapter());
-    Hive.registerAdapter(InventoryItemAdapter());
-    Hive.registerAdapter(InventoryHistoryEntryAdapter());
-    Hive.registerAdapter(UserAdapter());
-    Hive.registerAdapter(OrderAdapter());
-    Hive.registerAdapter(OrderLineAdapter());
+    _registerAdapterOnce(ProductAdapter());
+    _registerAdapterOnce(InventoryItemAdapter());
+    _registerAdapterOnce(UserAdapter());
+    _registerAdapterOnce(OrderAdapter());
+    _registerAdapterOnce(OrderLineAdapter());
+    _registerAdapterOnce(InventoryHistoryEntryAdapter());
+
+    await Hive.openBox(settingsBox);
+    await _deleteOldCacheFromDiskIfNeeded();
 
     // 2. Open Boxes
     await Hive.openBox<Product>(productsBox);
@@ -34,15 +40,25 @@ class DBService {
     await Hive.openBox<InventoryHistoryEntry>(inventoryHistoryBox);
     await Hive.openBox<String>(productImagesBox);
     await Hive.openBox(cartsBox);
-    await Hive.openBox(settingsBox);
 
     // 3. Migrate product keys (if they were stored with numeric keys)
-    await _migrateProductsToIdKeys();
+    try {
+      await _migrateProductsToIdKeys();
+    } catch (e) {
+      print('Cache sản phẩm cũ không tương thích, xóa cache: $e');
+      await _clearRuntimeCache();
+    }
 
-    // 4. Seed Data
-    await seedProducts();
-    await seedInventory();
-    await seedUsers();
+    // 4. Pull remote data into the local cache. If the API is not running,
+    // keep the app usable with the existing Hive cache/sample data.
+    try {
+      await syncAllFromApi();
+    } catch (e) {
+      print('Không đồng bộ được API, dùng cache Hive: $e');
+      await seedProducts();
+      await seedInventory();
+      await seedUsers();
+    }
   }
 
   // CÁC HÀM GETTER
@@ -56,6 +72,131 @@ class DBService {
   static Box carts() => Hive.box(cartsBox);
   static Box settings() => Hive.box(settingsBox);
   static Box<String> productImages() => Hive.box<String>(productImagesBox);
+
+  static void _registerAdapterOnce<T>(TypeAdapter<T> adapter) {
+    if (!Hive.isAdapterRegistered(adapter.typeId)) {
+      Hive.registerAdapter(adapter);
+    }
+  }
+
+  static Future<void> _deleteOldCacheFromDiskIfNeeded() async {
+    final box = settings();
+    final currentVersion = box.get('cache_schema_version');
+    if (currentVersion == cacheSchemaVersion) return;
+
+    for (final boxName in [
+      productsBox,
+      usersBox,
+      ordersBox,
+      cartsBox,
+      productImagesBox,
+      inventoryProductsBox,
+      inventoryHistoryBox,
+    ]) {
+      if (Hive.isBoxOpen(boxName)) {
+        await Hive.box(boxName).close();
+      }
+      await Hive.deleteBoxFromDisk(boxName);
+    }
+
+    await box.put('cache_schema_version', cacheSchemaVersion);
+  }
+
+  static Future<void> _clearRuntimeCache() async {
+    await Future.wait([
+      products().clear(),
+      inventoryProducts().clear(),
+      users().clear(),
+      orders().clear(),
+      inventoryHistory().clear(),
+      productImages().clear(),
+      carts().clear(),
+    ]);
+  }
+
+  static Future<void> syncAllFromApi() async {
+    await Future.wait([
+      syncProductsFromApi(),
+      syncUsersFromApi(),
+      syncOrdersFromApi(),
+      syncInventoryHistoryFromApi(),
+    ]);
+  }
+
+  static Future<void> syncProductsFromApi() async {
+    final remoteProducts = await ApiService.fetchProducts();
+    final productBox = products();
+    final inventoryBox = inventoryProducts();
+    final imageBox = productImages();
+    await productBox.clear();
+    await inventoryBox.clear();
+
+    for (final product in remoteProducts) {
+      await productBox.put(product.id, product);
+      await inventoryBox.put(
+        product.id,
+        InventoryItem(
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          unit: product.unit,
+          stockQuantity: product.stockQuantity,
+        ),
+      );
+      if (product.imageUrl != null && product.imageUrl!.isNotEmpty) {
+        await imageBox.put(product.id, product.imageUrl!);
+      }
+    }
+  }
+
+  static Future<void> syncUsersFromApi() async {
+    final remoteUsers = await ApiService.fetchUsers();
+    final box = users();
+    await box.clear();
+    for (final user in remoteUsers) {
+      await box.put(user.email, user);
+    }
+  }
+
+  static Future<void> syncOrdersFromApi() async {
+    final remoteOrders = await ApiService.fetchOrders();
+    final box = orders();
+    await box.clear();
+    for (final order in remoteOrders) {
+      await box.put(order.id, order);
+    }
+  }
+
+  static Future<void> syncInventoryHistoryFromApi() async {
+    final logs = await ApiService.fetchInventoryLogs();
+    final box = inventoryHistory();
+    await box.clear();
+    for (final log in logs) {
+      await box.add(
+        InventoryHistoryEntry(
+          id: (log['log_id'] ?? '${DateTime.now().microsecondsSinceEpoch}')
+              .toString(),
+          type: (log['action'] ?? '').toString().toLowerCase(),
+          itemId: log['product_id'].toString(),
+          itemName: (log['product_name'] ?? '').toString(),
+          unit: 'sp',
+          quantityChange: _toInt(log['quantity']),
+          beforeQuantity: 0,
+          afterQuantity: 0,
+          note: (log['note'] ?? '').toString(),
+          createdAt:
+              DateTime.tryParse((log['created_at'] ?? '').toString()) ??
+              DateTime.now(),
+        ),
+      );
+    }
+  }
+
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
 
   static Future<void> addInventoryHistoryEntry(
     InventoryHistoryEntry entry,
@@ -138,7 +279,7 @@ class DBService {
           name: 'Chuối tây',
           price: 30000.0,
           unit: 'nải',
-          stockQuantity: 10,
+          stockQuantity: 100,
         ),
         InventoryItem(
           id: 'apple',
@@ -216,18 +357,10 @@ class DBService {
   // --- LOGIC QUẢN LÝ KHO & BÁN HÀNG ---
 
   static Future<void> saveOrder(Order order) async {
-    await orders().put(order.id, order);
-
-    for (var line in order.items) {
-      final product = products().get(line.productId);
-      if (product != null) {
-        product.stockQuantity -= line.quantity;
-        if (product.stockQuantity < 0) {
-          product.stockQuantity = 0;
-        }
-        await product.save();
-      }
-    }
+    final employeeId = settings().get('current_user_id') as int?;
+    final saved = await ApiService.createOrder(order, employeeId: employeeId);
+    await orders().put(saved.id, saved);
+    await syncProductsFromApi();
   }
 
   static List<Product> getAllProducts() {
@@ -265,6 +398,93 @@ class DBService {
     final Map<String, int> cleanCart = Map.from(cart)
       ..removeWhere((key, value) => value <= 0);
     await carts().put(email, cleanCart);
+    final userId = settings().get('current_user_id') as int?;
+    if (userId != null) {
+      await ApiService.saveCart(userId, cleanCart);
+    }
+  }
+
+  static Future<Map<String, int>> loadCartForCurrentUser(String email) async {
+    final userId = settings().get('current_user_id') as int?;
+    if (userId == null) return getCartForUser(email);
+    try {
+      final remoteCart = await ApiService.fetchCart(userId);
+      await carts().put(email, remoteCart);
+      return remoteCart;
+    } catch (_) {
+      return getCartForUser(email);
+    }
+  }
+
+  static Future<Product> createProduct(
+    Product product, {
+    String? imagePath,
+  }) async {
+    if (imagePath != null &&
+        imagePath.isNotEmpty &&
+        !imagePath.startsWith('http')) {
+      product.imageUrl = await ApiService.uploadProductImage(imagePath);
+    }
+    final saved = await ApiService.createProduct(product);
+    await products().put(saved.id, saved);
+    await inventoryProducts().put(
+      saved.id,
+      InventoryItem(
+        id: saved.id,
+        name: saved.name,
+        price: saved.price,
+        unit: saved.unit,
+        stockQuantity: saved.stockQuantity,
+      ),
+    );
+    if (saved.imageUrl != null) {
+      await productImages().put(saved.id, saved.imageUrl!);
+    }
+    return saved;
+  }
+
+  static Future<Product> updateProductRemote(
+    Product product, {
+    String? imagePath,
+  }) async {
+    if (imagePath != null &&
+        imagePath.isNotEmpty &&
+        !imagePath.startsWith('http')) {
+      product.imageUrl = await ApiService.uploadProductImage(imagePath);
+    }
+    final saved = await ApiService.updateProduct(product);
+    await products().put(saved.id, saved);
+    await updateInventoryMetadataForProduct(saved);
+    if (saved.imageUrl != null) {
+      await productImages().put(saved.id, saved.imageUrl!);
+    }
+    return saved;
+  }
+
+  static Future<void> deleteProductRemote(Product product) async {
+    await ApiService.deleteProduct(product.id);
+    await products().delete(product.id);
+    await inventoryProducts().delete(product.id);
+    await productImages().delete(product.id);
+  }
+
+  static Future<void> importInventoryRemote({
+    required Product product,
+    required int quantity,
+    String? note,
+  }) async {
+    final employeeId = settings().get('current_user_id') as int?;
+    if (employeeId == null) {
+      throw ApiException('Chưa có current_user_id để ghi lịch sử nhập kho');
+    }
+    await ApiService.importInventory(
+      productId: product.id,
+      employeeId: employeeId,
+      quantity: quantity,
+      note: note,
+    );
+    await syncProductsFromApi();
+    await syncInventoryHistoryFromApi();
   }
 
   static List<Product> searchProducts(String query, List<Product> source) {

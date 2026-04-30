@@ -86,7 +86,11 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      user.role == 'owner' ? 'Chủ cửa hàng' : 'Nhân viên',
+                      user.role == 'admin'
+                          ? 'Quản lý'
+                          : user.role == 'employee'
+                              ? 'Nhân viên'
+                              : 'Khách hàng',
                       style: const TextStyle(color: Colors.black54),
                     ),
                   ],

@@ -51,16 +51,18 @@ class InventoryHistoryEntryAdapter extends TypeAdapter<InventoryHistoryEntry> {
     }
 
     return InventoryHistoryEntry(
-      id: fields[0] as String,
-      type: fields[1] as String,
-      itemId: fields[2] as String,
-      itemName: fields[3] as String,
-      unit: fields[4] as String,
-      quantityChange: fields[5] as int,
-      beforeQuantity: fields[6] as int,
-      afterQuantity: fields[7] as int,
+      id: fields[0].toString(),
+      type: fields[1].toString(),
+      itemId: fields[2].toString(),
+      itemName: fields[3].toString(),
+      unit: fields[4].toString(),
+      quantityChange: (fields[5] as num).toInt(),
+      beforeQuantity: (fields[6] as num).toInt(),
+      afterQuantity: (fields[7] as num).toInt(),
       note: (fields[8] as String?) ?? '',
-      createdAt: DateTime.fromMillisecondsSinceEpoch(fields[9] as int),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (fields[9] as num).toInt(),
+      ),
     );
   }
 

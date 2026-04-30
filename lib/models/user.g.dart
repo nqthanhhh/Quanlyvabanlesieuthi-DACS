@@ -17,14 +17,14 @@ class UserAdapter extends TypeAdapter<User> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return User(
-      email: fields[0] as String,
-      password: fields[1] as String,
-      role: fields[2] as String,
-      fullName: fields[3] as String,
-      birthYear: fields[4] as int,
-      phone: fields[5] as String,
-      address: fields[6] as String,
-      gender: fields[7] as String,
+      email: fields[0].toString(),
+      password: fields[1].toString(),
+      role: fields[2].toString(),
+      fullName: fields[3].toString(),
+      birthYear: (fields[4] as num).toInt(),
+      phone: fields[5].toString(),
+      address: fields[6].toString(),
+      gender: fields[7].toString(),
       startDate: fields[8] as DateTime?,
       avatarPath: fields[9] as String?,
     );

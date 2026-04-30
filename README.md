@@ -61,7 +61,7 @@ DB_NAME=your_database_name
 Nếu repo có file `.sql`, import database bằng lệnh tương tự:
 
 ```bash
-mysql -u your_mysql_user -p your_database_name < path/to/database.sql
+mysql -u your_mysql_user -p < backend_nodejs/database.sql
 ```
 
 Nếu chưa có file `.sql`, hãy tạo database MySQL thủ công hoặc import từ bản sao database local trước khi chạy backend.

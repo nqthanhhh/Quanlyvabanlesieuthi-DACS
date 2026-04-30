@@ -21,6 +21,57 @@ Dự án hiện không còn dùng Firebase làm database chính. Dữ liệu ch�
 └── README.md
 ```
 
+## Tải code về máy
+
+Nếu chưa có project trên máy:
+
+```bash
+git clone https://github.com/nqthanhhh/Quanlyvabanlesieuthi-DACS.git
+cd Quanlyvabanlesieuthi-DACS
+```
+
+Nếu đã có project từ trước, kéo code mới nhất:
+
+```bash
+git checkout main
+git pull origin main
+```
+
+## Mở project bằng công cụ nào
+
+Mở thư mục gốc project bằng Android Studio để chạy và sửa Flutter frontend:
+
+```text
+lib/
+android/
+ios/
+pubspec.yaml
+```
+
+File frontend cần chú ý khi đổi địa chỉ API backend:
+
+```text
+lib/services/api_service.dart
+```
+
+Mở thư mục backend bằng Visual Studio Code để chạy và sửa Node.js Express:
+
+```text
+backend_nodejs/
+```
+
+Các file backend chính:
+
+```text
+backend_nodejs/src/server.js
+backend_nodejs/src/config/db.js
+backend_nodejs/src/routes/
+backend_nodejs/package.json
+backend_nodejs/.env
+backend_nodejs/.env.example
+backend_nodejs/database.sql
+```
+
 ## Cách chạy backend
 
 ```bash

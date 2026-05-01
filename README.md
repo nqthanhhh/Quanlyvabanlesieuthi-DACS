@@ -70,7 +70,6 @@ backend_nodejs/src/routes/
 backend_nodejs/package.json
 backend_nodejs/.env
 backend_nodejs/.env.example
-backend_nodejs/database.sql
 database.sql
 ```
 
@@ -117,4 +116,4 @@ Nếu repo có file `.sql`, import database bằng lệnh tương tự:
 mysql -u your_mysql_user -p < database.sql
 ```
 
-File `database.sql` nằm ở gốc project để dễ thấy. Trong `backend_nodejs/` cũng có bản `backend_nodejs/database.sql` cho phần backend.
+File `database.sql` nằm ở gốc project để dễ thấy và dùng chung cho toàn bộ dự án.

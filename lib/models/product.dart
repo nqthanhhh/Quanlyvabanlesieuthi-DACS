@@ -24,6 +24,7 @@ class Product extends HiveObject {
   DateTime? createdAt; // <-- THÊM TRƯỜNG NÀY (nullable)
 
   String? imageUrl;
+  String? barcode;
   int? categoryId;
   String? categoryName;
   int minStock;
@@ -36,6 +37,7 @@ class Product extends HiveObject {
     this.stockQuantity = 0,
     this.createdAt, // <-- THÊM VÀO CONSTRUCTOR (không 'required')
     this.imageUrl,
+    this.barcode,
     this.categoryId,
     this.categoryName,
     this.minStock = 10,
@@ -70,6 +72,7 @@ class Product extends HiveObject {
           ? null
           : DateTime.tryParse(json['created_at'].toString()),
       imageUrl: (json['image_url'] ?? json['imageUrl'])?.toString(),
+      barcode: json['barcode']?.toString(),
       categoryId: _toNullableInt(json['category_id'] ?? json['categoryId']),
       categoryName: (json['category_name'] ?? json['categoryName'])?.toString(),
       minStock: _toInt(json['min_stock'], defaultValue: 10),
@@ -80,6 +83,7 @@ class Product extends HiveObject {
     return {
       'product_id': int.tryParse(id),
       'product_name': name,
+      'barcode': barcode,
       'price': price,
       'unit': unit,
       'stock': stockQuantity,

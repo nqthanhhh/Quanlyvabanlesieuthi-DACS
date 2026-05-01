@@ -117,6 +117,7 @@ class DBService {
   static Future<void> syncAllFromApi() async {
     await Future.wait([
       syncProductsFromApi(),
+      syncInventoryItemsFromApi(),
       syncUsersFromApi(),
       syncOrdersFromApi(),
       syncInventoryHistoryFromApi(),
@@ -126,26 +127,23 @@ class DBService {
   static Future<void> syncProductsFromApi() async {
     final remoteProducts = await ApiService.fetchProducts();
     final productBox = products();
-    final inventoryBox = inventoryProducts();
     final imageBox = productImages();
     await productBox.clear();
-    await inventoryBox.clear();
 
     for (final product in remoteProducts) {
       await productBox.put(product.id, product);
-      await inventoryBox.put(
-        product.id,
-        InventoryItem(
-          id: product.id,
-          name: product.name,
-          price: product.price,
-          unit: product.unit,
-          stockQuantity: product.stockQuantity,
-        ),
-      );
       if (product.imageUrl != null && product.imageUrl!.isNotEmpty) {
         await imageBox.put(product.id, product.imageUrl!);
       }
+    }
+  }
+
+  static Future<void> syncInventoryItemsFromApi() async {
+    final remoteItems = await ApiService.fetchInventoryItems();
+    final box = inventoryProducts();
+    await box.clear();
+    for (final item in remoteItems) {
+      await box.put(item.id, item);
     }
   }
 
@@ -177,9 +175,9 @@ class DBService {
           id: (log['log_id'] ?? '${DateTime.now().microsecondsSinceEpoch}')
               .toString(),
           type: (log['action'] ?? '').toString().toLowerCase(),
-          itemId: log['product_id'].toString(),
-          itemName: (log['product_name'] ?? '').toString(),
-          unit: 'sp',
+          itemId: (log['inventory_item_id'] ?? log['product_id']).toString(),
+          itemName: (log['item_name'] ?? log['product_name'] ?? '').toString(),
+          unit: (log['unit'] ?? 'sp').toString(),
           quantityChange: _toInt(log['quantity']),
           beforeQuantity: 0,
           afterQuantity: 0,
@@ -469,7 +467,7 @@ class DBService {
   }
 
   static Future<void> importInventoryRemote({
-    required Product product,
+    required InventoryItem item,
     required int quantity,
     String? note,
   }) async {
@@ -478,13 +476,109 @@ class DBService {
       throw ApiException('Chưa có current_user_id để ghi lịch sử nhập kho');
     }
     await ApiService.importInventory(
-      productId: product.id,
+      inventoryItemId: item.id,
       employeeId: employeeId,
       quantity: quantity,
       note: note,
     );
-    await syncProductsFromApi();
+    await syncInventoryItemsFromApi();
     await syncInventoryHistoryFromApi();
+  }
+
+  static Future<void> adjustInventoryRemote({
+    required InventoryItem item,
+    required int actualQuantity,
+    String? note,
+  }) async {
+    final employeeId = settings().get('current_user_id') as int?;
+    if (employeeId == null) {
+      throw ApiException('Chưa có current_user_id để ghi lịch sử kiểm kê');
+    }
+    await ApiService.adjustInventory(
+      inventoryItemId: item.id,
+      employeeId: employeeId,
+      actualQuantity: actualQuantity,
+      note: note,
+    );
+    await syncInventoryItemsFromApi();
+    await syncInventoryHistoryFromApi();
+  }
+
+  static Future<InventoryItem> createInventoryItemRemote({
+    required String barcode,
+    required String name,
+    required double price,
+    required String unit,
+    required int quantity,
+    String? imagePath,
+  }) async {
+    final item = InventoryItem(
+      name: name,
+      price: price,
+      unit: unit,
+      id: barcode,
+      stockQuantity: 0,
+    );
+
+    final saved = await ApiService.createInventoryItem(item);
+    await inventoryProducts().put(saved.id, saved);
+    if (imagePath != null && imagePath.isNotEmpty) {
+      await productImages().put(saved.id, imagePath);
+    }
+    await importInventoryRemote(
+      item: saved,
+      quantity: quantity,
+      note: 'Tạo mặt hàng kho',
+    );
+    return inventoryProducts().get(saved.id) ?? saved;
+  }
+
+  static Future<Product> releaseInventoryToShelf({
+    required InventoryItem item,
+    required int quantity,
+    required int categoryId,
+  }) async {
+    Product? existing;
+    for (final product in products().values) {
+      if (product.barcode == item.id || product.id == item.id) {
+        existing = product;
+        break;
+      }
+    }
+
+    Product saved;
+    if (existing != null) {
+      existing.stockQuantity += quantity;
+      saved = await updateProductRemote(existing);
+    } else {
+      saved = await createProduct(
+        Product(
+          id: '0',
+          name: item.name,
+          price: item.price,
+          unit: item.unit,
+          barcode: item.id,
+          stockQuantity: quantity,
+          categoryId: categoryId,
+        ),
+      );
+    }
+
+    final employeeId = settings().get('current_user_id') as int?;
+    if (employeeId == null) {
+      throw ApiException('Chưa có current_user_id để ghi lịch sử xuất kho');
+    }
+    await ApiService.exportInventory(
+      inventoryItemId: item.id,
+      productId: saved.id,
+      employeeId: employeeId,
+      quantity: quantity,
+      note: 'Đưa hàng lên kệ',
+    );
+    await syncProductsFromApi();
+    await syncInventoryItemsFromApi();
+    await syncInventoryHistoryFromApi();
+    return products().get(saved.id) ?? saved;
   }
 
   static List<Product> searchProducts(String query, List<Product> source) {

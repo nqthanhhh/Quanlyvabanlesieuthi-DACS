@@ -65,6 +65,7 @@ router.post('/', async (req, res) => {
       description,
       image_url,
       price,
+      unit,
       stock,
       stockQuantity,
       min_stock,
@@ -84,14 +85,15 @@ router.post('/', async (req, res) => {
 
     const [result] = await pool.execute(
       `INSERT INTO products
-       (product_name, barcode, description, image_url, price, stock, min_stock, category_id, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+       (product_name, barcode, description, image_url, price, unit, stock, min_stock, category_id, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
       [
         productName,
         productBarcode,
         description || null,
         image_url || null,
         Number(price),
+        unit || 'sp',
         productStock,
         Number(min_stock ?? 10),
         Number(category_id),
@@ -121,6 +123,7 @@ router.put('/:id', async (req, res) => {
       description,
       image_url,
       price,
+      unit,
       stock,
       stockQuantity,
       min_stock,
@@ -135,6 +138,7 @@ router.put('/:id', async (req, res) => {
            description = ?,
            image_url = ?,
            price = COALESCE(?, price),
+           unit = COALESCE(?, unit),
            stock = COALESCE(?, stock),
            min_stock = COALESCE(?, min_stock),
            category_id = COALESCE(?, category_id),
@@ -146,6 +150,7 @@ router.put('/:id', async (req, res) => {
         description ?? null,
         image_url ?? null,
         price == null ? null : Number(price),
+        unit || null,
         stock == null && stockQuantity == null ? null : Number(stock ?? stockQuantity),
         min_stock == null ? null : Number(min_stock),
         category_id == null ? null : Number(category_id),

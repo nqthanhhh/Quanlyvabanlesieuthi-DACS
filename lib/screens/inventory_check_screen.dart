@@ -1,7 +1,6 @@
 // lib/screens/inventory_check_screen.dart (ĐÃ CẬP NHẬT LOGIC TÌM KIẾM)
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../models/inventory_history_entry.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
 
@@ -128,25 +127,12 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
     }
 
     try {
-      // 2. Cập nhật tồn kho kho (inventory) bằng số lượng thực tế
       final item = _selectedItem!;
-      final beforeQty = _systemStock;
-      item.stockQuantity = actualQuantity;
-      await DBService.inventoryProducts().put(item.id, item);
 
-      await DBService.addInventoryHistoryEntry(
-        InventoryHistoryEntry(
-          id: '${DateTime.now().microsecondsSinceEpoch}_${item.id}',
-          type: 'adjust',
-          itemId: item.id,
-          itemName: item.name,
-          unit: item.unit,
-          quantityChange: _difference,
-          beforeQuantity: beforeQty,
-          afterQuantity: actualQuantity,
-          note: _noteController.text.trim(),
-          createdAt: DateTime.now(),
-        ),
+      await DBService.adjustInventoryRemote(
+        item: item,
+        actualQuantity: actualQuantity,
+        note: _noteController.text.trim(),
       );
 
       // 3. Thông báo

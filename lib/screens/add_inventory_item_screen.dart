@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../models/inventory_history_entry.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
+import '../services/api_service.dart';
 
 class AddInventoryItemScreen extends StatefulWidget {
   final InventoryItem? item;
@@ -74,109 +74,52 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
       final unit = _unitController.text.trim();
       final qty = int.parse(_stockController.text.trim());
 
-      final box = DBService.inventoryProducts();
-
       if (_isEditing) {
         final existing = widget.item!;
-        final oldId = existing.id;
         final newId = id;
 
-        if (newId != oldId) {
-          // reject if new id exists
-          if (box.containsKey(newId)) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Mã mới đã tồn tại trong kho'),
-                backgroundColor: Colors.red,
-              ),
-            );
-            return;
-          }
-
-          final InventoryItem newItem = InventoryItem(
-            id: newId,
-            name: name,
-            price: price,
-            unit: unit,
-            stockQuantity: qty,
-          );
-
-          await box.put(newItem.id, newItem);
-
-          // migrate image mapping if present
-          final imgBox = DBService.productImages();
-          final oldImg = imgBox.get(oldId);
-          if (_imagePath != null) {
-            await imgBox.put(newId, _imagePath!);
-            if (oldImg != null && oldId != newId) await imgBox.delete(oldId);
-          } else if (oldImg != null) {
-            // if user didn't pick a new image but an old image exists, move it
-            await imgBox.put(newId, oldImg);
-            await imgBox.delete(oldId);
-          }
-
-          // delete old record
-          await box.delete(oldId);
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Cập nhật kho thành công'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.of(context).pop();
-        } else {
-          // same id: update fields
-          existing.name = name;
-          existing.price = price;
-          existing.unit = unit;
-          existing.stockQuantity = qty;
-          await box.put(existing.id, existing);
-
-          // update image if user picked one
-          if (_imagePath != null) {
-            await DBService.productImages().put(existing.id, _imagePath!);
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Cập nhật kho thành công'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.of(context).pop();
+        if (newId != existing.id) {
+          throw Exception('Không đổi mã ID khi sửa kho. Hãy tạo mặt hàng mới nếu cần mã khác.');
         }
-      } else {
-        if (box.containsKey(id)) {
-          throw Exception('Mã tồn kho đã tồn tại');
-        }
-        final inv = InventoryItem(
-          id: id,
+
+        final updated = InventoryItem(
+          id: existing.id,
           name: name,
           price: price,
           unit: unit,
-          stockQuantity: qty,
+          stockQuantity: existing.stockQuantity,
         );
-        await box.put(inv.id, inv);
 
-        await DBService.addInventoryHistoryEntry(
-          InventoryHistoryEntry(
-            id: '${DateTime.now().microsecondsSinceEpoch}_${inv.id}',
-            type: 'in',
-            itemId: inv.id,
-            itemName: inv.name,
-            unit: inv.unit,
-            quantityChange: qty,
-            beforeQuantity: 0,
-            afterQuantity: qty,
-            note: 'Tạo mặt hàng kho',
-            createdAt: DateTime.now(),
+        await ApiService.updateInventoryItem(updated);
+        await DBService.syncInventoryItemsFromApi();
+        if (qty != existing.stockQuantity) {
+          await DBService.adjustInventoryRemote(
+            item: updated,
+            actualQuantity: qty,
+            note: 'Cập nhật tồn kho',
+          );
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cập nhật kho thành công'),
+            backgroundColor: Colors.green,
           ),
         );
-
-        if (_imagePath != null) {
-          await DBService.productImages().put(inv.id, _imagePath!);
+        Navigator.of(context).pop();
+      } else {
+        if (DBService.inventoryProducts().containsKey(id)) {
+          throw Exception('Mã tồn kho đã tồn tại');
         }
+
+        await DBService.createInventoryItemRemote(
+          barcode: id,
+          name: name,
+          price: price,
+          unit: unit,
+          quantity: qty,
+          imagePath: _imagePath,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Thêm vào kho thành công'),

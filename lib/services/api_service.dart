@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/user.dart';
+import '../models/inventory_item.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -212,8 +213,34 @@ class ApiService {
         .toList();
   }
 
+  static Future<List<InventoryItem>> fetchInventoryItems() async {
+    final response = await http.get(_uri('/api/inventory/items')).timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(body)
+        .map((e) => InventoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  static Future<InventoryItem> createInventoryItem(InventoryItem item) async {
+    final response = await http.post(
+      _uri('/api/inventory/items'),
+      headers: _headers,
+      body: jsonEncode(item.toJson()),
+    ).timeout(_timeout);
+    return InventoryItem.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<InventoryItem> updateInventoryItem(InventoryItem item) async {
+    final response = await http.put(
+      _uri('/api/inventory/items/${item.id}'),
+      headers: _headers,
+      body: jsonEncode(item.toJson()),
+    ).timeout(_timeout);
+    return InventoryItem.fromJson(_dataMap(_decode(response)));
+  }
+
   static Future<void> importInventory({
-    required String productId,
+    required String inventoryItemId,
     required int employeeId,
     required int quantity,
     String? note,
@@ -222,7 +249,47 @@ class ApiService {
       _uri('/api/inventory/import'),
       headers: _headers,
       body: jsonEncode({
-        'product_id': int.parse(productId),
+        'inventory_item_id': inventoryItemId,
+        'employee_id': employeeId,
+        'quantity': quantity,
+        'note': note,
+      }),
+    ).timeout(_timeout);
+    _decode(response);
+  }
+
+  static Future<void> adjustInventory({
+    required String inventoryItemId,
+    required int employeeId,
+    required int actualQuantity,
+    String? note,
+  }) async {
+    final response = await http.post(
+      _uri('/api/inventory/adjust'),
+      headers: _headers,
+      body: jsonEncode({
+        'inventory_item_id': inventoryItemId,
+        'employee_id': employeeId,
+        'actual_quantity': actualQuantity,
+        'note': note,
+      }),
+    ).timeout(_timeout);
+    _decode(response);
+  }
+
+  static Future<void> exportInventory({
+    required String inventoryItemId,
+    String? productId,
+    required int employeeId,
+    required int quantity,
+    String? note,
+  }) async {
+    final response = await http.post(
+      _uri('/api/inventory/export'),
+      headers: _headers,
+      body: jsonEncode({
+        'inventory_item_id': inventoryItemId,
+        'product_id': productId == null ? null : int.tryParse(productId),
         'employee_id': employeeId,
         'quantity': quantity,
         'note': note,

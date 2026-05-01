@@ -5,9 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../models/product.dart';
 import '../models/inventory_item.dart'; // <<< IMPORT InventoryItem
-import '../models/inventory_history_entry.dart';
 import '../services/db_service.dart'; // <<< Đảm bảo bạn có DBService và hàm inventoryHistory()
 
 class ImportInventoryScreen extends StatefulWidget {
@@ -41,7 +39,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
   }
 
   // --- HÀM GHI LỊCH SỬ CHO SẢN PHẨM ĐÃ CÓ ---
-  Future<void> _addToExisting(Product item) async {
+  Future<void> _addToExisting(InventoryItem item) async {
     final qtyController = TextEditingController(text: '1');
     final formKey = GlobalKey<FormState>();
     final result = await showDialog<int?>(
@@ -85,7 +83,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     if (result != null) {
       setState(() => _processing = true);
       try {
-        await DBService.importInventoryRemote(product: item, quantity: result);
+        await DBService.importInventoryRemote(item: item, quantity: result);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Đã nhập $result vào ${item.name}'),
@@ -110,15 +108,12 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     if (!_newFormKey.currentState!.validate()) return;
     setState(() => _processing = true);
     try {
-      // Create / update only the InventoryItem (do NOT touch products box)
       final id = _idController.text.trim();
-      final invBox = DBService.inventoryProducts();
 
-      // Kiểm tra trùng ID trong inventory
-      if (invBox.containsKey(id)) {
+      if (DBService.inventoryProducts().containsKey(id)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Mã sản phẩm đã tồn tại trong kho (inventory)!'),
+            content: Text('Mã sản phẩm đã tồn tại!'),
             backgroundColor: Colors.red,
           ),
         );
@@ -130,39 +125,19 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
       final unit = _unitController.text.trim();
       final qty = int.parse(_qtyController.text.trim());
 
-      final invItem = InventoryItem(
-        id: id,
+      final saved = await DBService.createInventoryItemRemote(
+        barcode: id,
         name: name,
         price: price,
         unit: unit,
-        stockQuantity: qty,
+        quantity: qty,
+        imagePath: _pickedImagePath,
       );
-      await invBox.put(invItem.id, invItem);
-
-      // Lưu ảnh (nếu có) sử dụng cùng key — ảnh được dùng khi hiển thị inventory/product
-      if (_pickedImagePath != null) {
-        await DBService.productImages().put(invItem.id, _pickedImagePath!);
-      }
-
-      // Ghi lịch sử nhập kho
-      final historyItem = InventoryHistoryEntry(
-        id: '${DateTime.now().microsecondsSinceEpoch}_${invItem.id}',
-        type: 'in',
-        itemId: invItem.id,
-        itemName: invItem.name,
-        unit: invItem.unit,
-        quantityChange: invItem.stockQuantity,
-        beforeQuantity: 0,
-        afterQuantity: invItem.stockQuantity,
-        note: 'Tạo mặt hàng kho',
-        createdAt: DateTime.now(),
-      );
-      await DBService.addInventoryHistoryEntry(historyItem);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Đã thêm ${invItem.name} vào kho với SL: ${invItem.stockQuantity}',
+            'Đã thêm ${saved.name} vào kho với SL: $qty',
           ),
           backgroundColor: Colors.green,
         ),
@@ -232,36 +207,16 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
             ),
             const SizedBox(height: 12),
 
-            // ValueListenable để tự động cập nhật khi products hoặc inventory box thay đổi
+            // ValueListenable để tự động cập nhật khi kho thay đổi
             SizedBox(
               height: 240,
               child: ValueListenableBuilder(
-                valueListenable: DBService.products().listenable(),
-                builder: (context, Box<Product> prodBox, _) {
-                  return ValueListenableBuilder(
-                    valueListenable: DBService.inventoryProducts().listenable(),
-                    builder: (context, Box invBox, __) {
-                      final allProducts = prodBox.values.toList();
+                valueListenable: DBService.inventoryProducts().listenable(),
+                builder: (context, Box invBox, _) {
                       final allInventory = invBox.values.toList();
 
-                      // Merge: prefer inventory item data for display when available
-                      final Map<String, dynamic> merged = {};
-                      for (final inv in allInventory) {
-                        merged[inv.id] = inv;
-                      }
-                      for (final p in allProducts) {
-                        if (!merged.containsKey(p.id)) merged[p.id] = p;
-                      }
-
-                      final List<dynamic> source = merged.values.toList();
                       final query = _searchController.text.trim();
-                      final results = DBService.searchProducts(
-                        query,
-                        source.whereType<Product>().toList(),
-                      );
-
-                      // If inventory-only results exist (ids in merged that are InventoryItem), include them too
-                      final invMatches = source
+                      final displayList = allInventory
                           .where(
                             (s) =>
                                 s is InventoryItem &&
@@ -275,18 +230,6 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                           )
                           .toList();
 
-                      final displayList = <dynamic>[];
-                      displayList.addAll(invMatches);
-                      // add product matches that are not in inventory matches
-                      for (final r in results) {
-                        if (!displayList.any(
-                          (e) =>
-                              (e is InventoryItem ? e.id : (e as Product).id) ==
-                              r.id,
-                        ))
-                          displayList.add(r);
-                      }
-
                       if (displayList.isEmpty) {
                         return const Center(
                           child: Text('Không tìm thấy sản phẩm phù hợp'),
@@ -298,18 +241,10 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final item = displayList[index];
-                          final id = item is InventoryItem
-                              ? item.id
-                              : (item as Product).id;
-                          final name = item is InventoryItem
-                              ? item.name
-                              : (item as Product).name;
-                          final stock = item is InventoryItem
-                              ? item.stockQuantity
-                              : (item as Product).stockQuantity;
-                          final unit = item is InventoryItem
-                              ? item.unit
-                              : (item as Product).unit;
+                          final id = item.id;
+                          final name = item.name;
+                          final stock = item.stockQuantity;
+                          final unit = item.unit;
                           final imgPath = DBService.productImages().get(id);
                           Widget leading;
                           if (imgPath != null && File(imgPath).existsSync()) {
@@ -337,44 +272,18 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                               onPressed: _processing
                                   ? null
                                   : () {
-                                      // If it's inventory item, open a dialog to add to inventory
-                                      if (item is InventoryItem) {
-                                        // create a temporary Product-like object to reuse _addToExisting
-                                        final temp = Product(
-                                          id: item.id,
-                                          name: item.name,
-                                          price: item.price,
-                                          unit: item.unit,
-                                          stockQuantity: item.stockQuantity,
-                                        );
-                                        _addToExisting(temp);
-                                      } else if (item is Product) {
-                                        _addToExisting(item);
-                                      }
+                                      _addToExisting(item);
                                     },
                               child: const Text('Nhập'),
                             ),
                             onTap: _processing
                                 ? null
                                 : () {
-                                    if (item is InventoryItem) {
-                                      final temp = Product(
-                                        id: item.id,
-                                        name: item.name,
-                                        price: item.price,
-                                        unit: item.unit,
-                                        stockQuantity: item.stockQuantity,
-                                      );
-                                      _addToExisting(temp);
-                                    } else if (item is Product) {
-                                      _addToExisting(item);
-                                    }
+                                    _addToExisting(item);
                                   },
                           );
                         },
                       );
-                    },
-                  );
                 },
               ),
             ),

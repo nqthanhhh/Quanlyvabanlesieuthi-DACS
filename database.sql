@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS reviews;
 DROP TABLE IF EXISTS order_discounts;
 DROP TABLE IF EXISTS discount_codes;
 DROP TABLE IF EXISTS inventory_logs;
+DROP TABLE IF EXISTS inventory_items;
 DROP TABLE IF EXISTS invoices;
 DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS order_items;
@@ -63,6 +64,7 @@ CREATE TABLE products (
   description TEXT,
   image_url VARCHAR(255),
   price DECIMAL(10,2) NOT NULL,
+  unit VARCHAR(50) NOT NULL DEFAULT 'sp',
   stock INT NOT NULL DEFAULT 0,
   min_stock INT DEFAULT 10,
   category_id INT NOT NULL,
@@ -73,6 +75,18 @@ CREATE TABLE products (
     REFERENCES categories(category_id)
     ON UPDATE CASCADE
     ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE inventory_items (
+  inventory_item_id INT AUTO_INCREMENT PRIMARY KEY,
+  barcode VARCHAR(50) NOT NULL UNIQUE,
+  item_name VARCHAR(150) NOT NULL,
+  image_url VARCHAR(255),
+  price DECIMAL(10,2) NOT NULL,
+  unit VARCHAR(50) NOT NULL DEFAULT 'sp',
+  stock INT NOT NULL DEFAULT 0,
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
 CREATE TABLE carts (
@@ -184,12 +198,19 @@ CREATE TABLE invoices (
 
 CREATE TABLE inventory_logs (
   log_id INT AUTO_INCREMENT PRIMARY KEY,
-  product_id INT NOT NULL,
+  inventory_item_id INT NOT NULL,
+  product_id INT,
   employee_id INT NOT NULL,
   action VARCHAR(20) NOT NULL,
   quantity INT NOT NULL,
   note VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_inventory_logs_items
+    FOREIGN KEY (inventory_item_id)
+    REFERENCES inventory_items(inventory_item_id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
 
   CONSTRAINT fk_inventory_logs_products
     FOREIGN KEY (product_id)
@@ -328,14 +349,15 @@ INSERT INTO products (
   description,
   image_url,
   price,
+  unit,
   stock,
   min_stock,
   category_id,
   status
 )
 VALUES
-('Coca Cola lon 330ml', '893000000001', 'Nước ngọt có gas', '', 10000, 100, 10, 1, 'active'),
-('Pepsi lon 330ml', '893000000002', 'Nước ngọt có gas', '', 10000, 100, 10, 1, 'active'),
-('Mì Hảo Hảo tôm chua cay', '893000000003', 'Mì ăn liền', '', 4500, 200, 20, 2, 'active'),
-('Sữa Vinamilk 180ml', '893000000004', 'Sữa hộp', '', 8000, 80, 10, 4, 'active'),
-('Bánh Oreo', '893000000005', 'Bánh quy socola', '', 12000, 60, 10, 5, 'active');
+('Coca Cola lon 330ml', '893000000001', 'Nước ngọt có gas', '', 10000, 'lon', 100, 10, 1, 'active'),
+('Pepsi lon 330ml', '893000000002', 'Nước ngọt có gas', '', 10000, 'lon', 100, 10, 1, 'active'),
+('Mì Hảo Hảo tôm chua cay', '893000000003', 'Mì ăn liền', '', 4500, 'gói', 200, 20, 2, 'active'),
+('Sữa Vinamilk 180ml', '893000000004', 'Sữa hộp', '', 8000, 'hộp', 80, 10, 4, 'active'),
+('Bánh Oreo', '893000000005', 'Bánh quy socola', '', 12000, 'gói', 60, 10, 5, 'active');

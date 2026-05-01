@@ -215,23 +215,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
         throw Exception('Vui lòng thêm hoặc chọn danh mục.');
       }
 
-      final existing = DBService.products().get(item.id);
-      if (existing != null) {
-        existing.stockQuantity += takeAmount;
-        await DBService.updateProductRemote(existing);
-      } else {
-        final Product newProduct = Product(
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          unit: item.unit,
-          stockQuantity: takeAmount,
-          createdAt: DateTime.now(), // <-- ĐÃ THÊM
-          categoryId: _selectedCategoryId,
-        );
-
-        await DBService.createProduct(newProduct);
-      }
+      await DBService.releaseInventoryToShelf(
+        item: item,
+        quantity: takeAmount,
+        categoryId: _selectedCategoryId!,
+      );
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -282,6 +270,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         widget.product!.name = name;
         widget.product!.price = price;
         widget.product!.unit = unit;
+        widget.product!.barcode = id;
         widget.product!.stockQuantity = stockQuantity; // GHI ĐÈ số lượng
         widget.product!.categoryId = _selectedCategoryId;
         await DBService.updateProductRemote(widget.product!);
@@ -299,6 +288,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           name: name,
           price: price,
           unit: unit,
+          barcode: id,
           stockQuantity: stockQuantity, // Tồn kho ban đầu
           createdAt: DateTime.now(), // <-- ĐÃ THÊM
           categoryId: _selectedCategoryId,

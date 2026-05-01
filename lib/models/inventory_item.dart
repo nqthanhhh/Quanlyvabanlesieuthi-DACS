@@ -16,6 +16,38 @@ class InventoryItem {
     required this.unit,
     this.stockQuantity = 0,
   });
+
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  factory InventoryItem.fromJson(Map<String, dynamic> json) {
+    return InventoryItem(
+      id: (json['barcode'] ?? json['id'] ?? json['inventory_item_id']).toString(),
+      name: (json['item_name'] ?? json['name'] ?? '').toString(),
+      price: _toDouble(json['price']),
+      unit: (json['unit'] ?? 'sp').toString(),
+      stockQuantity: _toInt(json['stock'] ?? json['stockQuantity']),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'inventory_item_id': int.tryParse(id),
+      'barcode': id,
+      'item_name': name,
+      'price': price,
+      'unit': unit,
+      'stock': stockQuantity,
+    };
+  }
 }
 
 class InventoryItemAdapter extends TypeAdapter<InventoryItem> {

@@ -17,6 +17,7 @@ Dự án hiện không còn dùng Firebase làm database chính. Dữ liệu ch�
 ├── ios/                 # Project iOS
 ├── web/                 # Project Web Flutter
 ├── backend_nodejs/      # Backend Node.js Express
+├── database.sql         # File CSDL MySQL chung để import
 ├── pubspec.yaml         # Cấu hình Flutter
 └── README.md
 ```
@@ -70,6 +71,7 @@ backend_nodejs/package.json
 backend_nodejs/.env
 backend_nodejs/.env.example
 backend_nodejs/database.sql
+database.sql
 ```
 
 ## Cách chạy backend
@@ -112,7 +114,7 @@ DB_NAME=your_database_name
 Nếu repo có file `.sql`, import database bằng lệnh tương tự:
 
 ```bash
-mysql -u your_mysql_user -p < backend_nodejs/database.sql
+mysql -u your_mysql_user -p < database.sql
 ```
 
-Nếu chưa có file `.sql`, hãy tạo database MySQL thủ công hoặc import từ bản sao database local trước khi chạy backend.
+File `database.sql` nằm ở gốc project để dễ thấy. Trong `backend_nodejs/` cũng có bản `backend_nodejs/database.sql` cho phần backend.

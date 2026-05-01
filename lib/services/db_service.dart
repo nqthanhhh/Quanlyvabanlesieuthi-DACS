@@ -425,16 +425,6 @@ class DBService {
     }
     final saved = await ApiService.createProduct(product);
     await products().put(saved.id, saved);
-    await inventoryProducts().put(
-      saved.id,
-      InventoryItem(
-        id: saved.id,
-        name: saved.name,
-        price: saved.price,
-        unit: saved.unit,
-        stockQuantity: saved.stockQuantity,
-      ),
-    );
     if (saved.imageUrl != null) {
       await productImages().put(saved.id, saved.imageUrl!);
     }
@@ -452,7 +442,6 @@ class DBService {
     }
     final saved = await ApiService.updateProduct(product);
     await products().put(saved.id, saved);
-    await updateInventoryMetadataForProduct(saved);
     if (saved.imageUrl != null) {
       await productImages().put(saved.id, saved.imageUrl!);
     }
@@ -462,7 +451,6 @@ class DBService {
   static Future<void> deleteProductRemote(Product product) async {
     await ApiService.deleteProduct(product.id);
     await products().delete(product.id);
-    await inventoryProducts().delete(product.id);
     await productImages().delete(product.id);
   }
 
@@ -595,60 +583,4 @@ class DBService {
         .toList();
   }
 
-  // --- INVENTORY SYNC HELPERS ---
-  // Ensure there is an InventoryItem for the given product. This will only
-  // create the inventory record if it doesn't already exist. We copy
-  // metadata (id, name, price, unit) and set the initial stock to the
-  // product's stockQuantity at creation time.
-  static Future<void> ensureInventoryForProduct(Product product) async {
-    final box = inventoryProducts();
-    if (!box.containsKey(product.id)) {
-      final inv = InventoryItem(
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        unit: product.unit,
-        stockQuantity: product.stockQuantity,
-      );
-      await box.put(inv.id, inv);
-    }
-  }
-
-  // Update inventory metadata (name/price/unit) for a product if the
-  // inventory record exists. We intentionally do NOT change the
-  // inventory stockQuantity here to keep product and inventory stocks
-  // separate unless the user explicitly requests synchronization.
-  static Future<void> updateInventoryMetadataForProduct(Product product) async {
-    final box = inventoryProducts();
-    if (box.containsKey(product.id)) {
-      final existing = box.get(product.id) as InventoryItem;
-      existing.name = product.name;
-      existing.price = product.price;
-      existing.unit = product.unit;
-      await box.put(existing.id, existing);
-    }
-  }
-
-  // Try to reduce inventory stock by [amount] for item with [id].
-  // Returns:
-  // - remaining stock (>= 0) on success,
-  // - -1 if inventory item not found,
-  // - -2 if not enough stock to reduce.
-  static Future<int> reduceInventoryStockIfAvailable(
-    String id,
-    int amount,
-  ) async {
-    final box = inventoryProducts();
-    final existing = box.get(id);
-    if (existing == null) return -1;
-    if (amount <= 0) return existing.stockQuantity;
-    if (existing.stockQuantity < amount) return -2;
-    existing.stockQuantity -= amount;
-    await box.put(existing.id, existing);
-    return existing.stockQuantity;
-  }
-
-  static bool inventoryHasProduct(String id) {
-    return inventoryProducts().containsKey(id);
-  }
 }

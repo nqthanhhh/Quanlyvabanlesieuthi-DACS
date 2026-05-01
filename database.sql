@@ -308,6 +308,11 @@ VALUES
 ('employee'),
 ('admin');
 
+INSERT INTO users(full_name, email, phone, password, address, role_id, status)
+VALUES
+('Admin', 'admin@gmail.com', '0900000001', 'admin123', 'Tai khoan quan tri', (SELECT role_id FROM roles WHERE role_name = 'admin'), 'active'),
+('Nhan vien', 'employee@gmail.com', '0900000002', 'employee123', 'Tai khoan nhan vien', (SELECT role_id FROM roles WHERE role_name = 'employee'), 'active');
+
 INSERT INTO categories(category_name)
 VALUES
 ('Đồ uống'),

@@ -101,11 +101,12 @@ cp backend_nodejs/.env.example backend_nodejs/.env
 Sau đó điền giá trị phù hợp, ví dụ:
 
 ```env
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=your_mysql_user
+PORT=3000
+DB_HOST=127.0.0.1
+DB_USER=root
 DB_PASSWORD=your_mysql_password
-DB_NAME=your_database_name
+DB_NAME=mini_supermarket
+JWT_SECRET=your_local_secret
 ```
 
 ## Import MySQL database

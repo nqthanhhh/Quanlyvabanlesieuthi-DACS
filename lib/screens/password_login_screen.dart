@@ -68,12 +68,30 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       await settings2.put('current_user_id', user['user_id']);
       await settings2.put('current_user_email', user['email']);
       await settings2.put('current_role', role);
-      await DBService.syncAllFromApi();
+      try {
+        await DBService.syncAllFromApi();
+      } catch (syncError) {
+        debugPrint('Dang nhap thanh cong nhung dong bo API loi: $syncError');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Đăng nhập thành công, nhưng chưa đồng bộ được dữ liệu mới',
+            ),
+          ),
+        );
+      }
+      if (!mounted) return;
       widget.onLogin(role);
       Navigator.of(context).pop();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e is ApiException ? e.message : 'Email hoặc mật khẩu không đúng')),
+        SnackBar(
+          content: Text(
+            e is ApiException ? e.message : 'Email hoặc mật khẩu không đúng',
+          ),
+        ),
       );
     }
   }

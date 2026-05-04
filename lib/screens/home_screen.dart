@@ -45,25 +45,83 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Product> _allProducts = [];
   List<Product> _displayedProducts = [];
 
-  // Mapping ID sản phẩm sang đường dẫn hình ảnh
-  String _imageFor(String id) {
-    switch (id) {
-      case 'banana':
-        return 'assets/images/chuoi.png'; // Đã cập nhật theo file bạn gửi
-      case 'apple':
-        return 'assets/images/tao.png'; // Giả định anh1.png là táo
-      case 'coke':
-        return 'assets/images/nuoccoca.png';
-      case 'diet_coke':
-        return 'assets/images/dietcoca.png';
-      case 'tomato':
-        return 'assets/images/cachua.png';
-      case 'brocoli':
-        return 'assets/images/bongcai.png';
+  // Mapping sản phẩm sang đường dẫn ảnh asset (fallback khi không có ảnh từ backend)
+  String _imageFor(Product p) {
+    final id = p.id.toLowerCase();
+    final name = p.name.toLowerCase();
+    final barcode = (p.barcode ?? '').toLowerCase();
 
-      default:
-        return '';
+    bool anyContains(List<String> needles) {
+      for (final n in needles) {
+        if (id.contains(n) || name.contains(n) || barcode.contains(n)) return true;
+      }
+      return false;
     }
+
+    if (anyContains(['banana', 'chuoi', 'chuối'])) return 'assets/images/chuoi.png';
+    if (anyContains(['apple', 'tao', 'táo'])) return 'assets/images/tao.png';
+    if (anyContains(['coke', 'coca'])) return 'assets/images/nuoccoca.png';
+    if (anyContains(['diet_coke', 'diet'])) return 'assets/images/dietcoca.png';
+    if (anyContains(['tomato', 'cachua', 'càchua', 'cà chua'])) return 'assets/images/cachua.png';
+    if (anyContains(['brocoli', 'broccoli', 'bongcai', 'bôngcải', 'bông cải'])) return 'assets/images/bongcai.png';
+
+    // Luôn có ảnh fallback để tránh hiển thị icon trống
+    return 'assets/images/anh1.png';
+  }
+
+  Widget _buildProductImage(Product p) {
+    // Nguồn ảnh có thể là:
+    // - URL (backend trả về) -> Image.network
+    // - Path local (inventory) -> Image.file
+    // - Không có -> Image.asset fallback
+    final stored = (DBService.productImages().get(p.id) ?? p.imageUrl ?? '').toString();
+    if (stored.isNotEmpty && stored.startsWith('http')) {
+      return Image.network(
+        stored,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        errorBuilder: (c, e, s) => Image.asset(
+          _imageFor(p),
+          fit: BoxFit.cover,
+          width: double.infinity,
+        ),
+      );
+    }
+
+    if (stored.isNotEmpty) {
+      try {
+        final file = File(stored);
+        if (file.existsSync()) {
+          return Image.file(
+            file,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            errorBuilder: (c, e, s) => Image.asset(
+              _imageFor(p),
+              fit: BoxFit.cover,
+              width: double.infinity,
+            ),
+          );
+        }
+      } catch (_) {
+        // fallthrough
+      }
+    }
+
+    return Image.asset(
+      _imageFor(p),
+      fit: BoxFit.cover,
+      width: double.infinity,
+      errorBuilder: (c, e, s) => Container(
+        color: Colors.grey.shade100,
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.image,
+          size: 36,
+          color: Colors.black26,
+        ),
+      ),
+    );
   }
 
   @override
@@ -322,8 +380,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // Tách Widget Card Sản phẩm (Đã tối ưu UI theo mẫu)
   Widget _buildProductCard(Product p) {
     print('🧩 DEBUG: ${p.name} có id là "${p.id}"');
-
-    final img = _imageFor(p.id);
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
@@ -346,61 +402,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Builder(
-                    builder: (context) {
-                      // Nếu có ảnh người dùng thêm, hiển thị ảnh từ file
-                      final userImagePath = DBService.productImages().get(p.id);
-                      if (userImagePath != null && userImagePath.isNotEmpty) {
-                        final file = File(userImagePath);
-                        if (file.existsSync()) {
-                          return Image.file(
-                            file,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            errorBuilder: (c, e, s) => Container(
-                              color: Colors.grey.shade100,
-                              alignment: Alignment.center,
-                              child: const Icon(
-                                Icons.broken_image,
-                                size: 36,
-                                color: Colors.black26,
-                              ),
-                            ),
-                          );
-                        }
-                      }
-
-                      // Nếu không có ảnh người dùng, dùng ảnh mặc định theo id
-                      return img.isNotEmpty
-                          ? Image.asset(
-                              img,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              errorBuilder: (c, e, s) => Container(
-                                color: Colors.grey.shade100,
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.image,
-                                  size: 36,
-                                  color: Colors.black26,
-                                ),
-                              ),
-                            )
-                          : Container(
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.image,
-                                  size: 36,
-                                  color: Colors.black26,
-                                ),
-                              ),
-                            );
-                    },
-                  ),
+                  child: _buildProductImage(p),
                 ),
               ),
               const SizedBox(height: 8),
@@ -784,9 +786,10 @@ class _HomeScreenState extends State<HomeScreen> {
       leading: SizedBox(
         width: 48,
         height: 48,
-        child: _imageFor(p.id).isNotEmpty
-            ? Image.asset(_imageFor(p.id), fit: BoxFit.cover)
-            : const Icon(Icons.image_outlined),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: _buildProductImage(p),
+        ),
       ),
       title: Text(p.name),
       trailing: Row(

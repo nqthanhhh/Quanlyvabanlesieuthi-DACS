@@ -1,0 +1,39 @@
+-- MySQL schema for Sieu Thi Mini (MVP)
+
+CREATE DATABASE IF NOT EXISTS sieuthimini CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE sieuthimini;
+
+CREATE TABLE IF NOT EXISTS products (
+  id VARCHAR(64) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  price DECIMAL(12,2) NOT NULL,
+  unit VARCHAR(32) NOT NULL,
+  stock_quantity INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id VARCHAR(64) PRIMARY KEY,
+  order_date DATETIME NOT NULL,
+  total_amount DECIMAL(12,2) NOT NULL,
+  customer_name VARCHAR(255) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  source VARCHAR(32) NULL,
+  payment_method VARCHAR(64) NULL,
+  fulfillment_method VARCHAR(32) NULL,
+  delivery_address VARCHAR(255) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS order_lines (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  order_id VARCHAR(64) NOT NULL,
+  product_id VARCHAR(64) NOT NULL,
+  product_name VARCHAR(255) NOT NULL,
+  quantity INT NOT NULL,
+  price_per_unit DECIMAL(12,2) NOT NULL,
+  CONSTRAINT fk_order_lines_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+  INDEX idx_order_lines_order_id (order_id)
+);

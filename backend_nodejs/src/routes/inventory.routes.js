@@ -12,6 +12,8 @@ function toInventoryItem(row) {
     item_name: row.item_name,
     image_url: row.image_url,
     price: Number(row.price),
+    import_price: row.import_price == null ? null : Number(row.import_price),
+    importPrice: row.import_price == null ? null : Number(row.import_price),
     unit: row.unit || 'sp',
     stockQuantity: row.stock,
     stock: row.stock,
@@ -35,20 +37,25 @@ router.get('/items', async (req, res) => {
 
 router.post('/items', async (req, res) => {
   try {
-    const { barcode, item_name, name, image_url, price, unit, stock, stockQuantity } = req.body;
+    const { barcode, item_name, name, image_url, price, import_price, importPrice, unit, stock, stockQuantity } = req.body;
     const itemName = item_name || name;
     if (!barcode || !itemName || price == null) {
       return res.status(400).json({ success: false, message: 'Vui lòng nhập barcode, item_name, price' });
     }
+    const nextImportPrice = import_price ?? importPrice;
+    if (nextImportPrice != null && Number(nextImportPrice) <= 0) {
+      return res.status(400).json({ success: false, message: 'Giá nhập phải lớn hơn 0' });
+    }
 
     const [result] = await pool.execute(
-      `INSERT INTO inventory_items (barcode, item_name, image_url, price, unit, stock, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+      `INSERT INTO inventory_items (barcode, item_name, image_url, price, import_price, unit, stock, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
       [
         barcode,
         itemName,
         image_url || null,
         Number(price),
+        nextImportPrice == null ? null : Number(nextImportPrice),
         unit || 'sp',
         Number(stock ?? stockQuantity ?? 0),
       ]
@@ -63,13 +70,18 @@ router.post('/items', async (req, res) => {
 
 router.put('/items/:id', async (req, res) => {
   try {
-    const { barcode, item_name, name, image_url, price, unit, stock, stockQuantity, status } = req.body;
+    const { barcode, item_name, name, image_url, price, import_price, importPrice, unit, stock, stockQuantity, status } = req.body;
+    const nextImportPrice = import_price ?? importPrice;
+    if (nextImportPrice != null && Number(nextImportPrice) <= 0) {
+      return res.status(400).json({ success: false, message: 'Giá nhập phải lớn hơn 0' });
+    }
     await pool.execute(
       `UPDATE inventory_items
        SET barcode = COALESCE(?, barcode),
            item_name = COALESCE(?, item_name),
            image_url = ?,
            price = COALESCE(?, price),
+           import_price = COALESCE(?, import_price),
            unit = COALESCE(?, unit),
            stock = COALESCE(?, stock),
            status = COALESCE(?, status)
@@ -79,6 +91,7 @@ router.put('/items/:id', async (req, res) => {
         item_name || name || null,
         image_url ?? null,
         price == null ? null : Number(price),
+        nextImportPrice == null ? null : Number(nextImportPrice),
         unit || null,
         stock == null && stockQuantity == null ? null : Number(stock ?? stockQuantity),
         status || null,
@@ -112,12 +125,50 @@ router.get('/logs', async (req, res) => {
   }
 });
 
+router.get('/cost/:barcode', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT
+         ii.barcode,
+         COALESCE(
+           (
+             SELECT il.import_price
+             FROM inventory_logs il
+             WHERE il.inventory_item_id = ii.inventory_item_id
+               AND il.action = 'import'
+               AND il.import_price IS NOT NULL
+             ORDER BY il.created_at DESC, il.log_id DESC
+             LIMIT 1
+           ),
+           ii.import_price
+         ) AS import_price
+       FROM inventory_items ii
+       WHERE ii.barcode = ? OR CAST(ii.inventory_item_id AS CHAR) = ?
+       LIMIT 1`,
+      [req.params.barcode, req.params.barcode]
+    );
+    if (rows.length === 0 || rows[0].import_price == null) {
+      return res.json({ success: true, data: { import_price: null } });
+    }
+    res.json({
+      success: true,
+      data: { import_price: Number(rows[0].import_price) },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi lấy giá nhập', error: error.message });
+  }
+});
+
 router.post('/import', async (req, res) => {
   const connection = await pool.getConnection();
   try {
-    const { inventory_item_id, employee_id, quantity, note } = req.body;
+    const { inventory_item_id, employee_id, quantity, import_price, importPrice, note } = req.body;
     if (!inventory_item_id || !employee_id || Number(quantity) <= 0) {
       return res.status(400).json({ success: false, message: 'Vui lòng nhập inventory_item_id, employee_id, quantity' });
+    }
+    const nextImportPrice = import_price ?? importPrice;
+    if (nextImportPrice == null || Number(nextImportPrice) <= 0) {
+      return res.status(400).json({ success: false, message: 'Giá nhập phải lớn hơn 0' });
     }
 
     await connection.beginTransaction();
@@ -127,14 +178,15 @@ router.post('/import', async (req, res) => {
     );
     if (items.length === 0) throw new Error('Không tìm thấy hàng trong kho');
     const itemId = Number(items[0].inventory_item_id);
-    await connection.execute('UPDATE inventory_items SET stock = stock + ? WHERE inventory_item_id = ?', [
+    await connection.execute('UPDATE inventory_items SET stock = stock + ?, import_price = ? WHERE inventory_item_id = ?', [
       Number(quantity),
+      Number(nextImportPrice),
       itemId,
     ]);
     await connection.execute(
-      `INSERT INTO inventory_logs (inventory_item_id, product_id, employee_id, action, quantity, note)
-       VALUES (?, NULL, ?, 'import', ?, ?)`,
-      [itemId, Number(employee_id), Number(quantity), note || null]
+      `INSERT INTO inventory_logs (inventory_item_id, product_id, employee_id, action, quantity, import_price, note)
+       VALUES (?, NULL, ?, 'import', ?, ?, ?)`,
+      [itemId, Number(employee_id), Number(quantity), Number(nextImportPrice), note || null]
     );
     await connection.commit();
     res.json({ success: true, message: 'Đã nhập kho' });

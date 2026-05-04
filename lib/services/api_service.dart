@@ -32,8 +32,13 @@ class ApiService {
   static Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
   static Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-      };
+    'Content-Type': 'application/json',
+  };
+
+  static Map<String, String> _adminHeaders(int adminUserId) => {
+    ..._headers,
+    'x-user-id': adminUserId.toString(),
+  };
 
   static dynamic _decode(http.Response response) {
     final body = response.body.isEmpty
@@ -65,12 +70,17 @@ class ApiService {
     return <String, dynamic>{};
   }
 
-  static Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await http.post(
-      _uri('/api/auth/login'),
-      headers: _headers,
-      body: jsonEncode({'email': email, 'password': password}),
-    ).timeout(_timeout);
+  static Future<Map<String, dynamic>> login(
+    String email,
+    String password,
+  ) async {
+    final response = await http
+        .post(
+          _uri('/api/auth/login'),
+          headers: _headers,
+          body: jsonEncode({'email': email, 'password': password}),
+        )
+        .timeout(_timeout);
     final body = _decode(response);
     return Map<String, dynamic>.from((body as Map)['user'] as Map);
   }
@@ -82,67 +92,77 @@ class ApiService {
     String? phone,
     String? address,
   }) async {
-    final response = await http.post(
-      _uri('/api/auth/register'),
-      headers: _headers,
-      body: jsonEncode({
-        'full_name': fullName,
-        'email': email,
-        'password': password,
-        'phone': phone,
-        'address': address,
-      }),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _uri('/api/auth/register'),
+          headers: _headers,
+          body: jsonEncode({
+            'full_name': fullName,
+            'email': email,
+            'password': password,
+            'phone': phone,
+            'address': address,
+          }),
+        )
+        .timeout(_timeout);
     _decode(response);
   }
 
   static Future<List<User>> fetchUsers() async {
     final response = await http.get(_uri('/api/users')).timeout(_timeout);
     final body = _decode(response);
-    return _dataList(body)
-        .map((e) => User.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return _dataList(
+      body,
+    ).map((e) => User.fromJson(Map<String, dynamic>.from(e as Map))).toList();
   }
 
   static Future<User> createUser(User user) async {
-    final response = await http.post(
-      _uri('/api/users'),
-      headers: _headers,
-      body: jsonEncode(user.toJson()),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _uri('/api/users'),
+          headers: _headers,
+          body: jsonEncode(user.toJson()),
+        )
+        .timeout(_timeout);
     final body = _decode(response);
     return User.fromJson(_dataMap(body));
   }
 
   static Future<User> updateUser(int userId, User user) async {
-    final response = await http.put(
-      _uri('/api/users/$userId'),
-      headers: _headers,
-      body: jsonEncode(user.toJson()),
-    ).timeout(_timeout);
+    final response = await http
+        .put(
+          _uri('/api/users/$userId'),
+          headers: _headers,
+          body: jsonEncode(user.toJson()),
+        )
+        .timeout(_timeout);
     final body = _decode(response);
     return User.fromJson(_dataMap(body));
   }
 
   static Future<void> deleteUser(int userId) async {
-    final response = await http.delete(_uri('/api/users/$userId')).timeout(_timeout);
+    final response = await http
+        .delete(_uri('/api/users/$userId'))
+        .timeout(_timeout);
     _decode(response);
   }
 
   static Future<List<Map<String, dynamic>>> fetchCategories() async {
     final response = await http.get(_uri('/api/categories')).timeout(_timeout);
     final body = _decode(response);
-    return _dataList(body)
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
+    return _dataList(
+      body,
+    ).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   static Future<Map<String, dynamic>> createCategory(String name) async {
-    final response = await http.post(
-      _uri('/api/categories'),
-      headers: _headers,
-      body: jsonEncode({'category_name': name}),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _uri('/api/categories'),
+          headers: _headers,
+          body: jsonEncode({'category_name': name}),
+        )
+        .timeout(_timeout);
     return _dataMap(_decode(response));
   }
 
@@ -155,25 +175,31 @@ class ApiService {
   }
 
   static Future<Product> createProduct(Product product) async {
-    final response = await http.post(
-      _uri('/api/products'),
-      headers: _headers,
-      body: jsonEncode(product.toJson()),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _uri('/api/products'),
+          headers: _headers,
+          body: jsonEncode(product.toJson()),
+        )
+        .timeout(_timeout);
     return Product.fromJson(_dataMap(_decode(response)));
   }
 
   static Future<Product> updateProduct(Product product) async {
-    final response = await http.put(
-      _uri('/api/products/${product.id}'),
-      headers: _headers,
-      body: jsonEncode(product.toJson()),
-    ).timeout(_timeout);
+    final response = await http
+        .put(
+          _uri('/api/products/${product.id}'),
+          headers: _headers,
+          body: jsonEncode(product.toJson()),
+        )
+        .timeout(_timeout);
     return Product.fromJson(_dataMap(_decode(response)));
   }
 
   static Future<void> deleteProduct(String productId) async {
-    final response = await http.delete(_uri('/api/products/$productId')).timeout(_timeout);
+    final response = await http
+        .delete(_uri('/api/products/$productId'))
+        .timeout(_timeout);
     _decode(response);
   }
 
@@ -191,30 +217,42 @@ class ApiService {
   static Future<List<Order>> fetchOrders() async {
     final response = await http.get(_uri('/api/orders')).timeout(_timeout);
     final body = _decode(response);
-    return _dataList(body)
-        .map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return _dataList(
+      body,
+    ).map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
   }
 
-  static Future<Order> createOrder(Order order, {int? customerId, int? employeeId}) async {
-    final response = await http.post(
-      _uri('/api/orders'),
-      headers: _headers,
-      body: jsonEncode(order.toJson(customerId: customerId, employeeId: employeeId)),
-    ).timeout(_timeout);
+  static Future<Order> createOrder(
+    Order order, {
+    int? customerId,
+    int? employeeId,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/orders'),
+          headers: _headers,
+          body: jsonEncode(
+            order.toJson(customerId: customerId, employeeId: employeeId),
+          ),
+        )
+        .timeout(_timeout);
     return Order.fromJson(_dataMap(_decode(response)));
   }
 
   static Future<List<Map<String, dynamic>>> fetchInventoryLogs() async {
-    final response = await http.get(_uri('/api/inventory/logs')).timeout(_timeout);
+    final response = await http
+        .get(_uri('/api/inventory/logs'))
+        .timeout(_timeout);
     final body = _decode(response);
-    return _dataList(body)
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
+    return _dataList(
+      body,
+    ).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   static Future<List<InventoryItem>> fetchInventoryItems() async {
-    final response = await http.get(_uri('/api/inventory/items')).timeout(_timeout);
+    final response = await http
+        .get(_uri('/api/inventory/items'))
+        .timeout(_timeout);
     final body = _decode(response);
     return _dataList(body)
         .map((e) => InventoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -222,20 +260,24 @@ class ApiService {
   }
 
   static Future<InventoryItem> createInventoryItem(InventoryItem item) async {
-    final response = await http.post(
-      _uri('/api/inventory/items'),
-      headers: _headers,
-      body: jsonEncode(item.toJson()),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _uri('/api/inventory/items'),
+          headers: _headers,
+          body: jsonEncode(item.toJson()),
+        )
+        .timeout(_timeout);
     return InventoryItem.fromJson(_dataMap(_decode(response)));
   }
 
   static Future<InventoryItem> updateInventoryItem(InventoryItem item) async {
-    final response = await http.put(
-      _uri('/api/inventory/items/${item.id}'),
-      headers: _headers,
-      body: jsonEncode(item.toJson()),
-    ).timeout(_timeout);
+    final response = await http
+        .put(
+          _uri('/api/inventory/items/${item.id}'),
+          headers: _headers,
+          body: jsonEncode(item.toJson()),
+        )
+        .timeout(_timeout);
     return InventoryItem.fromJson(_dataMap(_decode(response)));
   }
 
@@ -243,19 +285,34 @@ class ApiService {
     required String inventoryItemId,
     required int employeeId,
     required int quantity,
+    required double importPrice,
     String? note,
   }) async {
-    final response = await http.post(
-      _uri('/api/inventory/import'),
-      headers: _headers,
-      body: jsonEncode({
-        'inventory_item_id': inventoryItemId,
-        'employee_id': employeeId,
-        'quantity': quantity,
-        'note': note,
-      }),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _uri('/api/inventory/import'),
+          headers: _headers,
+          body: jsonEncode({
+            'inventory_item_id': inventoryItemId,
+            'employee_id': employeeId,
+            'quantity': quantity,
+            'import_price': importPrice,
+            'note': note,
+          }),
+        )
+        .timeout(_timeout);
     _decode(response);
+  }
+
+  static Future<double?> fetchInventoryImportPrice(String barcode) async {
+    final response = await http
+        .get(_uri('/api/inventory/cost/$barcode'))
+        .timeout(_timeout);
+    final body = _dataMap(_decode(response));
+    final value = body['import_price'];
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 
   static Future<void> adjustInventory({
@@ -264,16 +321,18 @@ class ApiService {
     required int actualQuantity,
     String? note,
   }) async {
-    final response = await http.post(
-      _uri('/api/inventory/adjust'),
-      headers: _headers,
-      body: jsonEncode({
-        'inventory_item_id': inventoryItemId,
-        'employee_id': employeeId,
-        'actual_quantity': actualQuantity,
-        'note': note,
-      }),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _uri('/api/inventory/adjust'),
+          headers: _headers,
+          body: jsonEncode({
+            'inventory_item_id': inventoryItemId,
+            'employee_id': employeeId,
+            'actual_quantity': actualQuantity,
+            'note': note,
+          }),
+        )
+        .timeout(_timeout);
     _decode(response);
   }
 
@@ -284,22 +343,26 @@ class ApiService {
     required int quantity,
     String? note,
   }) async {
-    final response = await http.post(
-      _uri('/api/inventory/export'),
-      headers: _headers,
-      body: jsonEncode({
-        'inventory_item_id': inventoryItemId,
-        'product_id': productId == null ? null : int.tryParse(productId),
-        'employee_id': employeeId,
-        'quantity': quantity,
-        'note': note,
-      }),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _uri('/api/inventory/export'),
+          headers: _headers,
+          body: jsonEncode({
+            'inventory_item_id': inventoryItemId,
+            'product_id': productId == null ? null : int.tryParse(productId),
+            'employee_id': employeeId,
+            'quantity': quantity,
+            'note': note,
+          }),
+        )
+        .timeout(_timeout);
     _decode(response);
   }
 
   static Future<Map<String, int>> fetchCart(int userId) async {
-    final response = await http.get(_uri('/api/carts/$userId')).timeout(_timeout);
+    final response = await http
+        .get(_uri('/api/carts/$userId'))
+        .timeout(_timeout);
     final body = _dataMap(_decode(response));
     final items = (body['items'] as List?) ?? const [];
     return {
@@ -309,19 +372,47 @@ class ApiService {
   }
 
   static Future<void> saveCart(int userId, Map<String, int> cart) async {
-    final response = await http.put(
-      _uri('/api/carts/$userId'),
-      headers: _headers,
-      body: jsonEncode({
-        'items': cart.entries
-            .where((entry) => entry.value > 0)
-            .map((entry) => {
-                  'product_id': int.parse(entry.key),
-                  'quantity': entry.value,
-                })
-            .toList(),
-      }),
-    ).timeout(_timeout);
+    final response = await http
+        .put(
+          _uri('/api/carts/$userId'),
+          headers: _headers,
+          body: jsonEncode({
+            'items': cart.entries
+                .where((entry) => entry.value > 0)
+                .map(
+                  (entry) => {
+                    'product_id': int.parse(entry.key),
+                    'quantity': entry.value,
+                  },
+                )
+                .toList(),
+          }),
+        )
+        .timeout(_timeout);
     _decode(response);
+  }
+
+  static Future<Map<String, dynamic>> fetchRevenueReport(
+    int adminUserId,
+  ) async {
+    final response = await http
+        .get(_uri('/api/reports/revenue'), headers: _adminHeaders(adminUserId))
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchProductPerformanceReport(
+    int adminUserId,
+  ) async {
+    final response = await http
+        .get(
+          _uri('/api/reports/product-performance'),
+          headers: _adminHeaders(adminUserId),
+        )
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(
+      body,
+    ).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 }

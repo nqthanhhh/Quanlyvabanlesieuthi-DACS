@@ -53,6 +53,23 @@ class _EditProductScreenState extends State<EditProductScreen> {
     final newStock = int.parse(_stockController.text.trim());
 
     try {
+      final importPrice = await DBService.fetchLatestImportPrice(
+        widget.product.barcode ?? widget.product.id,
+      );
+      if (importPrice != null && newPrice < importPrice) {
+        throw Exception('Giá bán không được nhỏ hơn giá nhập');
+      }
+      if (importPrice == null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sản phẩm chưa có giá nhập, không thể kiểm tra giá vốn',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
       widget.product.name = newName;
       widget.product.price = newPrice;
       widget.product.unit = newUnit;

@@ -1,9 +1,9 @@
-// lib/screens/RevenueOverviewScreen.dart
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'order_list_screen.dart';
+
+import '../services/api_service.dart';
 import '../services/db_service.dart';
-import '../models/order.dart';
+import 'order_list_screen.dart';
+import 'product_performance_report_screen.dart';
 
 class RevenueOverviewScreen extends StatefulWidget {
   const RevenueOverviewScreen({super.key});
@@ -13,41 +13,90 @@ class RevenueOverviewScreen extends StatefulWidget {
 }
 
 class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
-  final String newProducts = '20';
-  final String totalCustomers = '50';
+  late Future<_RevenueDashboardData> _future;
 
-  // Tách Widget Card số liệu (Sử dụng Expanded)
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadData();
+  }
+
+  Future<_RevenueDashboardData> _loadData() async {
+    final rawUserId = DBService.settings().get('current_user_id');
+    final adminUserId = rawUserId is int
+        ? rawUserId
+        : int.tryParse(rawUserId?.toString() ?? '');
+    if (adminUserId == null) {
+      throw ApiException('Thiếu thông tin admin');
+    }
+    final revenue = await ApiService.fetchRevenueReport(adminUserId);
+    final products = await ApiService.fetchProductPerformanceReport(
+      adminUserId,
+    );
+    return _RevenueDashboardData(revenue: revenue, products: products);
+  }
+
+  void _reload() {
+    setState(() {
+      _future = _loadData();
+    });
+  }
+
+  String _formatCurrency(num amount) {
+    return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} đ';
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   Widget _buildMetricCard(
-      String title, String value, IconData icon, Color color,
-      {VoidCallback? onTap}) {
-    return Expanded( // Bắt buộc Expanded để chia không gian đều
+    String title,
+    String value,
+    IconData icon,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
+    return Expanded(
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Card(
           elevation: 1,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          // Padding nằm bên trong Card, không gây xung đột với Expanded
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style:
-                    const TextStyle(fontSize: 14, color: Colors.black54)),
+                Text(
+                  title,
+                  style: const TextStyle(fontSize: 14, color: Colors.black54),
+                ),
                 const SizedBox(height: 8),
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Text(
-                      value,
-                      style: const TextStyle(
-                          fontSize: 24, fontWeight: FontWeight.bold),
+                    Expanded(
+                      child: Text(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    Icon(icon, size: 16, color: color),
+                    Icon(icon, size: 18, color: color),
                   ],
                 ),
               ],
@@ -58,93 +107,132 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
     );
   }
 
-  // Hàm định dạng tiền tệ
-  String _formatCurrency(double amount) {
-    return '${amount.round().toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (Match m) => '${m[1]},',
-    )} ₫';
+  Widget _buildProductPerformanceTile(Map<String, dynamic> product) {
+    final name = (product['product_name'] ?? '').toString();
+    final quantity = _toInt(product['total_quantity_sold']);
+    final revenue = _toDouble(product['total_revenue']);
+    final stock = _toInt(product['current_stock']);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        leading: Container(
+          width: 50,
+          height: 50,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(Icons.trending_up, color: Colors.blue.shade700),
+        ),
+        title: Text(
+          name.isEmpty ? 'Sản phẩm chưa đặt tên' : name,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          'Đã bán: $quantity | Doanh thu: ${_formatCurrency(revenue)}',
+        ),
+        trailing: Text(
+          'Tồn: $stock',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
   }
 
-  // Widget hiển thị Hiệu suất sản phẩm (Giữ nguyên logic)
-  Widget _buildProductPerformanceTile(
-      String name, String quantity, String imagePath) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
+  Widget _buildError(Object error) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Tổng quan Doanh thu'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
       ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.asset(
-              imagePath,
-              width: 50,
-              height: 50,
-              fit: BoxFit.cover,
-              errorBuilder: (c, e, s) => Container(
-                width: 50,
-                height: 50,
-                color: Colors.grey.shade200,
-                child: const Icon(Icons.image_not_supported, size: 20),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 42),
+              const SizedBox(height: 12),
+              Text(
+                error is ApiException
+                    ? error.message
+                    : 'Không tải được báo cáo',
+                textAlign: TextAlign.center,
               ),
-            ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: _reload,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Thử lại'),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  quantity,
-                  style: const TextStyle(fontSize: 14, color: Colors.black54),
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.trending_up, color: Colors.green),
-        ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<Box<Order>>(
-      valueListenable: DBService.orders().listenable(),
-      builder: (context, box, _) {
-        final totalOrders = box.length;
-        final totalRevenue = DBService.getTotalRevenue();
+    return FutureBuilder<_RevenueDashboardData>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Tổng quan Doanh thu'),
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return _buildError(snapshot.error!);
+        }
+
+        final data = snapshot.data!;
+        final revenue = data.revenue;
+        final totalRevenue = _toDouble(revenue['total_revenue']);
+        final totalProfit = revenue['total_profit'];
+        final totalOrders = _toInt(revenue['total_orders']);
+        final totalProductsSold = _toInt(revenue['total_products_sold']);
+        final profitNote = (revenue['profit_note'] ?? '').toString();
+        final topProducts = data.products.take(3).toList();
+
+        final isEmpty =
+            totalRevenue == 0 && totalOrders == 0 && totalProductsSold == 0;
 
         return Scaffold(
           appBar: AppBar(
             title: const Text('Tổng quan Doanh thu'),
             backgroundColor: Colors.blue.shade600,
             foregroundColor: Colors.white,
+            actions: [
+              IconButton(
+                tooltip: 'Tải lại',
+                icon: const Icon(Icons.refresh),
+                onPressed: _reload,
+              ),
+            ],
           ),
           body: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 1. Header (Tổng quan)
                 Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -153,50 +241,55 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blue.withOpacity(0.2),
-                        spreadRadius: 2,
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Doanh thu (Tổng cộng)',
-                        style: TextStyle(
-                            color: Colors.white70, fontSize: 14),
+                        'Tổng doanh thu',
+                        style: TextStyle(color: Colors.white70, fontSize: 14),
                       ),
                       Text(
                         _formatCurrency(totalRevenue),
                         style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                       const SizedBox(height: 10),
-                      // Thêm một dòng số liệu nhỏ nếu cần
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Cập nhật theo thời gian thực',
-                              style: TextStyle(color: Colors.white60, fontSize: 12)),
-                          const Icon(Icons.show_chart,
-                              color: Colors.white70, size: 20),
-                        ],
+                      Text(
+                        isEmpty
+                            ? 'Chưa có đơn hàng đã thanh toán hoặc hoàn thành'
+                            : 'Dữ liệu lấy từ MySQL qua API báo cáo',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
-
-                // 2. Các chỉ số quan trọng (Đã FIX LỖI OVERFLOW)
+                const SizedBox(height: 16),
+                if (totalProfit == null)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: Text(
+                      profitNote.isEmpty
+                          ? 'Chưa đủ dữ liệu tính lợi nhuận'
+                          : profitNote,
+                      style: TextStyle(color: Colors.orange.shade900),
+                    ),
+                  ),
+                const SizedBox(height: 16),
                 Row(
                   children: [
-                    // Thẻ 1: Số đơn hàng
                     _buildMetricCard(
                       'Số đơn hàng',
                       '$totalOrders',
@@ -206,49 +299,67 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const OrderListScreen()),
+                            builder: (_) => const OrderListScreen(),
+                          ),
                         );
                       },
                     ),
-
-                    // 💡 SỬ DỤNG SIZEDBOX NHỎ NHẤT (8) để tránh tràn
                     const SizedBox(width: 8),
-
-                    // Thẻ 2: Khách hàng mới (hoặc Sản phẩm mới)
                     _buildMetricCard(
-                      'Sản phẩm mới',
-                      newProducts,
-                      Icons.new_releases,
-                      Colors.green,
+                      'Sản phẩm đã bán',
+                      '$totalProductsSold',
+                      Icons.inventory_2_outlined,
+                      Colors.blue,
                     ),
                   ],
                 ),
+                if (totalProfit != null) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildMetricCard(
+                        'Tổng lợi nhuận',
+                        _formatCurrency(_toDouble(totalProfit)),
+                        Icons.ssid_chart,
+                        Colors.orange,
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 24),
-
-                // 3. Hiệu suất sản phẩm (Giữ nguyên)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
                       'Hiệu suất sản phẩm',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     TextButton(
-                      onPressed: () {},
-                      child: const Text('Xem thêm',
-                          style: TextStyle(color: Color(0xFF3B82F6))),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const ProductPerformanceReportScreen(),
+                          ),
+                        );
+                      },
+                      child: const Text('Xem thêm'),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-
-                // Danh sách sản phẩm bán chạy (Dữ liệu giả định)
-                _buildProductPerformanceTile(
-                    'Táo đỏ', '50 quả', 'assets/images/anh1.png'),
-                _buildProductPerformanceTile(
-                    'Nước Sprite', '50 lon', 'assets/images/coke.png'),
-                _buildProductPerformanceTile(
-                    'Quả chuối', '10 lải', 'assets/images/chuoi.png'),
+                if (topProducts.isEmpty)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('Chưa có dữ liệu hiệu suất sản phẩm.'),
+                    ),
+                  )
+                else
+                  ...topProducts.map(_buildProductPerformanceTile),
               ],
             ),
           ),
@@ -256,4 +367,11 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
       },
     );
   }
+}
+
+class _RevenueDashboardData {
+  final Map<String, dynamic> revenue;
+  final List<Map<String, dynamic>> products;
+
+  _RevenueDashboardData({required this.revenue, required this.products});
 }

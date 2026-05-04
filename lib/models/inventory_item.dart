@@ -6,6 +6,7 @@ class InventoryItem {
   String id;
   String name;
   double price;
+  double? importPrice;
   String unit;
   int stockQuantity;
 
@@ -13,6 +14,7 @@ class InventoryItem {
     required this.id,
     required this.name,
     required this.price,
+    this.importPrice,
     required this.unit,
     this.stockQuantity = 0,
   });
@@ -30,9 +32,13 @@ class InventoryItem {
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
     return InventoryItem(
-      id: (json['barcode'] ?? json['id'] ?? json['inventory_item_id']).toString(),
+      id: (json['barcode'] ?? json['id'] ?? json['inventory_item_id'])
+          .toString(),
       name: (json['item_name'] ?? json['name'] ?? '').toString(),
       price: _toDouble(json['price']),
+      importPrice: json['import_price'] == null && json['importPrice'] == null
+          ? null
+          : _toDouble(json['import_price'] ?? json['importPrice']),
       unit: (json['unit'] ?? 'sp').toString(),
       stockQuantity: _toInt(json['stock'] ?? json['stockQuantity']),
     );
@@ -44,6 +50,7 @@ class InventoryItem {
       'barcode': id,
       'item_name': name,
       'price': price,
+      'import_price': importPrice,
       'unit': unit,
       'stock': stockQuantity,
     };
@@ -70,13 +77,14 @@ class InventoryItemAdapter extends TypeAdapter<InventoryItem> {
       price: (fields[2] as num).toDouble(),
       unit: fields[3].toString(),
       stockQuantity: (fields[4] as num).toInt(),
+      importPrice: fields[5] == null ? null : (fields[5] as num).toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, InventoryItem obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -86,6 +94,8 @@ class InventoryItemAdapter extends TypeAdapter<InventoryItem> {
       ..writeByte(3)
       ..write(obj.unit)
       ..writeByte(4)
-      ..write(obj.stockQuantity);
+      ..write(obj.stockQuantity)
+      ..writeByte(5)
+      ..write(obj.importPrice);
   }
 }

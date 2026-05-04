@@ -83,6 +83,7 @@ CREATE TABLE inventory_items (
   item_name VARCHAR(150) NOT NULL,
   image_url VARCHAR(255),
   price DECIMAL(10,2) NOT NULL,
+  import_price DECIMAL(10,2) NULL,
   unit VARCHAR(50) NOT NULL DEFAULT 'sp',
   stock INT NOT NULL DEFAULT 0,
   status VARCHAR(20) DEFAULT 'active',
@@ -203,6 +204,7 @@ CREATE TABLE inventory_logs (
   employee_id INT NOT NULL,
   action VARCHAR(20) NOT NULL,
   quantity INT NOT NULL,
+  import_price DECIMAL(10,2) NULL,
   note VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 

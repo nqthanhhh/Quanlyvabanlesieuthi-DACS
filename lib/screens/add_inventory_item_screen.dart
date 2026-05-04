@@ -20,6 +20,7 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
   late TextEditingController _idController;
   late TextEditingController _nameController;
   late TextEditingController _priceController;
+  late TextEditingController _importPriceController;
   late TextEditingController _unitController;
   late TextEditingController _stockController;
   bool get _isEditing => widget.item != null;
@@ -33,6 +34,9 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
     _nameController = TextEditingController(text: widget.item?.name ?? '');
     _priceController = TextEditingController(
       text: widget.item?.price.toString() ?? '',
+    );
+    _importPriceController = TextEditingController(
+      text: widget.item?.importPrice?.toString() ?? '',
     );
     _unitController = TextEditingController(text: widget.item?.unit ?? '');
     _stockController = TextEditingController(
@@ -50,6 +54,7 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
     _idController.dispose();
     _nameController.dispose();
     _priceController.dispose();
+    _importPriceController.dispose();
     _unitController.dispose();
     _stockController.dispose();
     super.dispose();
@@ -71,6 +76,7 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
       final id = _idController.text.trim();
       final name = _nameController.text.trim();
       final price = double.parse(_priceController.text.trim());
+      final importPrice = double.parse(_importPriceController.text.trim());
       final unit = _unitController.text.trim();
       final qty = int.parse(_stockController.text.trim());
 
@@ -79,13 +85,16 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
         final newId = id;
 
         if (newId != existing.id) {
-          throw Exception('Không đổi mã ID khi sửa kho. Hãy tạo mặt hàng mới nếu cần mã khác.');
+          throw Exception(
+            'Không đổi mã ID khi sửa kho. Hãy tạo mặt hàng mới nếu cần mã khác.',
+          );
         }
 
         final updated = InventoryItem(
           id: existing.id,
           name: name,
           price: price,
+          importPrice: importPrice,
           unit: unit,
           stockQuantity: existing.stockQuantity,
         );
@@ -116,6 +125,7 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
           barcode: id,
           name: name,
           price: price,
+          importPrice: importPrice,
           unit: unit,
           quantity: qty,
           imagePath: _imagePath,
@@ -177,13 +187,30 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
               TextFormField(
                 controller: _priceController,
                 decoration: const InputDecoration(
-                  labelText: 'Giá',
+                  labelText: 'Giá bán dự kiến',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 validator: (v) => (v == null || v.isEmpty) ? 'Nhập giá' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _importPriceController,
+                decoration: const InputDecoration(
+                  labelText: 'Giá nhập',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Nhập giá nhập';
+                  final n = double.tryParse(v);
+                  if (n == null || n <= 0) return 'Giá nhập phải lớn hơn 0';
+                  return null;
+                },
               ),
               const SizedBox(height: 12),
               TextFormField(

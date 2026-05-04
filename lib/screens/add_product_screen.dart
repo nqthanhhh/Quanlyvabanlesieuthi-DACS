@@ -115,7 +115,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e is ApiException ? e.message : 'Lỗi thêm danh mục')),
+          SnackBar(
+            content: Text(e is ApiException ? e.message : 'Lỗi thêm danh mục'),
+          ),
         );
       }
     }
@@ -264,6 +266,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       if (_selectedCategoryId == null) {
         throw Exception('Vui lòng thêm hoặc chọn danh mục.');
+      }
+
+      final importPrice = await DBService.fetchLatestImportPrice(id);
+      if (importPrice != null && price < importPrice) {
+        throw Exception('Giá bán không được nhỏ hơn giá nhập');
+      }
+      if (importPrice == null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sản phẩm chưa có giá nhập, không thể kiểm tra giá vốn',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
       }
 
       if (_isEditing) {

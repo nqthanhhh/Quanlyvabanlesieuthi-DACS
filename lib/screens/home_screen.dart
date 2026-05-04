@@ -10,9 +10,12 @@ import 'RevenueOverviewScreen.dart'; // Đã thêm
 import 'product_management_screen.dart';
 import 'inventory_management_screen.dart';
 import 'employee.dart';
-import 'role.dart';
+import 'customer_management_screen.dart';
+import 'order_list_screen.dart';
 import 'order_management_screen.dart';
+import 'product_performance_report_screen.dart';
 import 'security_info_screen.dart';
+import '../widgets/role_bottom_navigation_bar.dart';
 
 // --- WIDGET CHÍNH ---
 class HomeScreen extends StatefulWidget {
@@ -31,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _currentUserEmail;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  RoleBottomTab _currentBottomTab = RoleBottomTab.home;
   bool _isLoading = true;
   // *** INFINITE SCROLL LOGIC ***
   final ScrollController _scrollController = ScrollController();
@@ -159,7 +163,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // Tách Menu Items
   List<Widget> _buildDrawerMenuItems() {
     final List<Widget> items = [
-      // THÊM MỚI: Mục Thông tin bảo mật/Đổi mật khẩu (ĐÃ SỬA LỖI CÚ PHÁP)
       ListTile(
         leading: const Icon(Icons.lock_outline),
         title: const Text('Thông tin bảo mật'),
@@ -174,29 +177,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
-      ), // <--- DẤU PHẨY ĐÓNG LISTTILE NÀY LÀ CẦN THIẾT
-      // Mục "Đơn hàng" hiện có (CHÚ Ý: Không cần dấu phẩy ở đây nếu không có mục tiếp theo)
-      ListTile(
-        leading: const Icon(Icons.shopping_bag_outlined),
-        title: const Text('Lịch sử đơn hàng'),
-        onTap: () {
-          // Đóng Drawer trước khi điều hướng
-          Navigator.of(context).pop();
-
-          // Điều hướng đến màn hình Quản lý Đơn hàng
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => OrderManagementScreen()));
-        },
       ),
     ];
 
     if (widget.role == 'admin') {
       items.insertAll(0, [
-        // BỎ const ở ListTile vì nó gọi hàm instance và onTap không phải là const
         ListTile(
           leading: const Icon(Icons.account_balance_wallet_outlined),
-          title: const Text('Tổng quan doanh thu'),
+          title: const Text('Xem doanh thu và lợi nhuận'),
           onTap: () {
             Navigator.of(context).pop(); // Đóng Drawer
             Navigator.of(context).push(
@@ -204,6 +192,33 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
+        ListTile(
+          leading: const Icon(Icons.bar_chart_outlined),
+          title: const Text('Xem báo cáo hiệu suất sản phẩm'),
+          onTap: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const ProductPerformanceReportScreen(),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.groups_outlined),
+          title: const Text('Quản lý khách hàng'),
+          onTap: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const CustomerManagementScreen(),
+              ),
+            );
+          },
+        ),
+      ]);
+    } else if (widget.role == 'employee') {
+      items.insertAll(0, [
         ListTile(
           leading: const Icon(Icons.inventory_2_outlined),
           title: const Text('Quản lý sản phẩm'),
@@ -225,26 +240,6 @@ class _HomeScreenState extends State<HomeScreen> {
               MaterialPageRoute(
                 builder: (_) => const InventoryManagementScreen(),
               ),
-            );
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.people_alt_outlined),
-          title: const Text('Nhân viên'),
-          onTap: () {
-            Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => EmployeeManagementScreen()),
-            );
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.security_outlined),
-          title: const Text('Vai trò'),
-          onTap: () {
-            Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RoleManagementScreen()),
             );
           },
         ),
@@ -496,6 +491,82 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _handleBottomTab(RoleBottomTab tab) {
+    setState(() => _currentBottomTab = tab);
+
+    switch (tab) {
+      case RoleBottomTab.home:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+          );
+        }
+        break;
+      case RoleBottomTab.employees:
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => EmployeeManagementScreen()));
+        break;
+      case RoleBottomTab.scan:
+        _showScanPlaceholder();
+        break;
+      case RoleBottomTab.invoices:
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => OrderManagementScreen()));
+        break;
+      case RoleBottomTab.offers:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+          );
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đang hiển thị ưu đãi hôm nay')),
+        );
+        break;
+      case RoleBottomTab.cart:
+        _openCartSheet(context);
+        break;
+      case RoleBottomTab.orders:
+        final rawUserId = DBService.settings().get('current_user_id');
+        final currentUserId = rawUserId is int
+            ? rawUserId
+            : int.tryParse(rawUserId?.toString() ?? '');
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => OrderListScreen(customerId: currentUserId),
+          ),
+        );
+        break;
+      case RoleBottomTab.account:
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const ProfileViewScreen()));
+        break;
+    }
+  }
+
+  void _showScanPlaceholder() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Quét mã'),
+        content: const Text('Chức năng quét mã sẽ được kết nối ở bước sau.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -605,7 +676,12 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
 
-      floatingActionButton: _buildCartFloatingActionButton(),
+      floatingActionButton: null,
+      bottomNavigationBar: RoleBottomNavigationBar(
+        role: widget.role,
+        currentTab: _currentBottomTab,
+        onTabSelected: _handleBottomTab,
+      ),
     );
   }
 

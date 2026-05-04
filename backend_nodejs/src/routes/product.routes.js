@@ -3,6 +3,30 @@ const pool = require('../config/db');
 
 const router = express.Router();
 
+async function getLatestImportPrice(barcode) {
+  if (!barcode) return null;
+  const [rows] = await pool.execute(
+    `SELECT COALESCE(
+       (
+         SELECT il.import_price
+         FROM inventory_logs il
+         WHERE il.inventory_item_id = ii.inventory_item_id
+           AND il.action = 'import'
+           AND il.import_price IS NOT NULL
+         ORDER BY il.created_at DESC, il.log_id DESC
+         LIMIT 1
+       ),
+       ii.import_price
+     ) AS import_price
+     FROM inventory_items ii
+     WHERE ii.barcode = ? OR CAST(ii.inventory_item_id AS CHAR) = ?
+     LIMIT 1`,
+    [barcode, barcode]
+  );
+  if (rows.length === 0 || rows[0].import_price == null) return null;
+  return Number(rows[0].import_price);
+}
+
 function toProduct(row) {
   return {
     id: String(row.product_id),
@@ -75,12 +99,20 @@ router.post('/', async (req, res) => {
     const productName = product_name || name;
     const productBarcode = barcode || `P${Date.now()}`;
     const productStock = Number(stock ?? stockQuantity ?? 0);
+    const productPrice = Number(price);
 
     if (!productName || price == null || !category_id) {
       return res.status(400).json({
         success: false,
         message: 'Vui lòng nhập product_name, price, category_id',
       });
+    }
+    if (productPrice <= 0) {
+      return res.status(400).json({ success: false, message: 'Giá bán phải lớn hơn 0' });
+    }
+    const importPrice = await getLatestImportPrice(productBarcode);
+    if (importPrice != null && productPrice < importPrice) {
+      return res.status(400).json({ success: false, message: 'Giá bán không được nhỏ hơn giá nhập' });
     }
 
     const [result] = await pool.execute(
@@ -92,7 +124,7 @@ router.post('/', async (req, res) => {
         productBarcode,
         description || null,
         image_url || null,
-        Number(price),
+        productPrice,
         unit || 'sp',
         productStock,
         Number(min_stock ?? 10),
@@ -107,7 +139,12 @@ router.post('/', async (req, res) => {
        WHERE p.product_id = ?`,
       [result.insertId]
     );
-    res.status(201).json({ success: true, message: 'Đã thêm sản phẩm', data: toProduct(rows[0]) });
+    res.status(201).json({
+      success: true,
+      message: 'Đã thêm sản phẩm',
+      warning: importPrice == null ? 'Sản phẩm chưa có giá nhập, không thể kiểm tra giá vốn' : null,
+      data: toProduct(rows[0]),
+    });
   } catch (error) {
     const status = error.code === 'ER_DUP_ENTRY' ? 409 : 500;
     res.status(status).json({ success: false, message: 'Lỗi thêm sản phẩm', error: error.message });
@@ -131,6 +168,23 @@ router.put('/:id', async (req, res) => {
       status,
     } = req.body;
 
+    const productPrice = price == null ? null : Number(price);
+    if (productPrice != null && productPrice <= 0) {
+      return res.status(400).json({ success: false, message: 'Giá bán phải lớn hơn 0' });
+    }
+    let productBarcode = barcode || null;
+    if (!productBarcode) {
+      const [currentProducts] = await pool.execute(
+        'SELECT barcode FROM products WHERE product_id = ?',
+        [req.params.id]
+      );
+      productBarcode = currentProducts[0]?.barcode || null;
+    }
+    const importPrice = productPrice == null ? null : await getLatestImportPrice(productBarcode);
+    if (productPrice != null && importPrice != null && productPrice < importPrice) {
+      return res.status(400).json({ success: false, message: 'Giá bán không được nhỏ hơn giá nhập' });
+    }
+
     await pool.execute(
       `UPDATE products
        SET product_name = COALESCE(?, product_name),
@@ -149,7 +203,7 @@ router.put('/:id', async (req, res) => {
         barcode || null,
         description ?? null,
         image_url ?? null,
-        price == null ? null : Number(price),
+        productPrice,
         unit || null,
         stock == null && stockQuantity == null ? null : Number(stock ?? stockQuantity),
         min_stock == null ? null : Number(min_stock),
@@ -169,7 +223,12 @@ router.put('/:id', async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy sản phẩm' });
     }
-    res.json({ success: true, message: 'Đã cập nhật sản phẩm', data: toProduct(rows[0]) });
+    res.json({
+      success: true,
+      message: 'Đã cập nhật sản phẩm',
+      warning: productPrice != null && importPrice == null ? 'Sản phẩm chưa có giá nhập, không thể kiểm tra giá vốn' : null,
+      data: toProduct(rows[0]),
+    });
   } catch (error) {
     const status = error.code === 'ER_DUP_ENTRY' ? 409 : 500;
     res.status(status).json({ success: false, message: 'Lỗi cập nhật sản phẩm', error: error.message });

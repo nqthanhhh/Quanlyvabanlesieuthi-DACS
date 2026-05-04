@@ -23,11 +23,24 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
   final TextEditingController _idController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _importPriceController = TextEditingController();
   final TextEditingController _unitController = TextEditingController();
   final TextEditingController _qtyController = TextEditingController(text: '0');
 
   String? _pickedImagePath;
   bool _processing = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _idController.dispose();
+    _nameController.dispose();
+    _priceController.dispose();
+    _importPriceController.dispose();
+    _unitController.dispose();
+    _qtyController.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickImage() async {
     final XFile? file = await ImagePicker().pickImage(
@@ -41,26 +54,51 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
   // --- HÀM GHI LỊCH SỬ CHO SẢN PHẨM ĐÃ CÓ ---
   Future<void> _addToExisting(InventoryItem item) async {
     final qtyController = TextEditingController(text: '1');
+    final importPriceController = TextEditingController(
+      text: item.importPrice?.toString() ?? '',
+    );
     final formKey = GlobalKey<FormState>();
-    final result = await showDialog<int?>(
+    final result = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Nhập thêm vào: ${item.name}'),
         content: Form(
           key: formKey,
-          child: TextFormField(
-            controller: qtyController,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Số lượng',
-              border: OutlineInputBorder(),
-            ),
-            validator: (v) {
-              if (v == null || v.isEmpty) return 'Nhập số lượng';
-              final n = int.tryParse(v);
-              if (n == null || n <= 0) return 'Số không hợp lệ';
-              return null;
-            },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: qtyController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Số lượng',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Nhập số lượng';
+                  final n = int.tryParse(v);
+                  if (n == null || n <= 0) return 'Số không hợp lệ';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: importPriceController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Giá nhập',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Nhập giá nhập';
+                  final n = double.tryParse(v);
+                  if (n == null || n <= 0) return 'Giá nhập phải lớn hơn 0';
+                  return null;
+                },
+              ),
+            ],
           ),
         ),
         actions: [
@@ -71,7 +109,12 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
           ElevatedButton(
             onPressed: () {
               if (formKey.currentState!.validate()) {
-                Navigator.of(context).pop(int.parse(qtyController.text.trim()));
+                Navigator.of(context).pop({
+                  'quantity': int.parse(qtyController.text.trim()),
+                  'importPrice': double.parse(
+                    importPriceController.text.trim(),
+                  ),
+                });
               }
             },
             child: const Text('Nhập'),
@@ -83,10 +126,16 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     if (result != null) {
       setState(() => _processing = true);
       try {
-        await DBService.importInventoryRemote(item: item, quantity: result);
+        final quantity = result['quantity'] as int;
+        final importPrice = result['importPrice'] as double;
+        await DBService.importInventoryRemote(
+          item: item,
+          quantity: quantity,
+          importPrice: importPrice,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã nhập $result vào ${item.name}'),
+            content: Text('Đã nhập $quantity vào ${item.name}'),
             backgroundColor: Colors.green,
           ),
         );
@@ -122,6 +171,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
 
       final name = _nameController.text.trim();
       final price = double.parse(_priceController.text.trim());
+      final importPrice = double.parse(_importPriceController.text.trim());
       final unit = _unitController.text.trim();
       final qty = int.parse(_qtyController.text.trim());
 
@@ -129,6 +179,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
         barcode: id,
         name: name,
         price: price,
+        importPrice: importPrice,
         unit: unit,
         quantity: qty,
         imagePath: _pickedImagePath,
@@ -136,9 +187,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Đã thêm ${saved.name} vào kho với SL: $qty',
-          ),
+          content: Text('Đã thêm ${saved.name} vào kho với SL: $qty'),
           backgroundColor: Colors.green,
         ),
       );
@@ -147,6 +196,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
       _idController.clear();
       _nameController.clear();
       _priceController.clear();
+      _importPriceController.clear();
       _unitController.clear();
       _qtyController.text = '0';
       _newFormKey.currentState!.reset();
@@ -213,77 +263,74 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
               child: ValueListenableBuilder(
                 valueListenable: DBService.inventoryProducts().listenable(),
                 builder: (context, Box invBox, _) {
-                      final allInventory = invBox.values.toList();
+                  final allInventory = invBox.values.toList();
 
-                      final query = _searchController.text.trim();
-                      final displayList = allInventory
-                          .where(
-                            (s) =>
-                                s is InventoryItem &&
-                                (query.isEmpty ||
-                                    (s.name.toLowerCase().contains(
-                                          query.toLowerCase(),
-                                        ) ||
-                                        s.id.toLowerCase().contains(
-                                          query.toLowerCase(),
-                                        ))),
-                          )
-                          .toList();
+                  final query = _searchController.text.trim();
+                  final displayList = allInventory
+                      .where(
+                        (s) =>
+                            s is InventoryItem &&
+                            (query.isEmpty ||
+                                (s.name.toLowerCase().contains(
+                                      query.toLowerCase(),
+                                    ) ||
+                                    s.id.toLowerCase().contains(
+                                      query.toLowerCase(),
+                                    ))),
+                      )
+                      .toList();
 
-                      if (displayList.isEmpty) {
-                        return const Center(
-                          child: Text('Không tìm thấy sản phẩm phù hợp'),
+                  if (displayList.isEmpty) {
+                    return const Center(
+                      child: Text('Không tìm thấy sản phẩm phù hợp'),
+                    );
+                  }
+
+                  return ListView.separated(
+                    itemCount: displayList.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final item = displayList[index];
+                      final id = item.id;
+                      final name = item.name;
+                      final stock = item.stockQuantity;
+                      final unit = item.unit;
+                      final imgPath = DBService.productImages().get(id);
+                      Widget leading;
+                      if (imgPath != null && File(imgPath).existsSync()) {
+                        leading = SizedBox(
+                          width: 56,
+                          height: 56,
+                          child: Image.file(File(imgPath), fit: BoxFit.cover),
+                        );
+                      } else {
+                        leading = CircleAvatar(
+                          child: Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          ),
                         );
                       }
 
-                      return ListView.separated(
-                        itemCount: displayList.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final item = displayList[index];
-                          final id = item.id;
-                          final name = item.name;
-                          final stock = item.stockQuantity;
-                          final unit = item.unit;
-                          final imgPath = DBService.productImages().get(id);
-                          Widget leading;
-                          if (imgPath != null && File(imgPath).existsSync()) {
-                            leading = SizedBox(
-                              width: 56,
-                              height: 56,
-                              child: Image.file(
-                                File(imgPath),
-                                fit: BoxFit.cover,
-                              ),
-                            );
-                          } else {
-                            leading = CircleAvatar(
-                              child: Text(
-                                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                              ),
-                            );
-                          }
-
-                          return ListTile(
-                            leading: leading,
-                            title: Text(name),
-                            subtitle: Text('Mã: $id • Tồn: $stock $unit'),
-                            trailing: ElevatedButton(
-                              onPressed: _processing
-                                  ? null
-                                  : () {
-                                      _addToExisting(item);
-                                    },
-                              child: const Text('Nhập'),
-                            ),
-                            onTap: _processing
-                                ? null
-                                : () {
-                                    _addToExisting(item);
-                                  },
-                          );
-                        },
+                      return ListTile(
+                        leading: leading,
+                        title: Text(name),
+                        subtitle: Text('Mã: $id • Tồn: $stock $unit'),
+                        trailing: ElevatedButton(
+                          onPressed: _processing
+                              ? null
+                              : () {
+                                  _addToExisting(item);
+                                },
+                          child: const Text('Nhập'),
+                        ),
+                        onTap: _processing
+                            ? null
+                            : () {
+                                _addToExisting(item);
+                              },
                       );
+                    },
+                  );
                 },
               ),
             ),
@@ -322,7 +369,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                   TextFormField(
                     controller: _priceController,
                     decoration: const InputDecoration(
-                      labelText: 'Giá bán (đơn vị)',
+                      labelText: 'Giá bán dự kiến',
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.number,
@@ -330,6 +377,25 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                       if (v == null || v.isEmpty) return 'Nhập giá bán';
                       final n = double.tryParse(v);
                       if (n == null || n <= 0) return 'Số không hợp lệ';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _importPriceController,
+                    decoration: const InputDecoration(
+                      labelText: 'Giá nhập',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Nhập giá nhập';
+                      final n = double.tryParse(v);
+                      if (n == null || n <= 0) {
+                        return 'Giá nhập phải lớn hơn 0';
+                      }
                       return null;
                     },
                   ),

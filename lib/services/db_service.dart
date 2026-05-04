@@ -457,6 +457,7 @@ class DBService {
   static Future<void> importInventoryRemote({
     required InventoryItem item,
     required int quantity,
+    required double importPrice,
     String? note,
   }) async {
     final employeeId = settings().get('current_user_id') as int?;
@@ -467,6 +468,7 @@ class DBService {
       inventoryItemId: item.id,
       employeeId: employeeId,
       quantity: quantity,
+      importPrice: importPrice,
       note: note,
     );
     await syncInventoryItemsFromApi();
@@ -496,6 +498,7 @@ class DBService {
     required String barcode,
     required String name,
     required double price,
+    required double importPrice,
     required String unit,
     required int quantity,
     String? imagePath,
@@ -503,6 +506,7 @@ class DBService {
     final item = InventoryItem(
       name: name,
       price: price,
+      importPrice: importPrice,
       unit: unit,
       id: barcode,
       stockQuantity: 0,
@@ -516,9 +520,14 @@ class DBService {
     await importInventoryRemote(
       item: saved,
       quantity: quantity,
+      importPrice: importPrice,
       note: 'Tạo mặt hàng kho',
     );
     return inventoryProducts().get(saved.id) ?? saved;
+  }
+
+  static Future<double?> fetchLatestImportPrice(String barcode) {
+    return ApiService.fetchInventoryImportPrice(barcode);
   }
 
   static Future<Product> releaseInventoryToShelf({
@@ -582,5 +591,4 @@ class DBService {
         )
         .toList();
   }
-
 }

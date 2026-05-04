@@ -6,7 +6,9 @@ import 'order_detail_screen.dart';
 // import 'order_detail_screen.dart'; // Màn hình chi tiết đơn hàng (giả định)
 
 class OrderListScreen extends StatefulWidget {
-  const OrderListScreen({super.key});
+  final int? customerId;
+
+  const OrderListScreen({super.key, this.customerId});
 
   @override
   State<OrderListScreen> createState() => _OrderListScreenState();
@@ -16,8 +18,8 @@ class _OrderListScreenState extends State<OrderListScreen> {
   // 💡 1. KHAI BÁO CÁC BIẾN CHO INFINITE SCROLL
   final ScrollController _scrollController = ScrollController();
   final int _ordersPerPage = 10; // Số lượng đơn hàng tải mỗi lần
-  int _loadedOrderCount = 10;    // Số lượng đơn hàng đang hiển thị
-  bool _isLoadingMore = false;    // Cờ kiểm tra đang tải dữ liệu
+  int _loadedOrderCount = 10; // Số lượng đơn hàng đang hiển thị
+  bool _isLoadingMore = false; // Cờ kiểm tra đang tải dữ liệu
 
   @override
   void initState() {
@@ -29,7 +31,9 @@ class _OrderListScreenState extends State<OrderListScreen> {
   // 💡 3. HÀM XỬ LÝ SỰ KIỆN CUỘN
   void _scrollListener() {
     // Kiểm tra nếu cuộn đến cuối danh sách VÀ không có quá trình tải nào đang diễn ra
-    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent && !_isLoadingMore) {
+    if (_scrollController.position.pixels ==
+            _scrollController.position.maxScrollExtent &&
+        !_isLoadingMore) {
       _loadMoreOrders();
     }
   }
@@ -37,7 +41,9 @@ class _OrderListScreenState extends State<OrderListScreen> {
   // 💡 4. HÀM TẢI THÊM ĐƠN HÀNG
   void _loadMoreOrders() {
     // Nếu số lượng đã tải bằng hoặc lớn hơn tổng số đơn hàng, thì không cần tải nữa.
-    final totalOrders = DBService.orders().length;
+    final totalOrders = _filterOrders(
+      DBService.orders().values.toList(),
+    ).length;
     if (_loadedOrderCount >= totalOrders) return;
 
     setState(() {
@@ -80,10 +86,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
     }
 
     String formatCurrency(double amount) {
-      return '${amount.round().toString().replaceAllMapped(
-        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-            (Match m) => '${m[1]},',
-      )} ₫';
+      return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} ₫';
     }
 
     return Card(
@@ -116,13 +119,17 @@ class _OrderListScreenState extends State<OrderListScreen> {
                     child: Text(
                       'Mã đơn: ${order.id}',
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: statusColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
@@ -156,14 +163,17 @@ class _OrderListScreenState extends State<OrderListScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Tổng tiền:',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Tổng tiền:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   Text(
                     formatCurrency(order.totalAmount),
                     style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: Colors.deepOrange.shade600),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.deepOrange.shade600,
+                    ),
                   ),
                 ],
               ),
@@ -188,11 +198,23 @@ class _OrderListScreenState extends State<OrderListScreen> {
     );
   }
 
+  List<Order> _filterOrders(List<Order> orders) {
+    final filtered = widget.customerId == null
+        ? orders
+        : orders
+              .where((order) => order.customerId == widget.customerId)
+              .toList();
+    filtered.sort((a, b) => b.orderDate.compareTo(a.orderDate));
+    return filtered;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Danh sách đơn hàng'),
+        title: Text(
+          widget.customerId == null ? 'Danh sách đơn hàng' : 'Đơn hàng của tôi',
+        ),
         backgroundColor: Colors.blue.shade600,
         foregroundColor: Colors.white,
       ),
@@ -200,8 +222,10 @@ class _OrderListScreenState extends State<OrderListScreen> {
         children: [
           // Thanh tìm kiếm (Giữ nguyên)
           Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: Container(
               height: 45,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -234,20 +258,26 @@ class _OrderListScreenState extends State<OrderListScreen> {
               valueListenable: DBService.orders().listenable(),
               builder: (context, box, _) {
                 // Lấy tất cả đơn hàng và sắp xếp theo ngày mới nhất
-                final allOrders = box.values.toList()
-                  ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
+                final allOrders = _filterOrders(box.values.toList());
 
                 // 💡 CHỈ LẤY SỐ LƯỢNG ĐÃ TẢI
-                final ordersToDisplay = allOrders.take(_loadedOrderCount).toList();
+                final ordersToDisplay = allOrders
+                    .take(_loadedOrderCount)
+                    .toList();
 
                 if (allOrders.isEmpty) {
-                  return const Center(
-                    child: Text('Chưa có đơn hàng nào được tạo.'),
+                  return Center(
+                    child: Text(
+                      widget.customerId == null
+                          ? 'Chưa có đơn hàng nào được tạo.'
+                          : 'Bạn chưa có đơn hàng nào.',
+                    ),
                   );
                 }
 
                 // Tính toán số lượng mục hiển thị: ordersToDisplay.length + (1 nếu đang tải thêm)
-                final itemCount = ordersToDisplay.length + (_isLoadingMore ? 1 : 0);
+                final itemCount =
+                    ordersToDisplay.length + (_isLoadingMore ? 1 : 0);
 
                 return ListView.builder(
                   controller: _scrollController, // 💡 GẮN SCROLL CONTROLLER

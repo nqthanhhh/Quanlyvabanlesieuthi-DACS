@@ -6,6 +6,8 @@ part 'order.g.dart'; // File tự động tạo bởi build_runner
 
 @HiveType(typeId: 2) // Chọn typeId chưa dùng (2)
 class Order extends HiveObject {
+  int? customerId;
+
   @HiveField(0)
   String id;
 
@@ -25,6 +27,7 @@ class Order extends HiveObject {
   List<OrderLine> items; // Danh sách sản phẩm trong đơn hàng
 
   Order({
+    this.customerId,
     required this.id,
     required this.orderDate,
     required this.totalAmount,
@@ -41,19 +44,30 @@ class Order extends HiveObject {
   factory Order.fromJson(Map<String, dynamic> json) {
     final rawItems = (json['items'] as List?) ?? const [];
     return Order(
+      customerId: _toNullableInt(json['customer_id'] ?? json['customerId']),
       id: (json['order_id'] ?? json['id']).toString(),
-      orderDate: DateTime.tryParse(
+      orderDate:
+          DateTime.tryParse(
             (json['created_at'] ?? json['orderDate'] ?? '').toString(),
           ) ??
           DateTime.now(),
       totalAmount: _toDouble(json['totalAmount'] ?? json['final_amount']),
-      customerName: (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ').toString(),
+      customerName:
+          (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ')
+              .toString(),
       status: (json['status'] ?? '').toString(),
       items: rawItems
           .whereType<Map>()
           .map((e) => OrderLine.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
     );
+  }
+
+  static int? _toNullableInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
   }
 
   Map<String, dynamic> toJson({int? customerId, int? employeeId}) {

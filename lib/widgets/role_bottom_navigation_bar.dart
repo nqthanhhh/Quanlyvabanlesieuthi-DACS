@@ -50,6 +50,12 @@ class RoleBottomNavigationBar extends StatelessWidget {
         'Hóa đơn',
       ),
       _TabData(
+        RoleBottomTab.cart,
+        Icons.shopping_cart_outlined,
+        Icons.shopping_cart,
+        'Giỏ hàng',
+      ),
+      _TabData(
         RoleBottomTab.account,
         Icons.person_outline,
         Icons.person,
@@ -68,6 +74,12 @@ class RoleBottomNavigationBar extends StatelessWidget {
         Icons.qr_code_scanner,
         Icons.qr_code_scanner,
         'Quét mã',
+      ),
+      _TabData(
+        RoleBottomTab.cart,
+        Icons.shopping_cart_outlined,
+        Icons.shopping_cart,
+        'Giỏ hàng',
       ),
       _TabData(
         RoleBottomTab.invoices,

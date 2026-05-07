@@ -339,8 +339,27 @@ INSERT IGNORE INTO products (
   status
 )
 VALUES
-('Coca Cola lon 330ml', '893000000001', 'Nước ngọt có gas', '', 10000, 'lon', 100, 10, 1, 'active'),
-('Pepsi lon 330ml', '893000000002', 'Nước ngọt có gas', '', 10000, 'lon', 100, 10, 1, 'active'),
-('Mì Hảo Hảo tôm chua cay', '893000000003', 'Mì ăn liền', '', 4500, 'gói', 200, 20, 2, 'active'),
-('Sữa Vinamilk 180ml', '893000000004', 'Sữa hộp', '', 8000, 'hộp', 80, 10, 4, 'active'),
-('Bánh Oreo', '893000000005', 'Bánh quy socola', '', 12000, 'gói', 60, 10, 5, 'active');
+('Coca Cola lon 330ml', '893000000001', 'Nước ngọt có gas', '', 10000, 'lon', 20, 10, 1, 'active'),
+('Pepsi lon 330ml', '893000000002', 'Nước ngọt có gas', '', 10000, 'lon', 20, 10, 1, 'active'),
+('Mì Hảo Hảo tôm chua cay', '893000000003', 'Mì ăn liền', '', 4500, 'gói', 40, 20, 2, 'active'),
+('Sữa Vinamilk 180ml', '893000000004', 'Sữa hộp', '', 8000, 'hộp', 20, 10, 4, 'active'),
+('Bánh Oreo', '893000000005', 'Bánh quy socola', '', 12000, 'gói', 20, 10, 5, 'active');
+
+-- Seed kho (inventory_items): tồn trong kho (warehouse).
+-- Seed products.stock: tồn trên kệ/tồn bán (shelf) dùng cho màn hình bán hàng.
+INSERT IGNORE INTO inventory_items (
+  barcode,
+  item_name,
+  image_url,
+  price,
+  import_price,
+  unit,
+  stock,
+  status
+)
+VALUES
+('893000000001', 'Coca Cola lon 330ml', '', 10000, NULL, 'lon', 80, 'active'),
+('893000000002', 'Pepsi lon 330ml', '', 10000, NULL, 'lon', 80, 'active'),
+('893000000003', 'Mì Hảo Hảo tôm chua cay', '', 4500, NULL, 'gói', 160, 'active'),
+('893000000004', 'Sữa Vinamilk 180ml', '', 8000, NULL, 'hộp', 60, 'active'),
+('893000000005', 'Bánh Oreo', '', 12000, NULL, 'gói', 40, 'active');

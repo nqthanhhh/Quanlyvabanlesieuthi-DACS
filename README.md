@@ -117,4 +117,14 @@ Nếu repo có file `.sql`, import database bằng lệnh tương tự:
 mysql -u your_mysql_user -p < database.sql
 ```
 
+Lưu ý:
+
+- `database.sql` được chỉnh theo hướng _an toàn_: có thể import nhiều lần mà không xoá dữ liệu cũ.
+- Nếu bạn muốn **reset (xoá sạch)** database, hãy chạy:
+
+```bash
+mysql -u your_mysql_user -p < database_reset.sql
+mysql -u your_mysql_user -p < database.sql
+```
+
 File `database.sql` nằm ở gốc project để dễ thấy và dùng chung cho toàn bộ dự án.

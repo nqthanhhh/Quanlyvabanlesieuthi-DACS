@@ -1,38 +1,21 @@
+-- NOTE (SAFE INIT):
+-- File này được thiết kế để import nhiều lần mà KHÔNG làm mất dữ liệu hiện có.
+-- Nếu bạn muốn xoá sạch dữ liệu và tạo lại từ đầu, hãy chạy `database_reset.sql` trước.
+
 CREATE DATABASE IF NOT EXISTS mini_supermarket
 CHARACTER SET utf8mb4
 COLLATE utf8mb4_unicode_ci;
 
 USE mini_supermarket;
 
-SET FOREIGN_KEY_CHECKS = 0;
+-- Không DROP TABLE ở đây để tránh mất dữ liệu khi import lại.
 
-DROP TABLE IF EXISTS notifications;
-DROP TABLE IF EXISTS work_shifts;
-DROP TABLE IF EXISTS loyalty_transactions;
-DROP TABLE IF EXISTS reviews;
-DROP TABLE IF EXISTS order_discounts;
-DROP TABLE IF EXISTS discount_codes;
-DROP TABLE IF EXISTS inventory_logs;
-DROP TABLE IF EXISTS inventory_items;
-DROP TABLE IF EXISTS invoices;
-DROP TABLE IF EXISTS payments;
-DROP TABLE IF EXISTS order_items;
-DROP TABLE IF EXISTS orders;
-DROP TABLE IF EXISTS cart_items;
-DROP TABLE IF EXISTS carts;
-DROP TABLE IF EXISTS products;
-DROP TABLE IF EXISTS categories;
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS roles;
-
-SET FOREIGN_KEY_CHECKS = 1;
-
-CREATE TABLE roles (
+CREATE TABLE IF NOT EXISTS roles (
   role_id INT AUTO_INCREMENT PRIMARY KEY,
   role_name VARCHAR(50) NOT NULL UNIQUE
 ) ENGINE=InnoDB;
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   user_id INT AUTO_INCREMENT PRIMARY KEY,
   full_name VARCHAR(100) NOT NULL,
   email VARCHAR(100) NOT NULL UNIQUE,
@@ -52,12 +35,12 @@ CREATE TABLE users (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
   category_id INT AUTO_INCREMENT PRIMARY KEY,
   category_name VARCHAR(100) NOT NULL UNIQUE
 ) ENGINE=InnoDB;
 
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
   product_id INT AUTO_INCREMENT PRIMARY KEY,
   product_name VARCHAR(150) NOT NULL,
   barcode VARCHAR(50) NOT NULL UNIQUE,
@@ -77,7 +60,7 @@ CREATE TABLE products (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
-CREATE TABLE inventory_items (
+CREATE TABLE IF NOT EXISTS inventory_items (
   inventory_item_id INT AUTO_INCREMENT PRIMARY KEY,
   barcode VARCHAR(50) NOT NULL UNIQUE,
   item_name VARCHAR(150) NOT NULL,
@@ -90,7 +73,7 @@ CREATE TABLE inventory_items (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
-CREATE TABLE carts (
+CREATE TABLE IF NOT EXISTS carts (
   cart_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -102,7 +85,7 @@ CREATE TABLE carts (
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE cart_items (
+CREATE TABLE IF NOT EXISTS cart_items (
   cart_item_id INT AUTO_INCREMENT PRIMARY KEY,
   cart_id INT NOT NULL,
   product_id INT NOT NULL,
@@ -121,7 +104,7 @@ CREATE TABLE cart_items (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
   order_id INT AUTO_INCREMENT PRIMARY KEY,
   customer_id INT,
   employee_id INT,
@@ -147,7 +130,7 @@ CREATE TABLE orders (
     ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-CREATE TABLE order_items (
+CREATE TABLE IF NOT EXISTS order_items (
   order_item_id INT AUTO_INCREMENT PRIMARY KEY,
   order_id INT NOT NULL,
   product_id INT NOT NULL,
@@ -168,7 +151,7 @@ CREATE TABLE order_items (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
   payment_id INT AUTO_INCREMENT PRIMARY KEY,
   order_id INT NOT NULL,
   method VARCHAR(50) NOT NULL,
@@ -184,7 +167,7 @@ CREATE TABLE payments (
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE invoices (
+CREATE TABLE IF NOT EXISTS invoices (
   invoice_id INT AUTO_INCREMENT PRIMARY KEY,
   order_id INT NOT NULL UNIQUE,
   issued_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -197,7 +180,7 @@ CREATE TABLE invoices (
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE inventory_logs (
+CREATE TABLE IF NOT EXISTS inventory_logs (
   log_id INT AUTO_INCREMENT PRIMARY KEY,
   inventory_item_id INT NOT NULL,
   product_id INT,
@@ -227,7 +210,7 @@ CREATE TABLE inventory_logs (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
-CREATE TABLE discount_codes (
+CREATE TABLE IF NOT EXISTS discount_codes (
   discount_id INT AUTO_INCREMENT PRIMARY KEY,
   code VARCHAR(50) NOT NULL UNIQUE,
   discount_type VARCHAR(20) NOT NULL,
@@ -237,7 +220,7 @@ CREATE TABLE discount_codes (
   status VARCHAR(20) DEFAULT 'active'
 ) ENGINE=InnoDB;
 
-CREATE TABLE order_discounts (
+CREATE TABLE IF NOT EXISTS order_discounts (
   order_discount_id INT AUTO_INCREMENT PRIMARY KEY,
   order_id INT NOT NULL,
   discount_id INT NOT NULL,
@@ -256,7 +239,7 @@ CREATE TABLE order_discounts (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
-CREATE TABLE reviews (
+CREATE TABLE IF NOT EXISTS reviews (
   review_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   product_id INT NOT NULL,
@@ -277,7 +260,7 @@ CREATE TABLE reviews (
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE loyalty_transactions (
+CREATE TABLE IF NOT EXISTS loyalty_transactions (
   loyalty_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   order_id INT,
@@ -299,7 +282,7 @@ CREATE TABLE loyalty_transactions (
     ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-CREATE TABLE work_shifts (
+CREATE TABLE IF NOT EXISTS work_shifts (
   shift_id INT AUTO_INCREMENT PRIMARY KEY,
   employee_id INT NOT NULL,
   shift_date DATE NOT NULL,
@@ -314,7 +297,7 @@ CREATE TABLE work_shifts (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
   notification_id INT AUTO_INCREMENT PRIMARY KEY,
   title VARCHAR(150) NOT NULL,
   message VARCHAR(255) NOT NULL,
@@ -323,20 +306,18 @@ CREATE TABLE notifications (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
-USE mini_supermarket;
-
-INSERT INTO roles(role_name)
+INSERT IGNORE INTO roles(role_name)
 VALUES
 ('customer'),
 ('employee'),
 ('admin');
 
-INSERT INTO users(full_name, email, phone, password, address, role_id, status)
+INSERT IGNORE INTO users(full_name, email, phone, password, address, role_id, status)
 VALUES
 ('Admin', 'admin@gmail.com', '0900000001', 'admin123', 'Tai khoan quan tri', (SELECT role_id FROM roles WHERE role_name = 'admin'), 'active'),
 ('Nhan vien', 'employee@gmail.com', '0900000002', 'employee123', 'Tai khoan nhan vien', (SELECT role_id FROM roles WHERE role_name = 'employee'), 'active');
 
-INSERT INTO categories(category_name)
+INSERT IGNORE INTO categories(category_name)
 VALUES
 ('Đồ uống'),
 ('Đồ ăn nhanh'),
@@ -345,7 +326,7 @@ VALUES
 ('Bánh kẹo'),
 ('Đồ gia dụng');
 
-INSERT INTO products (
+INSERT IGNORE INTO products (
   product_name,
   barcode,
   description,

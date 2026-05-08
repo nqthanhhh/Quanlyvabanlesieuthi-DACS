@@ -299,6 +299,54 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
               ],
             ),
           ),
+          ValueListenableBuilder<Box<Product>>(
+            valueListenable: DBService.products().listenable(),
+            builder: (context, box, _) {
+              final allProducts = box.values.toList().cast<Product>();
+              final categories = <String>{
+                'Tất cả',
+                ...allProducts.map(_getCategoryName),
+              }.toList();
+              categories.sort((a, b) {
+                if (a == 'Tất cả') return -1;
+                if (b == 'Tất cả') return 1;
+                return a.compareTo(b);
+              });
+
+              if (_selectedCategory != 'Tất cả' &&
+                  !categories.contains(_selectedCategory)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() => _selectedCategory = 'Tất cả');
+                  }
+                });
+              }
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
+                child: SizedBox(
+                  height: 38,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: categories
+                        .map(
+                          (category) => Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(category),
+                              selected: _selectedCategory == category,
+                              onSelected: (_) => setState(
+                                () => _selectedCategory = category,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              );
+            },
+          ),
           const SizedBox(height: 4),
 
           // 3. Danh sách sản phẩm thực tế (Kết nối Hive)
@@ -308,15 +356,6 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
               builder: (context, box, _) {
                 // Lấy tất cả sản phẩm
                 List<Product> allProducts = DBService.getAllProducts();
-                final categories = <String>{
-                  'Tất cả',
-                  ...allProducts.map(_getCategoryName),
-                }.toList();
-                categories.sort((a, b) {
-                  if (a == 'Tất cả') return -1;
-                  if (b == 'Tất cả') return 1;
-                  return a.compareTo(b);
-                });
 
                 // Lọc theo tìm kiếm
                 List<Product> filteredProducts = DBService.searchProducts(
@@ -372,27 +411,6 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                 return ListView(
                   padding: const EdgeInsets.all(16.0).copyWith(top: 8),
                   children: [
-                    SizedBox(
-                      height: 38,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: categories
-                            .map(
-                              (category) => Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(category),
-                                  selected: _selectedCategory == category,
-                                  onSelected: (_) => setState(
-                                    () => _selectedCategory = category,
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
                     ...grouped.entries.expand((entry) {
                       return <Widget>[
                         _buildSectionHeader(entry.key, entry.value.length),

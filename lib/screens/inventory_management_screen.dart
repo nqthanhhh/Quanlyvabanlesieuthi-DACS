@@ -437,6 +437,56 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
           ),
+          ValueListenableBuilder<Box<InventoryItem>>(
+            valueListenable: DBService.inventoryProducts().listenable(),
+            builder: (context, box, _) {
+              final products = DBService.products().values.toList().cast<Product>();
+              final items = box.values.toList();
+              final categories = <String>{
+                'Tất cả',
+                ...items
+                    .whereType<InventoryItem>()
+                    .map((it) => _inventoryCategory(it, products)),
+              }.toList()
+                ..sort((a, b) {
+                  if (a == 'Tất cả') return -1;
+                  if (b == 'Tất cả') return 1;
+                  return a.compareTo(b);
+                });
+
+              if (_selectedCategory != 'Tất cả' &&
+                  !categories.contains(_selectedCategory)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() => _selectedCategory = 'Tất cả');
+                  }
+                });
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 8.0),
+                child: SizedBox(
+                  height: 38,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: categories
+                        .map(
+                          (category) => Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(category),
+                              selected: _selectedCategory == category,
+                              onSelected: (_) =>
+                                  setState(() => _selectedCategory = category),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              );
+            },
+          ),
 
           // PHẦN CUỘN: Danh sách sản phẩm (Giữ nguyên)
           Expanded(
@@ -450,16 +500,6 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                   return it.id.toLowerCase().contains(query) ||
                       it.name.toLowerCase().contains(query);
                 }).toList();
-
-                final categories = <String>{
-                  'Tất cả',
-                  ...items.map((it) => _inventoryCategory(it, products)),
-                }.toList()
-                  ..sort((a, b) {
-                    if (a == 'Tất cả') return -1;
-                    if (b == 'Tất cả') return 1;
-                    return a.compareTo(b);
-                  });
 
                 List<InventoryItem> displayItems = items;
                 if (_selectedCategory != 'Tất cả') {
@@ -499,27 +539,6 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                     bottom: 16.0,
                   ),
                   children: [
-                    SizedBox(
-                      height: 38,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: categories
-                            .map(
-                              (category) => Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(category),
-                                  selected: _selectedCategory == category,
-                                  onSelected: (_) => setState(
-                                    () => _selectedCategory = category,
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
                     ...grouped.entries.expand((entry) {
                       return <Widget>[
                         _buildSectionHeader(entry.key, entry.value.length),

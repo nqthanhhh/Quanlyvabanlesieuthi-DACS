@@ -40,15 +40,15 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedCategory = 'Tất cả';
   HomeFilterOption _filterOption = HomeFilterOption.bestSeller;
   RoleBottomTab _currentBottomTab = RoleBottomTab.home;
-  bool _isLoading = true;
+  final bool _isLoading = true;
   // *** INFINITE SCROLL LOGIC ***
   final ScrollController _scrollController = ScrollController();
   final int _productsPerPage = 6;
   int _loadedProductCount = 6;
   bool _isLoadingMore = false;
   // *****************************
-  List<Product> _allProducts = [];
-  List<Product> _displayedProducts = [];
+  final List<Product> _allProducts = [];
+  final List<Product> _displayedProducts = [];
 
   // Mapping sản phẩm sang đường dẫn ảnh asset (fallback khi không có ảnh từ backend)
   String _imageFor(Product p) {

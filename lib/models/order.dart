@@ -6,7 +6,20 @@ part 'order.g.dart'; // File tự động tạo bởi build_runner
 
 @HiveType(typeId: 2) // Chọn typeId chưa dùng (2)
 class Order extends HiveObject {
+  @HiveField(6)
   int? customerId;
+
+  @HiveField(7)
+  String? shippingAddress;
+
+  @HiveField(8)
+  String? paymentMethod;
+
+  @HiveField(9)
+  String? paymentStatus;
+
+  @HiveField(10)
+  String? note;
 
   @HiveField(0)
   String id;
@@ -28,6 +41,10 @@ class Order extends HiveObject {
 
   Order({
     this.customerId,
+    this.shippingAddress,
+    this.paymentMethod,
+    this.paymentStatus,
+    this.note,
     required this.id,
     required this.orderDate,
     required this.totalAmount,
@@ -45,6 +62,16 @@ class Order extends HiveObject {
     final rawItems = (json['items'] as List?) ?? const [];
     return Order(
       customerId: _toNullableInt(json['customer_id'] ?? json['customerId']),
+      shippingAddress: _toNullableString(
+        json['shipping_address'] ?? json['shippingAddress'],
+      ),
+      paymentMethod: _toNullableString(
+        json['payment_method'] ?? json['paymentMethod'] ?? json['method'],
+      ),
+      paymentStatus: _toNullableString(
+        json['payment_status'] ?? json['paymentStatus'],
+      ),
+      note: _toNullableString(json['note']),
       id: (json['order_id'] ?? json['id']).toString(),
       orderDate:
           DateTime.tryParse(
@@ -70,13 +97,22 @@ class Order extends HiveObject {
     return int.tryParse(value.toString());
   }
 
+  static String? _toNullableString(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString();
+    return text.isEmpty ? null : text;
+  }
+
   Map<String, dynamic> toJson({int? customerId, int? employeeId}) {
     return {
       'customer_id': customerId,
       'employee_id': employeeId,
       'order_type': 'offline',
       'status': status,
-      'payment_status': 'paid',
+      'payment_status': paymentStatus ?? 'paid',
+      'shipping_address': shippingAddress,
+      'payment_method': paymentMethod ?? 'cash',
+      'note': note,
       'items': items.map((e) => e.toJson()).toList(),
     };
   }

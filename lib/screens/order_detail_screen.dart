@@ -99,7 +99,7 @@ class OrderDetailScreen extends StatelessWidget {
                     Expanded(child: Text('${item.productName} (x${item.quantity})')),
                     Text(_formatCurrency(item.quantity * item.pricePerUnit)),
                   ],
-                )).toList(),
+                )),
                 const Divider(),
 
                 // Tổng kết
@@ -203,7 +203,7 @@ class OrderDetailScreen extends StatelessWidget {
             // 2. Chi tiết sản phẩm
             const Text('Sản phẩm đã mua', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            ...order.items.map((item) => _buildLineItem(item)).toList(),
+            ...order.items.map((item) => _buildLineItem(item)),
             const Divider(height: 24),
 
             // 3. Tổng kết

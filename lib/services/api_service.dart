@@ -18,6 +18,7 @@ class ApiException implements Exception {
 
 class ApiService {
   static const Duration _timeout = Duration(seconds: 5);
+  static int? _currentUserId;
 
   static String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
@@ -33,6 +34,11 @@ class ApiService {
 
   static Map<String, String> get _headers => {
     'Content-Type': 'application/json',
+  };
+
+  static Map<String, String> get _userHeaders => {
+    ..._headers,
+    if (_currentUserId != null) 'x-user-id': _currentUserId.toString(),
   };
 
   static Map<String, String> _adminHeaders(int adminUserId) => {
@@ -82,7 +88,16 @@ class ApiService {
         )
         .timeout(_timeout);
     final body = _decode(response);
-    return Map<String, dynamic>.from((body as Map)['user'] as Map);
+    final user = Map<String, dynamic>.from((body as Map)['user'] as Map);
+    _currentUserId = _toNullableInt(user['user_id'] ?? user['userId']);
+    return user;
+  }
+
+  static int? _toNullableInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
   }
 
   static Future<void> register({
@@ -222,6 +237,47 @@ class ApiService {
     ).map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
   }
 
+  static Future<List<Order>> fetchOnlineOrders() async {
+    final response = await http
+        .get(_uri('/api/orders/online'), headers: _userHeaders)
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(
+      body,
+    ).map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  static Future<List<Order>> fetchPurchaseHistory({int? customerId}) async {
+    final path = customerId == null
+        ? '/api/orders/history'
+        : '/api/orders/history/$customerId';
+    final response = await http
+        .get(_uri(path), headers: _userHeaders)
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(
+      body,
+    ).map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  static Future<Order> fetchOrderDetail(String orderId) async {
+    final response = await http
+        .get(_uri('/api/orders/$orderId'), headers: _userHeaders)
+        .timeout(_timeout);
+    return Order.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<Order> updateOrderStatus(String orderId, String status) async {
+    final response = await http
+        .patch(
+          _uri('/api/orders/$orderId/status'),
+          headers: _userHeaders,
+          body: jsonEncode({'status': status}),
+        )
+        .timeout(_timeout);
+    return Order.fromJson(_dataMap(_decode(response)));
+  }
+
   static Future<Order> createOrder(
     Order order, {
     int? customerId,
@@ -237,6 +293,27 @@ class ApiService {
         )
         .timeout(_timeout);
     return Order.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<Map<String, dynamic>> createReview({
+    required String orderId,
+    required String productId,
+    required int rating,
+    String? comment,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/reviews'),
+          headers: _userHeaders,
+          body: jsonEncode({
+            'order_id': int.tryParse(orderId) ?? orderId,
+            'product_id': int.tryParse(productId) ?? productId,
+            'rating': rating,
+            'comment': comment,
+          }),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
   }
 
   static Future<List<Map<String, dynamic>>> fetchInventoryLogs() async {

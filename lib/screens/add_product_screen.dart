@@ -135,7 +135,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   Future<void> _chooseQuantityFromInventory(InventoryItem item) async {
-    final _qController = TextEditingController(
+    final qController = TextEditingController(
       text: '${item.stockQuantity > 0 ? 1 : 0}',
     );
     final formKey = GlobalKey<FormState>();
@@ -152,7 +152,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Text('Tồn kho hiện có: ${item.stockQuantity} ${item.unit}'),
               const SizedBox(height: 8),
               TextFormField(
-                controller: _qController,
+                controller: qController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: 'Số lượng lấy',
@@ -178,7 +178,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ElevatedButton(
             onPressed: () {
               if (formKey.currentState!.validate()) {
-                final n = int.parse(_qController.text.trim());
+                final n = int.parse(qController.text.trim());
                 Navigator.of(context).pop(n);
               }
             },
@@ -394,7 +394,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<int>(
-                      value: _selectedCategoryId,
+                      initialValue: _selectedCategoryId,
                       decoration: const InputDecoration(
                         labelText: 'Danh mục',
                         border: OutlineInputBorder(),
@@ -435,7 +435,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   final raw = _idController.text;
                   final query = raw.replaceAll(' ', '').toLowerCase();
 
-                  bool _matches(String text) {
+                  bool matches(String text) {
                     final t = text.replaceAll(' ', '').toLowerCase();
                     if (query.isEmpty) return true;
                     // Prefix-only match: require the normalized text to start with the query
@@ -443,7 +443,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   }
 
                   final List<InventoryItem> items = invBox.values
-                      .where((it) => _matches(it.id) || _matches(it.name))
+                      .where((it) => matches(it.id) || matches(it.name))
                       .toList();
 
                   if (items.isEmpty) return const SizedBox.shrink();

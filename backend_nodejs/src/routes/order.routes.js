@@ -3,12 +3,39 @@ const pool = require('../config/db');
 
 const router = express.Router();
 
+const paymentJoinSql = `
+  LEFT JOIN (
+    SELECT p1.order_id, p1.method, p1.status
+    FROM payments p1
+    JOIN (
+      SELECT order_id, MAX(payment_id) AS payment_id
+      FROM payments
+      GROUP BY order_id
+    ) latest ON latest.payment_id = p1.payment_id
+  ) pay ON pay.order_id = o.order_id
+`;
+
+function normalizeOrder(row) {
+  return {
+    ...row,
+    id: String(row.order_id),
+    orderDate: row.created_at,
+    totalAmount: Number(row.final_amount),
+    customerName: row.customer_name || 'Khách lẻ',
+    paymentStatus: row.payment_status || row.latest_payment_status,
+    paymentMethod: row.payment_method || 'cash',
+    shippingAddress: row.shipping_address,
+  };
+}
+
 async function fetchOrder(orderId) {
   const [orders] = await pool.execute(
-    `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name
+    `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
+            pay.method AS payment_method, pay.status AS latest_payment_status
      FROM orders o
      LEFT JOIN users cu ON cu.user_id = o.customer_id
      LEFT JOIN users eu ON eu.user_id = o.employee_id
+     ${paymentJoinSql}
      WHERE o.order_id = ?`,
     [orderId]
   );
@@ -24,11 +51,7 @@ async function fetchOrder(orderId) {
   );
 
   return {
-    ...orders[0],
-    id: String(orders[0].order_id),
-    orderDate: orders[0].created_at,
-    totalAmount: Number(orders[0].final_amount),
-    customerName: orders[0].customer_name || 'Khách lẻ',
+    ...normalizeOrder(orders[0]),
     status: orders[0].status,
     items: items.map((item) => ({
       ...item,
@@ -43,26 +66,70 @@ async function fetchOrder(orderId) {
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name
+      `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
+              pay.method AS payment_method, pay.status AS latest_payment_status
        FROM orders o
        LEFT JOIN users cu ON cu.user_id = o.customer_id
        LEFT JOIN users eu ON eu.user_id = o.employee_id
+       ${paymentJoinSql}
        ORDER BY o.created_at DESC`
     );
-    res.json({
-      success: true,
-      data: rows.map((row) => ({
-        ...row,
-        id: String(row.order_id),
-        orderDate: row.created_at,
-        totalAmount: Number(row.final_amount),
-        customerName: row.customer_name || 'Khách lẻ',
-      })),
-    });
+    res.json({ success: true, data: rows.map(normalizeOrder) });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi lấy đơn hàng', error: error.message });
   }
 });
+
+router.get('/online', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
+              pay.method AS payment_method, pay.status AS latest_payment_status
+       FROM orders o
+       LEFT JOIN users cu ON cu.user_id = o.customer_id
+       LEFT JOIN users eu ON eu.user_id = o.employee_id
+       ${paymentJoinSql}
+       WHERE o.order_type = 'online'
+         AND o.status IN ('pending', 'confirmed', 'preparing')
+       ORDER BY o.created_at ASC`
+    );
+    res.json({ success: true, data: rows.map(normalizeOrder) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi lấy đơn online', error: error.message });
+  }
+});
+
+async function fetchHistory(req, res) {
+  try {
+    const customerId = Number(req.params.customerId || req.get('x-user-id'));
+    const params = [];
+    let customerWhere = '';
+    if (customerId) {
+      customerWhere = 'AND o.customer_id = ?';
+      params.push(customerId);
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT o.order_id
+       FROM orders o
+       WHERE o.status IN ('completed', 'Hoàn thành', 'hoàn thành')
+         ${customerWhere}
+       ORDER BY o.created_at DESC`,
+      params
+    );
+    const orders = [];
+    for (const row of rows) {
+      const order = await fetchOrder(row.order_id);
+      if (order) orders.push(order);
+    }
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi lấy lịch sử mua hàng', error: error.message });
+  }
+}
+
+router.get('/history', fetchHistory);
+router.get('/history/:customerId', fetchHistory);
 
 router.get('/:id', async (req, res) => {
   try {
@@ -76,6 +143,29 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+router.patch('/:id/status', async (req, res) => {
+  try {
+    const status = String(req.body.status || '').trim();
+    const allowed = ['pending', 'confirmed', 'preparing', 'completed', 'cancelled'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Trạng thái đơn hàng không hợp lệ' });
+    }
+
+    const [result] = await pool.execute(
+      'UPDATE orders SET status = ? WHERE order_id = ?',
+      [status, req.params.id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng' });
+    }
+
+    const order = await fetchOrder(req.params.id);
+    res.json({ success: true, message: 'Đã cập nhật trạng thái đơn hàng', data: order });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi cập nhật trạng thái đơn hàng', error: error.message });
+  }
+});
+
 router.post('/', async (req, res) => {
   const connection = await pool.getConnection();
   try {
@@ -86,6 +176,7 @@ router.post('/', async (req, res) => {
       status = 'completed',
       payment_status = 'paid',
       shipping_address,
+      note,
       payment_method = 'cash',
       items,
     } = req.body;
@@ -124,8 +215,8 @@ router.post('/', async (req, res) => {
 
     const [orderResult] = await connection.execute(
       `INSERT INTO orders
-       (customer_id, employee_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address)
-       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+       (customer_id, employee_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note)
+       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
       [
         customer_id || null,
         employee_id || null,
@@ -135,6 +226,7 @@ router.post('/', async (req, res) => {
         status,
         payment_status,
         shipping_address || null,
+        note || null,
       ]
     );
 

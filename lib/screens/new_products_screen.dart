@@ -7,7 +7,7 @@ class NewProductsScreen extends StatelessWidget {
   // Nhận danh sách SẢN PHẨM MỚI đã được lọc sẵn
   final List<Product> newProducts;
 
-  const NewProductsScreen({Key? key, required this.newProducts}) : super(key: key);
+  const NewProductsScreen({super.key, required this.newProducts});
 
   @override
   Widget build(BuildContext context) {

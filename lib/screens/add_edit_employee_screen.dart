@@ -148,7 +148,7 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _role,
+                initialValue: _role,
                 items: const [
                   DropdownMenuItem(value: 'admin', child: Text('Quản lý')),
                   DropdownMenuItem(value: 'employee', child: Text('Nhân viên')),
@@ -185,8 +185,9 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
                   if (v == null || v.isEmpty) return null; // optional
                   final parsed = int.tryParse(v);
                   if (parsed == null) return 'Năm sinh không hợp lệ';
-                  if (parsed < 1900 || parsed > DateTime.now().year)
+                  if (parsed < 1900 || parsed > DateTime.now().year) {
                     return 'Năm sinh không hợp lệ';
+                  }
                   return null;
                 },
                 onSaved: (v) =>

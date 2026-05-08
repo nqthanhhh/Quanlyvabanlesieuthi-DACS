@@ -115,7 +115,9 @@ CREATE TABLE IF NOT EXISTS orders (
   status VARCHAR(50) NOT NULL DEFAULT 'pending',
   payment_status VARCHAR(50) DEFAULT 'unpaid',
   shipping_address VARCHAR(255),
+  note VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   CONSTRAINT fk_orders_customer
     FOREIGN KEY (customer_id)
@@ -242,10 +244,14 @@ CREATE TABLE IF NOT EXISTS order_discounts (
 CREATE TABLE IF NOT EXISTS reviews (
   review_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
+  order_id INT,
+  order_item_id INT,
   product_id INT NOT NULL,
   rating INT NOT NULL,
   comment TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_review_order_item (order_item_id),
+  KEY idx_reviews_order_item_id (order_item_id),
 
   CONSTRAINT fk_reviews_users
     FOREIGN KEY (user_id)
@@ -256,6 +262,18 @@ CREATE TABLE IF NOT EXISTS reviews (
   CONSTRAINT fk_reviews_products
     FOREIGN KEY (product_id)
     REFERENCES products(product_id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_reviews_orders
+    FOREIGN KEY (order_id)
+    REFERENCES orders(order_id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  CONSTRAINT fk_reviews_order_items
+    FOREIGN KEY (order_item_id)
+    REFERENCES order_items(order_item_id)
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB;

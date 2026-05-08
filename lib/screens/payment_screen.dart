@@ -259,7 +259,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ],
                 ),
               );
-            }).toList(),
+            }),
             const Divider(height: 24, thickness: 1),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,

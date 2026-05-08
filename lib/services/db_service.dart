@@ -1,4 +1,5 @@
 import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:async';
 import '../models/product.dart';
 import '../models/inventory_item.dart';
 import '../models/user.dart';
@@ -8,7 +9,8 @@ import '../models/inventory_history_entry.dart';
 import 'api_service.dart';
 
 class DBService {
-  static const int cacheSchemaVersion = 2;
+  static const int cacheSchemaVersion = 3;
+  static const bool forceUseLocalProductSeed = false;
   static const String productsBox = 'products';
   static const String usersBox = 'users';
   static const String ordersBox = 'orders';
@@ -52,7 +54,20 @@ class DBService {
     // 4. Pull remote data into the local cache. If the API is not running,
     // keep the app usable with the existing Hive cache/sample data.
     try {
-      await syncAllFromApi();
+      if (forceUseLocalProductSeed) {
+        // Ưu tiên dữ liệu local mới, không cho API cũ ghi đè products/inventory.
+        await products().clear();
+        await inventoryProducts().clear();
+        await seedProducts();
+        await seedInventory();
+        await Future.wait([
+          syncUsersFromApi(),
+          syncOrdersFromApi(),
+          syncInventoryHistoryFromApi(),
+        ]);
+      } else {
+        await syncAllFromApi();
+      }
     } catch (e) {
       print('Không đồng bộ được API, dùng cache Hive: $e');
       await seedProducts();
@@ -115,6 +130,15 @@ class DBService {
   }
 
   static Future<void> syncAllFromApi() async {
+    if (forceUseLocalProductSeed) {
+      await Future.wait([
+        syncUsersFromApi(),
+        syncOrdersFromApi(),
+        syncInventoryHistoryFromApi(),
+      ]);
+      return;
+    }
+
     await Future.wait([
       syncProductsFromApi(),
       syncInventoryItemsFromApi(),
@@ -128,6 +152,15 @@ class DBService {
     final remoteProducts = await ApiService.fetchProducts();
     final productBox = products();
     final imageBox = productImages();
+
+    // Giữ cache hiện có nếu API trả rỗng để tránh Home bị trắng sản phẩm.
+    if (remoteProducts.isEmpty) {
+      if (productBox.isEmpty) {
+        await seedProducts();
+      }
+      return;
+    }
+
     await productBox.clear();
 
     for (final product in remoteProducts) {
@@ -209,46 +242,124 @@ class DBService {
     if (box.isEmpty) {
       final List<Product> sampleProducts = [
         Product(
-          id: 'banana',
-          name: 'Chuối tây',
-          price: 3000.0,
-          unit: 'nải',
-          stockQuantity: 15,
-        ),
-        Product(
-          id: 'apple',
-          name: 'Táo đỏ',
-          price: 20000.0,
-          unit: 'kg',
-          stockQuantity: 50,
-        ),
-        Product(
-          id: 'coke',
-          name: 'Nước Coke',
-          price: 10000.0,
-          unit: 'lon',
-          stockQuantity: 100,
-        ),
-        Product(
-          id: 'diet_coke',
-          name: 'Diet Coke',
-          price: 12000.0,
-          unit: 'lon',
-          stockQuantity: 80,
-        ),
-        Product(
-          id: 'tomato',
-          name: 'Cà chua',
-          price: 15000.0,
-          unit: 'kg',
-          stockQuantity: 60,
-        ),
-        Product(
-          id: 'brocoli',
-          name: 'Bông cải',
+          id: 'PROD001',
+          name: 'Chuối',
           price: 25000.0,
-          unit: 'cây',
+          unit: 'Kg',
+          stockQuantity: 100,
+          barcode: 'PROD001',
+        ),
+        Product(
+          id: 'PROD002',
+          name: 'Dâu tây',
+          price: 120000.0,
+          unit: 'Hộp',
+          stockQuantity: 50,
+          barcode: 'PROD002',
+        ),
+        Product(
+          id: 'PROD003',
+          name: 'Táo',
+          price: 60000.0,
+          unit: 'Kg',
+          stockQuantity: 80,
+          barcode: 'PROD003',
+        ),
+        Product(
+          id: 'PROD004',
+          name: 'Dứa (Thơm)',
+          price: 15000.0,
+          unit: 'Quả',
+          stockQuantity: 40,
+          barcode: 'PROD004',
+        ),
+        Product(
+          id: 'PROD005',
+          name: 'Dưa hấu',
+          price: 20000.0,
+          unit: 'Kg',
+          stockQuantity: 150,
+          barcode: 'PROD005',
+        ),
+        Product(
+          id: 'PROD006',
+          name: 'Xốt Thái sả tắc',
+          price: 35000.0,
+          unit: 'Chai',
+          stockQuantity: 60,
+          barcode: 'PROD006',
+        ),
+        Product(
+          id: 'PROD007',
+          name: 'Xốt BBQ',
+          price: 45000.0,
+          unit: 'Chai',
+          stockQuantity: 40,
+          barcode: 'PROD007',
+        ),
+        Product(
+          id: 'PROD008',
+          name: 'Muối ớt chanh Nha Trang',
+          price: 18000.0,
+          unit: 'Chai',
+          stockQuantity: 100,
+          barcode: 'PROD008',
+        ),
+        Product(
+          id: 'PROD009',
+          name: 'Xốt kim quất',
+          price: 35000.0,
+          unit: 'Chai',
+          stockQuantity: 50,
+          barcode: 'PROD009',
+        ),
+        Product(
+          id: 'PROD010',
+          name: 'Xốt trứng muối',
+          price: 55000.0,
+          unit: 'Chai',
           stockQuantity: 30,
+          barcode: 'PROD010',
+        ),
+        Product(
+          id: 'PROD011',
+          name: 'Trà TH true TEA',
+          price: 10000.0,
+          unit: 'Chai',
+          stockQuantity: 200,
+          barcode: 'PROD011',
+        ),
+        Product(
+          id: 'PROD012',
+          name: 'Trà đào và hạt chia Fuze Tea',
+          price: 12000.0,
+          unit: 'Chai',
+          stockQuantity: 120,
+          barcode: 'PROD012',
+        ),
+        Product(
+          id: 'PROD013',
+          name: 'Trà xanh C2 hương chanh',
+          price: 8000.0,
+          unit: 'Chai',
+          stockQuantity: 300,
+          barcode: 'PROD013',
+        ),
+        Product(
+          id: 'PROD014',
+          name: 'Trà đá TRADA hương hoa nhài',
+          price: 10000.0,
+          unit: 'Lon',
+          stockQuantity: 100,
+          barcode: 'PROD014',
+        ),
+        Product(
+          id: 'PROD015',
+          name: 'Trà xanh Lipton vị chanh mật ong',
+          price: 12000.0,
+          unit: 'Chai',
+          stockQuantity: 150,
+          barcode: 'PROD015',
         ),
       ];
 
@@ -273,45 +384,123 @@ class DBService {
     if (box.isEmpty) {
       final List<InventoryItem> sample = [
         InventoryItem(
-          id: 'banana',
-          name: 'Chuối tây',
-          price: 30000.0,
-          unit: 'nải',
-          stockQuantity: 100,
-        ),
-        InventoryItem(
-          id: 'apple',
-          name: 'Táo đỏ',
-          price: 20000.0,
-          unit: 'kg',
-          stockQuantity: 100,
-        ),
-        InventoryItem(
-          id: 'coke',
-          name: 'Nước Coke',
-          price: 10000.0,
-          unit: 'lon',
-          stockQuantity: 100,
-        ),
-        InventoryItem(
-          id: 'diet_coke',
-          name: 'Diet Coke',
-          price: 12000.0,
-          unit: 'lon',
-          stockQuantity: 100,
-        ),
-        InventoryItem(
-          id: 'tomato',
-          name: 'Cà chua',
-          price: 15000.0,
-          unit: 'kg',
-          stockQuantity: 100,
-        ),
-        InventoryItem(
-          id: 'brocoli',
-          name: 'Bông cải',
+          id: 'PROD001',
+          name: 'Chuối',
           price: 25000.0,
-          unit: 'cây',
+          importPrice: 15000.0,
+          unit: 'Kg',
+          stockQuantity: 100,
+        ),
+        InventoryItem(
+          id: 'PROD002',
+          name: 'Dâu tây',
+          price: 120000.0,
+          importPrice: 80000.0,
+          unit: 'Hộp',
+          stockQuantity: 50,
+        ),
+        InventoryItem(
+          id: 'PROD003',
+          name: 'Táo',
+          price: 60000.0,
+          importPrice: 40000.0,
+          unit: 'Kg',
+          stockQuantity: 80,
+        ),
+        InventoryItem(
+          id: 'PROD004',
+          name: 'Dứa (Thơm)',
+          price: 15000.0,
+          importPrice: 8000.0,
+          unit: 'Quả',
+          stockQuantity: 40,
+        ),
+        InventoryItem(
+          id: 'PROD005',
+          name: 'Dưa hấu',
+          price: 20000.0,
+          importPrice: 12000.0,
+          unit: 'Kg',
+          stockQuantity: 150,
+        ),
+        InventoryItem(
+          id: 'PROD006',
+          name: 'Xốt Thái sả tắc',
+          price: 35000.0,
+          importPrice: 25000.0,
+          unit: 'Chai',
+          stockQuantity: 60,
+        ),
+        InventoryItem(
+          id: 'PROD007',
+          name: 'Xốt BBQ',
+          price: 45000.0,
+          importPrice: 32000.0,
+          unit: 'Chai',
+          stockQuantity: 40,
+        ),
+        InventoryItem(
+          id: 'PROD008',
+          name: 'Muối ớt chanh Nha Trang',
+          price: 18000.0,
+          importPrice: 12000.0,
+          unit: 'Chai',
+          stockQuantity: 100,
+        ),
+        InventoryItem(
+          id: 'PROD009',
+          name: 'Xốt kim quất',
+          price: 35000.0,
+          importPrice: 25000.0,
+          unit: 'Chai',
+          stockQuantity: 50,
+        ),
+        InventoryItem(
+          id: 'PROD010',
+          name: 'Xốt trứng muối',
+          price: 55000.0,
+          importPrice: 40000.0,
+          unit: 'Chai',
+          stockQuantity: 30,
+        ),
+        InventoryItem(
+          id: 'PROD011',
+          name: 'Trà TH true TEA',
+          price: 10000.0,
+          importPrice: 7000.0,
+          unit: 'Chai',
+          stockQuantity: 200,
+        ),
+        InventoryItem(
+          id: 'PROD012',
+          name: 'Trà đào và hạt chia Fuze Tea',
+          price: 12000.0,
+          importPrice: 8500.0,
+          unit: 'Chai',
+          stockQuantity: 120,
+        ),
+        InventoryItem(
+          id: 'PROD013',
+          name: 'Trà xanh C2 hương chanh',
+          price: 8000.0,
+          importPrice: 5500.0,
+          unit: 'Chai',
+          stockQuantity: 300,
+        ),
+        InventoryItem(
+          id: 'PROD014',
+          name: 'Trà đá TRADA hương hoa nhài',
+          price: 10000.0,
+          importPrice: 6500.0,
+          unit: 'Lon',
+          stockQuantity: 100,
+        ),
+        InventoryItem(
+          id: 'PROD015',
+          name: 'Trà xanh Lipton vị chanh mật ong',
+          price: 12000.0,
+          importPrice: 8000.0,
+          unit: 'Chai',
           stockQuantity: 100,
         ),
       ];
@@ -355,10 +544,21 @@ class DBService {
   // --- LOGIC QUẢN LÝ KHO & BÁN HÀNG ---
 
   static Future<void> saveOrder(Order order) async {
+    if (forceUseLocalProductSeed) {
+      // Chế độ local/dev: lưu đơn ngay để màn thanh toán phản hồi tức thì.
+      await orders().put(order.id, order);
+      return;
+    }
+
     final employeeId = settings().get('current_user_id') as int?;
     final saved = await ApiService.createOrder(order, employeeId: employeeId);
     await orders().put(saved.id, saved);
-    await syncProductsFromApi();
+    // Đồng bộ tồn kho chạy nền để UI thanh toán phản hồi nhanh hơn.
+    unawaited(
+      syncProductsFromApi().catchError((e) {
+        print('Đồng bộ sản phẩm sau thanh toán thất bại: $e');
+      }),
+    );
   }
 
   static List<Product> getAllProducts() {
@@ -523,6 +723,7 @@ class DBService {
       importPrice: importPrice,
       note: 'Tạo mặt hàng kho',
     );
+
     return inventoryProducts().get(saved.id) ?? saved;
   }
 

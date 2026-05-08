@@ -1,12 +1,18 @@
-// lib/screens/payment_screen.dart
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../models/order.dart';
 import '../models/order_line.dart';
 import '../models/product.dart';
 import '../services/db_service.dart';
-import 'order_success_screen.dart'; // Import màn hình thành công
+import '../widgets/role_bottom_navigation_bar.dart';
+import '../widgets/slide_page_route.dart';
+import 'employee.dart';
+import 'order_management_screen.dart';
+import 'order_success_screen.dart';
+import 'profile_view_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
+  final String role;
   final Map<String, int> cartForDisplay;
   final Map<String, int> originalCart;
   final double totalAmount;
@@ -14,6 +20,7 @@ class PaymentScreen extends StatefulWidget {
 
   const PaymentScreen({
     super.key,
+    required this.role,
     required this.cartForDisplay,
     required this.originalCart,
     required this.totalAmount,
@@ -27,8 +34,11 @@ class PaymentScreen extends StatefulWidget {
 class _PaymentScreenState extends State<PaymentScreen> {
   String? _selectedPaymentMethod;
   bool _isProcessing = false;
+  static const Duration _checkoutTimeout = Duration(seconds: 12);
 
   Future<void> _placeOrder() async {
+    if (_isProcessing) return;
+
     if (_selectedPaymentMethod == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -41,68 +51,117 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
 
     setState(() => _isProcessing = true);
-
-    // 1. Kiểm tra tồn kho và chuẩn bị đơn hàng
-    final List<Product> allProducts = DBService.getAllProducts();
-    final List<OrderLine> orderLines = [];
-    for (var entry in widget.originalCart.entries) {
-      final product = allProducts.firstWhere((p) => p.id == entry.key);
-      if (entry.value > product.stockQuantity) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Lỗi: ${product.name} không đủ tồn kho!')),
-          );
+    try {
+      final List<Product> allProducts = DBService.getAllProducts();
+      final List<OrderLine> orderLines = [];
+      for (var entry in widget.originalCart.entries) {
+        final product = allProducts.firstWhere((p) => p.id == entry.key);
+        if (entry.value > product.stockQuantity) {
+          throw Exception('Lỗi: ${product.name} không đủ tồn kho!');
         }
-        setState(() => _isProcessing = false);
-        return;
+        orderLines.add(
+          OrderLine(
+            productId: product.id,
+            productName: product.name,
+            quantity: entry.value,
+            pricePerUnit: product.price,
+          ),
+        );
       }
-      orderLines.add(
-        OrderLine(
-          productId: product.id,
-          productName: product.name,
-          quantity: entry.value,
-          pricePerUnit: product.price,
-        ),
+
+      if (orderLines.isEmpty) {
+        throw Exception('Giỏ hàng đang trống, không thể thanh toán.');
+      }
+
+      final newOrder = Order(
+        id: 'DH-${DateTime.now().microsecondsSinceEpoch}',
+        orderDate: DateTime.now(),
+        totalAmount: widget.totalAmount,
+        customerName: 'Khách lẻ',
+        status: 'Hoàn thành',
+        items: orderLines,
       );
-    }
 
-    // 2. Tạo và lưu đơn hàng
-    final newOrder = Order(
-      id: 'DH-${DateTime.now().microsecondsSinceEpoch}',
-      orderDate: DateTime.now(),
-      totalAmount: widget.totalAmount,
-      customerName: 'Khách lẻ',
-      status: 'Hoàn thành',
-      items: orderLines,
-      // paymentMethod: _selectedPaymentMethod,
-    );
-    await DBService.saveOrder(newOrder);
+      await DBService.saveOrder(newOrder).timeout(_checkoutTimeout);
+      widget.onCheckoutComplete();
 
-    // 3. Xóa giỏ hàng
-    widget.onCheckoutComplete();
-    setState(() => _isProcessing = false);
-
-    // 4. Điều hướng đến màn hình thành công
-    if (mounted) {
-      // Chuyển đổi paymentMethod thành chuỗi tiếng Việt
-      String paymentMethodString = _selectedPaymentMethod == 'cash'
+      if (!mounted) return;
+      final paymentMethodString = _selectedPaymentMethod == 'cash'
           ? 'Tiền mặt'
           : _selectedPaymentMethod == 'bank'
           ? 'Ngân hàng'
           : 'Ví điện tử';
 
-      // Thay vì xóa toàn bộ stack (vì làm mất trạng thái tài khoản),
-      // ta chỉ thay thế màn hình Payment bằng OrderSuccess để giữ
-      // Home/Checkout trong stack (và giữ state của tài khoản hiện tại).
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (context) => OrderSuccessScreen(
+        buildSlidePageRoute(
+          OrderSuccessScreen(
             totalAmount: '${widget.totalAmount.toStringAsFixed(0)} ₫',
             paymentMethod: paymentMethodString,
           ),
         ),
       );
+    } on TimeoutException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Thanh toán quá thời gian chờ. Vui lòng thử lại.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final message = e.toString().replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  void _handleBottomTab(RoleBottomTab tab) {
+    switch (tab) {
+      case RoleBottomTab.home:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        break;
+      case RoleBottomTab.cart:
+        Navigator.of(context).pop();
+        break;
+      case RoleBottomTab.scan:
+        showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Quét mã'),
+            content: const Text('Chức năng quét mã đang được cập nhật.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Đóng'),
+              ),
+            ],
+          ),
+        );
+        break;
+      case RoleBottomTab.invoices:
+        Navigator.of(context).push(
+          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.account:
+        Navigator.of(context).push(
+          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.employees:
+        Navigator.of(context).push(
+          buildSlidePageRoute(EmployeeManagementScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.offers:
+      case RoleBottomTab.orders:
+        break;
     }
   }
 
@@ -118,10 +177,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.black,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
       ),
       body: Column(
         children: [
@@ -162,6 +217,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ),
           ),
         ],
+      ),
+      bottomNavigationBar: RoleBottomNavigationBar(
+        role: widget.role,
+        currentTab: RoleBottomTab.cart,
+        onTabSelected: _handleBottomTab,
       ),
     );
   }

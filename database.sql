@@ -320,11 +320,8 @@ VALUES
 INSERT IGNORE INTO categories(category_name)
 VALUES
 ('Đồ uống'),
-('Đồ ăn nhanh'),
-('Gia vị'),
-('Sữa'),
-('Bánh kẹo'),
-('Đồ gia dụng');
+('Trái cây'),
+('Gia vị xốt Dh Foods');
 
 INSERT IGNORE INTO products (
   product_name,
@@ -339,27 +336,39 @@ INSERT IGNORE INTO products (
   status
 )
 VALUES
-('Coca Cola lon 330ml', '893000000001', 'Nước ngọt có gas', '', 10000, 'lon', 20, 10, 1, 'active'),
-('Pepsi lon 330ml', '893000000002', 'Nước ngọt có gas', '', 10000, 'lon', 20, 10, 1, 'active'),
-('Mì Hảo Hảo tôm chua cay', '893000000003', 'Mì ăn liền', '', 4500, 'gói', 40, 20, 2, 'active'),
-('Sữa Vinamilk 180ml', '893000000004', 'Sữa hộp', '', 8000, 'hộp', 20, 10, 4, 'active'),
-('Bánh Oreo', '893000000005', 'Bánh quy socola', '', 12000, 'gói', 20, 10, 5, 'active');
+-- Nhóm 1: Trái cây
+('Chuối', 'PROD001', 'Chuối tươi ngon', 'url_chuoi.jpg', 25000, 'Kg', 100, 10, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
+('Dâu tây', 'PROD002', 'Dâu tây Đà Lạt', 'url_dautay.jpg', 120000, 'Hộp', 50, 5, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
+('Táo', 'PROD003', 'Táo nhập khẩu', 'url_tao.jpg', 60000, 'Kg', 80, 10, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
+('Dứa (Thơm)', 'PROD004', 'Dứa mật ngọt', 'url_dua.jpg', 15000, 'Quả', 40, 5, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
+('Dưa hấu', 'PROD005', 'Dưa hấu Long An', 'url_duahau.jpg', 20000, 'Kg', 150, 15, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
+-- Nhóm 2: Gia vị xốt Dh Foods
+('Xốt Thái sả tắc', 'PROD006', 'Xốt Dh Foods vị Thái', 'url_xotthai.jpg', 35000, 'Chai', 60, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
+('Xốt BBQ', 'PROD007', 'Xốt ướp BBQ Dh Foods', 'url_bbq.jpg', 45000, 'Chai', 40, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
+('Muối ớt chanh Nha Trang', 'PROD008', 'Muối chấm hải sản', 'url_muoiot.jpg', 18000, 'Chai', 100, 10, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
+('Xốt kim quất', 'PROD009', 'Xốt kim quất Dh Foods', 'url_kimquat.jpg', 35000, 'Chai', 50, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
+('Xốt trứng muối', 'PROD010', 'Xốt trứng muối béo ngậy', 'url_trungmuoi.jpg', 55000, 'Chai', 30, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
+-- Nhóm 3: Đồ uống
+('Trà TH true TEA', 'PROD011', 'Trà xanh/Ô long TH', 'url_thtea.jpg', 10000, 'Chai', 200, 20, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active'),
+('Trà đào và hạt chia Fuze Tea', 'PROD012', 'Trà đào hạt chia', 'url_fuzetea.jpg', 12000, 'Chai', 120, 20, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active'),
+('Trà xanh C2 hương chanh', 'PROD013', 'Trà xanh C2', 'url_c2.jpg', 8000, 'Chai', 300, 50, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active'),
+('Trà đá TRADA hương hoa nhài', 'PROD014', 'Trà đá lon TRADA', 'url_trada.jpg', 10000, 'Lon', 100, 15, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active'),
+('Trà xanh Lipton vị chanh mật ong', 'PROD015', 'Lipton chai tiện lợi', 'url_lipton.jpg', 12000, 'Chai', 150, 20, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active');
 
--- Seed kho (inventory_items): tồn trong kho (warehouse).
--- Seed products.stock: tồn trên kệ/tồn bán (shelf) dùng cho màn hình bán hàng.
-INSERT IGNORE INTO inventory_items (
-  barcode,
-  item_name,
-  image_url,
-  price,
-  import_price,
-  unit,
-  stock,
-  status
-)
+INSERT IGNORE INTO inventory_items (barcode, item_name, image_url, price, import_price, unit, stock, status)
 VALUES
-('893000000001', 'Coca Cola lon 330ml', '', 10000, NULL, 'lon', 80, 'active'),
-('893000000002', 'Pepsi lon 330ml', '', 10000, NULL, 'lon', 80, 'active'),
-('893000000003', 'Mì Hảo Hảo tôm chua cay', '', 4500, NULL, 'gói', 160, 'active'),
-('893000000004', 'Sữa Vinamilk 180ml', '', 8000, NULL, 'hộp', 60, 'active'),
-('893000000005', 'Bánh Oreo', '', 12000, NULL, 'gói', 40, 'active');
+('PROD001', 'Chuối', 'url_chuoi.jpg', 25000, 15000, 'Kg', 100, 'available'),
+('PROD002', 'Dâu tây', 'url_dautay.jpg', 120000, 80000, 'Hộp', 50, 'available'),
+('PROD003', 'Táo', 'url_tao.jpg', 60000, 40000, 'Kg', 80, 'available'),
+('PROD004', 'Dứa (Thơm)', 'url_dua.jpg', 15000, 8000, 'Quả', 40, 'available'),
+('PROD005', 'Dưa hấu', 'url_duahau.jpg', 20000, 12000, 'Kg', 150, 'available'),
+('PROD006', 'Xốt Thái sả tắc', 'url_xotthai.jpg', 35000, 25000, 'Chai', 60, 'available'),
+('PROD007', 'Xốt BBQ', 'url_bbq.jpg', 45000, 32000, 'Chai', 40, 'available'),
+('PROD008', 'Muối ớt chanh Nha Trang', 'url_muoiot.jpg', 18000, 12000, 'Chai', 100, 'available'),
+('PROD009', 'Xốt kim quất', 'url_kimquat.jpg', 35000, 25000, 'Chai', 50, 'available'),
+('PROD010', 'Xốt trứng muối', 'url_trungmuoi.jpg', 55000, 40000, 'Chai', 30, 'available'),
+('PROD011', 'Trà TH true TEA', 'url_thtea.jpg', 10000, 7000, 'Chai', 200, 'available'),
+('PROD012', 'Trà đào và hạt chia Fuze Tea', 'url_fuzetea.jpg', 12000, 8500, 'Chai', 120, 'available'),
+('PROD013', 'Trà xanh C2 hương chanh', 'url_c2.jpg', 8000, 5500, 'Chai', 300, 'available'),
+('PROD014', 'Trà đá TRADA hương hoa nhài', 'url_trada.jpg', 10000, 6500, 'Lon', 100, 'available'),
+('PROD015', 'Trà xanh Lipton vị chanh mật ong', 'url_lipton.jpg', 12000, 8000, 'Chai', 150, 'available');

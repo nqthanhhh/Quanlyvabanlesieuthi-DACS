@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sieuthimini/screens/import_inventory_screen.dart';
 
 import '../models/inventory_item.dart';
+import '../models/product.dart';
 import '../services/db_service.dart';
 import 'add_inventory_item_screen.dart';
 import 'inventory_check_screen.dart';
@@ -22,6 +23,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   static const int _MIN_STOCK = 50;
 
   final TextEditingController _searchController = TextEditingController();
+  String _selectedCategory = 'Tất cả';
 
   @override
   void dispose() {
@@ -179,6 +181,53 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  String _inventoryCategory(InventoryItem item, List<Product> products) {
+    Product? mappedProduct;
+    for (final p in products) {
+      if (p.barcode == item.id || p.id == item.id) {
+        mappedProduct = p;
+        break;
+      }
+    }
+    if (mappedProduct == null) return 'Chưa lên kệ';
+    final name = mappedProduct.categoryName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    if (mappedProduct.categoryId != null) {
+      return 'Danh mục ${mappedProduct.categoryId}';
+    }
+    return 'Chưa phân loại';
+  }
+
+  Widget _buildSectionHeader(String title, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                color: Colors.blue.shade800,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -394,6 +443,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
             child: ValueListenableBuilder<Box<InventoryItem>>(
               valueListenable: DBService.inventoryProducts().listenable(),
               builder: (context, box, _) {
+                final products = DBService.products().values.toList().cast<Product>();
                 final query = _searchController.text.trim().toLowerCase();
                 final List<InventoryItem> items = box.values.where((it) {
                   if (query.isEmpty) return true;
@@ -401,14 +451,34 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                       it.name.toLowerCase().contains(query);
                 }).toList();
 
+                final categories = <String>{
+                  'Tất cả',
+                  ...items.map((it) => _inventoryCategory(it, products)),
+                }.toList()
+                  ..sort((a, b) {
+                    if (a == 'Tất cả') return -1;
+                    if (b == 'Tất cả') return 1;
+                    return a.compareTo(b);
+                  });
+
+                List<InventoryItem> displayItems = items;
+                if (_selectedCategory != 'Tất cả') {
+                  displayItems = items
+                      .where(
+                        (it) =>
+                            _inventoryCategory(it, products) == _selectedCategory,
+                      )
+                      .toList();
+                }
+
                 // Sort: low stock first, then name
-                items.sort((a, b) {
+                displayItems.sort((a, b) {
                   final cmp = a.stockQuantity.compareTo(b.stockQuantity);
                   if (cmp != 0) return cmp;
                   return a.name.toLowerCase().compareTo(b.name.toLowerCase());
                 });
 
-                if (items.isEmpty) {
+                if (displayItems.isEmpty) {
                   return const Center(
                     child: Text(
                       'Kho hàng đang trống hoặc không có kết quả phù hợp.',
@@ -416,16 +486,49 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                   );
                 }
 
-                return ListView.builder(
+                final Map<String, List<InventoryItem>> grouped = {};
+                for (final item in displayItems) {
+                  final category = _inventoryCategory(item, products);
+                  grouped.putIfAbsent(category, () => <InventoryItem>[]).add(item);
+                }
+
+                return ListView(
                   padding: const EdgeInsets.only(
                     left: 16.0,
                     right: 16.0,
                     bottom: 16.0,
                   ),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    return _buildInventoryTile(context, items[index]);
-                  },
+                  children: [
+                    SizedBox(
+                      height: 38,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: categories
+                            .map(
+                              (category) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  label: Text(category),
+                                  selected: _selectedCategory == category,
+                                  onSelected: (_) => setState(
+                                    () => _selectedCategory = category,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ...grouped.entries.expand((entry) {
+                      return <Widget>[
+                        _buildSectionHeader(entry.key, entry.value.length),
+                        ...entry.value.map(
+                          (item) => _buildInventoryTile(context, item),
+                        ),
+                      ];
+                    }),
+                  ],
                 );
               },
             ),

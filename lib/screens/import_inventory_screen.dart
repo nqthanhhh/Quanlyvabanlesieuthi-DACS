@@ -425,6 +425,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       ElevatedButton.icon(

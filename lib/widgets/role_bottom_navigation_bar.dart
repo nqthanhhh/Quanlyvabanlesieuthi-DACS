@@ -38,6 +38,12 @@ class RoleBottomNavigationBar extends StatelessWidget {
     final tabs = [
       _TabData(RoleBottomTab.home, Icons.home_outlined, Icons.home, 'Home'),
       _TabData(
+        RoleBottomTab.cart,
+        Icons.shopping_cart_outlined,
+        Icons.shopping_cart,
+        'Thanh toán',
+      ),
+      _TabData(
         RoleBottomTab.employees,
         Icons.people_alt_outlined,
         Icons.people_alt,
@@ -47,14 +53,9 @@ class RoleBottomNavigationBar extends StatelessWidget {
         RoleBottomTab.invoices,
         Icons.receipt_long_outlined,
         Icons.receipt_long,
-        'Hóa đơn',
+        'Lịch sử',
       ),
-      _TabData(
-        RoleBottomTab.cart,
-        Icons.shopping_cart_outlined,
-        Icons.shopping_cart,
-        'Giỏ hàng',
-      ),
+
       _TabData(
         RoleBottomTab.account,
         Icons.person_outline,
@@ -67,35 +68,103 @@ class RoleBottomNavigationBar extends StatelessWidget {
   }
 
   Widget _employeeBar() {
-    final tabs = [
-      _TabData(RoleBottomTab.home, Icons.home_outlined, Icons.home, 'Home'),
-      _TabData(
-        RoleBottomTab.scan,
-        Icons.qr_code_scanner,
-        Icons.qr_code_scanner,
-        'Quét mã',
+    return _BarShell(
+      child: SizedBox(
+        height: 86,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _employeeNavItem(
+                    tab: RoleBottomTab.home,
+                    icon: Icons.home_outlined,
+                    activeIcon: Icons.home,
+                    label: 'Home',
+                  ),
+                ),
+                Expanded(
+                  child: _employeeNavItem(
+                    tab: RoleBottomTab.cart,
+                    icon: Icons.shopping_cart_outlined,
+                    activeIcon: Icons.shopping_cart,
+                    label: 'Thanh toán',
+                  ),
+                ),
+                const SizedBox(width: 90),
+                Expanded(
+                  child: _employeeNavItem(
+                    tab: RoleBottomTab.invoices,
+                    icon: Icons.receipt_long_outlined,
+                    activeIcon: Icons.receipt_long,
+                    label: 'Lịch sử',
+                  ),
+                ),
+                Expanded(
+                  child: _employeeNavItem(
+                    tab: RoleBottomTab.account,
+                    icon: Icons.person_outline,
+                    activeIcon: Icons.person,
+                    label: 'Tài khoản',
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              top: -24,
+              child: GestureDetector(
+                onTap: () => onTabSelected(RoleBottomTab.scan),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
+                        ),
+                        border: Border.all(color: Colors.white, width: 5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _activeColor.withOpacity(0.34),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.qr_code_scanner_rounded,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Quét mã',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: currentTab == RoleBottomTab.scan
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: currentTab == RoleBottomTab.scan
+                            ? _activeColor
+                            : _inactiveColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-      _TabData(
-        RoleBottomTab.cart,
-        Icons.shopping_cart_outlined,
-        Icons.shopping_cart,
-        'Giỏ hàng',
-      ),
-      _TabData(
-        RoleBottomTab.invoices,
-        Icons.receipt_long_outlined,
-        Icons.receipt_long,
-        'Hóa đơn',
-      ),
-      _TabData(
-        RoleBottomTab.account,
-        Icons.person_outline,
-        Icons.person,
-        'Tài khoản',
-      ),
-    ];
-
-    return _BarShell(child: _bottomBar(tabs));
+    );
   }
 
   Widget _customerBar() {
@@ -152,6 +221,40 @@ class RoleBottomNavigationBar extends StatelessWidget {
             ),
           )
           .toList(),
+    );
+  }
+
+  Widget _employeeNavItem({
+    required RoleBottomTab tab,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+  }) {
+    final isActive = currentTab == tab;
+    return InkResponse(
+      onTap: () => onTabSelected(tab),
+      radius: 28,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 9),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isActive ? activeIcon : icon,
+              color: isActive ? _activeColor : _inactiveColor,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                color: isActive ? _activeColor : _inactiveColor,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

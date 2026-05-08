@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/user.dart';
 import '../services/db_service.dart';
+import '../widgets/role_bottom_navigation_bar.dart';
+import '../widgets/slide_page_route.dart';
 import 'employee_detail_screen.dart';
 import 'add_edit_employee_screen.dart';
+import 'checkout_screen.dart';
+import 'order_management_screen.dart';
+import 'profile_view_screen.dart';
 
 // Employee view model used only for presentation
 class Employee {
@@ -25,7 +30,9 @@ class Employee {
 }
 
 class EmployeeManagementScreen extends StatefulWidget {
-  const EmployeeManagementScreen({super.key});
+  final String role;
+
+  const EmployeeManagementScreen({super.key, required this.role});
 
   @override
   State<EmployeeManagementScreen> createState() =>
@@ -33,6 +40,37 @@ class EmployeeManagementScreen extends StatefulWidget {
 }
 
 class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
+  Future<void> _openCheckoutFromTab() async {
+    final email = DBService.settings().get('current_user_email') as String?;
+    if (email == null || email.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')));
+      return;
+    }
+
+    final cart = await DBService.loadCartForCurrentUser(email);
+    if (cart.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Giỏ hàng đang trống')));
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).push(
+      buildSlidePageRoute(
+        CheckoutScreen(
+          cart: Map<String, int>.from(cart),
+          role: widget.role,
+          onCheckoutComplete: () async {
+            await DBService.saveCartForUser(email, <String, int>{});
+          },
+        ),
+      ),
+    );
+  }
+
   final TextEditingController _searchController = TextEditingController();
   List<User> _allUsers = [];
   List<User> _displayedUsers = [];
@@ -193,6 +231,32 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     );
   }
 
+  void _handleBottomTab(RoleBottomTab tab) {
+    switch (tab) {
+      case RoleBottomTab.home:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        break;
+      case RoleBottomTab.invoices:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.account:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.cart:
+        _openCheckoutFromTab();
+        break;
+      case RoleBottomTab.scan:
+      case RoleBottomTab.employees:
+      case RoleBottomTab.offers:
+      case RoleBottomTab.orders:
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -283,6 +347,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
                     ),
             ),
           ],
+        ),
+        bottomNavigationBar: RoleBottomNavigationBar(
+          role: widget.role,
+          currentTab: RoleBottomTab.employees,
+          onTabSelected: _handleBottomTab,
         ),
       ),
     );

@@ -16,6 +16,7 @@ class ProductManagementScreen extends StatefulWidget {
 class _ProductManagementScreenState extends State<ProductManagementScreen> {
   String _searchQuery = '';
   String _selectedFilter = 'Tất cả';
+  String _selectedCategory = 'Tất cả';
 
   // --- HÀM HỖ TRỢ ---
 
@@ -39,6 +40,44 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     }
 
     return {'status': status, 'color': statusColor};
+  }
+
+  String _getCategoryName(Product product) {
+    final categoryName = product.categoryName?.trim();
+    if (categoryName != null && categoryName.isNotEmpty) return categoryName;
+    final byId = product.categoryId;
+    if (byId == null) return 'Chưa phân loại';
+    return 'Danh mục $byId';
+  }
+
+  Widget _buildSectionHeader(String title, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                color: Colors.blue.shade800,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // Xóa sản phẩm qua API rồi cập nhật cache Hive
@@ -260,6 +299,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 4),
 
           // 3. Danh sách sản phẩm thực tế (Kết nối Hive)
           Expanded(
@@ -268,12 +308,27 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
               builder: (context, box, _) {
                 // Lấy tất cả sản phẩm
                 List<Product> allProducts = DBService.getAllProducts();
+                final categories = <String>{
+                  'Tất cả',
+                  ...allProducts.map(_getCategoryName),
+                }.toList();
+                categories.sort((a, b) {
+                  if (a == 'Tất cả') return -1;
+                  if (b == 'Tất cả') return 1;
+                  return a.compareTo(b);
+                });
 
                 // Lọc theo tìm kiếm
                 List<Product> filteredProducts = DBService.searchProducts(
                   _searchQuery,
                   allProducts,
                 );
+
+                if (_selectedCategory != 'Tất cả') {
+                  filteredProducts = filteredProducts
+                      .where((p) => _getCategoryName(p) == _selectedCategory)
+                      .toList();
+                }
 
                 // 💡 LOGIC LỌC THEO TRẠNG THÁI MỚI
                 if (_selectedFilter != 'Tất cả') {
@@ -299,15 +354,52 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                   );
                 }
 
-                // Sắp xếp theo tên
-                filteredProducts.sort((a, b) => a.name.compareTo(b.name));
+                // Sắp xếp: danh mục -> tên
+                filteredProducts.sort((a, b) {
+                  final cateCmp = _getCategoryName(a).compareTo(
+                    _getCategoryName(b),
+                  );
+                  if (cateCmp != 0) return cateCmp;
+                  return a.name.compareTo(b.name);
+                });
 
-                return ListView.builder(
+                final Map<String, List<Product>> grouped = {};
+                for (final product in filteredProducts) {
+                  final category = _getCategoryName(product);
+                  grouped.putIfAbsent(category, () => <Product>[]).add(product);
+                }
+
+                return ListView(
                   padding: const EdgeInsets.all(16.0).copyWith(top: 8),
-                  itemCount: filteredProducts.length,
-                  itemBuilder: (context, index) {
-                    return _buildProductTile(context, filteredProducts[index]);
-                  },
+                  children: [
+                    SizedBox(
+                      height: 38,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: categories
+                            .map(
+                              (category) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  label: Text(category),
+                                  selected: _selectedCategory == category,
+                                  onSelected: (_) => setState(
+                                    () => _selectedCategory = category,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ...grouped.entries.expand((entry) {
+                      return <Widget>[
+                        _buildSectionHeader(entry.key, entry.value.length),
+                        ...entry.value.map((p) => _buildProductTile(context, p)),
+                      ];
+                    }),
+                  ],
                 );
               },
             ),

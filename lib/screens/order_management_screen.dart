@@ -2,10 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/order.dart'; // Cần import model Order
 import '../services/db_service.dart'; // Cần import DBService
+import '../widgets/role_bottom_navigation_bar.dart';
+import '../widgets/slide_page_route.dart';
+import 'checkout_screen.dart';
+import 'employee.dart';
 import 'order_detail_screen.dart'; // Cần import màn hình chi tiết (Giả sử bạn đã có file này)
+import 'profile_view_screen.dart';
 
 class OrderManagementScreen extends StatefulWidget {
-  const OrderManagementScreen({super.key});
+  final String role;
+
+  const OrderManagementScreen({super.key, required this.role});
 
   @override
   State<OrderManagementScreen> createState() => _OrderManagementScreenState();
@@ -89,6 +96,63 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
     );
   }
 
+  Future<void> _openCheckoutFromTab() async {
+    final email = DBService.settings().get('current_user_email') as String?;
+    if (email == null || email.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')));
+      return;
+    }
+
+    final cart = await DBService.loadCartForCurrentUser(email);
+    if (cart.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Giỏ hàng đang trống')));
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).push(
+      buildSlidePageRoute(
+        CheckoutScreen(
+          cart: Map<String, int>.from(cart),
+          role: widget.role,
+          onCheckoutComplete: () async {
+            await DBService.saveCartForUser(email, <String, int>{});
+          },
+        ),
+      ),
+    );
+  }
+
+  void _handleBottomTab(RoleBottomTab tab) {
+    switch (tab) {
+      case RoleBottomTab.home:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        break;
+      case RoleBottomTab.employees:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(EmployeeManagementScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.cart:
+        _openCheckoutFromTab();
+        break;
+      case RoleBottomTab.account:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.invoices:
+      case RoleBottomTab.scan:
+      case RoleBottomTab.offers:
+      case RoleBottomTab.orders:
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -166,6 +230,11 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
             ),
           ),
         ],
+      ),
+      bottomNavigationBar: RoleBottomNavigationBar(
+        role: widget.role,
+        currentTab: RoleBottomTab.invoices,
+        onTabSelected: _handleBottomTab,
       ),
     );
   }

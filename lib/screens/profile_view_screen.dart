@@ -1,12 +1,19 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../widgets/role_bottom_navigation_bar.dart';
+import '../widgets/slide_page_route.dart';
 import '../services/db_service.dart';
 import '../models/user.dart';
+import 'checkout_screen.dart';
+import 'employee.dart';
+import 'order_management_screen.dart';
 import 'profile_edit_screen.dart';
 
 class ProfileViewScreen extends StatefulWidget {
-  const ProfileViewScreen({super.key});
+  final String role;
+
+  const ProfileViewScreen({super.key, required this.role});
 
   @override
   State<ProfileViewScreen> createState() => _ProfileViewScreenState();
@@ -40,12 +47,75 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
     setState(() => _loadUser());
   }
 
+  Future<void> _openCheckoutFromTab() async {
+    final email = DBService.settings().get('current_user_email') as String?;
+    if (email == null || email.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')));
+      return;
+    }
+
+    final cart = await DBService.loadCartForCurrentUser(email);
+    if (cart.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Giỏ hàng đang trống')));
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).push(
+      buildSlidePageRoute(
+        CheckoutScreen(
+          cart: Map<String, int>.from(cart),
+          role: widget.role,
+          onCheckoutComplete: () async {
+            await DBService.saveCartForUser(email, <String, int>{});
+          },
+        ),
+      ),
+    );
+  }
+
+  void _handleBottomTab(RoleBottomTab tab) {
+    switch (tab) {
+      case RoleBottomTab.home:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        break;
+      case RoleBottomTab.invoices:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.employees:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(EmployeeManagementScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.account:
+        break;
+      case RoleBottomTab.cart:
+        _openCheckoutFromTab();
+        break;
+      case RoleBottomTab.scan:
+      case RoleBottomTab.offers:
+      case RoleBottomTab.orders:
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_user == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Thông tin cá nhân')),
         body: const Center(child: Text('Không tìm thấy thông tin người dùng')),
+        bottomNavigationBar: RoleBottomNavigationBar(
+          role: widget.role,
+          currentTab: RoleBottomTab.account,
+          onTabSelected: _handleBottomTab,
+        ),
       );
     }
 
@@ -118,6 +188,11 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
             ],
           ),
         ),
+      ),
+      bottomNavigationBar: RoleBottomNavigationBar(
+        role: widget.role,
+        currentTab: RoleBottomTab.account,
+        onTabSelected: _handleBottomTab,
       ),
     );
   }

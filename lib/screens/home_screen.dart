@@ -16,6 +16,9 @@ import 'order_management_screen.dart';
 import 'product_performance_report_screen.dart';
 import 'security_info_screen.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
+import '../widgets/slide_page_route.dart';
+
+enum HomeFilterOption { bestSeller, priceAsc, priceDesc, inStockOnly }
 
 // --- WIDGET CHÍNH ---
 class HomeScreen extends StatefulWidget {
@@ -34,6 +37,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _currentUserEmail;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _selectedCategory = 'Tất cả';
+  HomeFilterOption _filterOption = HomeFilterOption.bestSeller;
   RoleBottomTab _currentBottomTab = RoleBottomTab.home;
   bool _isLoading = true;
   // *** INFINITE SCROLL LOGIC ***
@@ -193,7 +198,136 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onSearchChanged() {
     setState(() {
       _searchQuery = _searchController.text.trim().toLowerCase();
+      _loadedProductCount = _productsPerPage;
     });
+  }
+
+  String _categoryOf(Product product) {
+    final explicit = (product.categoryName ?? '').trim().toLowerCase();
+    if (explicit.contains('trái') || explicit.contains('hoa quả')) {
+      return 'Trái cây';
+    }
+    if (explicit.contains('đồ uống') || explicit.contains('nuoc')) {
+      return 'Đồ uống';
+    }
+    if (explicit.contains('gia vị') || explicit.contains('xốt')) return 'Gia vị';
+
+    final name = product.name.toLowerCase();
+    final barcode = (product.barcode ?? '').toLowerCase();
+    final hint = '$name $barcode';
+    if (hint.contains('chuối') ||
+        hint.contains('chuoi') ||
+        hint.contains('dâu') ||
+        hint.contains('tao') ||
+        hint.contains('táo') ||
+        hint.contains('dứa') ||
+        hint.contains('dua hau') ||
+        hint.contains('dưa hấu')) {
+      return 'Trái cây';
+    }
+    if (hint.contains('trà') ||
+        hint.contains('tea') ||
+        hint.contains('coca') ||
+        hint.contains('pepsi') ||
+        hint.contains('c2') ||
+        hint.contains('lipton')) {
+      return 'Đồ uống';
+    }
+    if (hint.contains('xốt') ||
+        hint.contains('muối') ||
+        hint.contains('bbq') ||
+        hint.contains('kim quất')) {
+      return 'Gia vị';
+    }
+    return 'Khác';
+  }
+
+  List<Product> _applyFilters(List<Product> items) {
+    Iterable<Product> result = items;
+
+    if (_selectedCategory != 'Tất cả') {
+      result = result.where((p) => _categoryOf(p) == _selectedCategory);
+    }
+
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery;
+      result = result.where((product) {
+        final name = product.name.toLowerCase();
+        return name.contains(q);
+      });
+    }
+
+    final list = result.toList();
+    switch (_filterOption) {
+      case HomeFilterOption.bestSeller:
+        // Không có dữ liệu bán chạy riêng, dùng tồn kho thấp hơn làm tín hiệu bán chạy.
+        list.sort((a, b) => a.stockQuantity.compareTo(b.stockQuantity));
+        break;
+      case HomeFilterOption.priceAsc:
+        list.sort((a, b) => a.price.compareTo(b.price));
+        break;
+      case HomeFilterOption.priceDesc:
+        list.sort((a, b) => b.price.compareTo(a.price));
+        break;
+      case HomeFilterOption.inStockOnly:
+        list.removeWhere((p) => p.stockQuantity <= 0);
+        break;
+    }
+    return list;
+  }
+
+  void _openFilterSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(title: Text('Bộ lọc sản phẩm')),
+            RadioListTile<HomeFilterOption>(
+              value: HomeFilterOption.bestSeller,
+              groupValue: _filterOption,
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _filterOption = v);
+                Navigator.pop(ctx);
+              },
+              title: const Text('Bán chạy'),
+            ),
+            RadioListTile<HomeFilterOption>(
+              value: HomeFilterOption.priceAsc,
+              groupValue: _filterOption,
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _filterOption = v);
+                Navigator.pop(ctx);
+              },
+              title: const Text('Giá thấp đến cao'),
+            ),
+            RadioListTile<HomeFilterOption>(
+              value: HomeFilterOption.priceDesc,
+              groupValue: _filterOption,
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _filterOption = v);
+                Navigator.pop(ctx);
+              },
+              title: const Text('Giá cao đến thấp'),
+            ),
+            RadioListTile<HomeFilterOption>(
+              value: HomeFilterOption.inStockOnly,
+              groupValue: _filterOption,
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _filterOption = v);
+                Navigator.pop(ctx);
+              },
+              title: const Text('Còn hàng'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // --- HÀM TÁCH WIDGET ---
@@ -311,7 +445,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return GestureDetector(
       onTap: () => Navigator.of(
         context,
-      ).push(MaterialPageRoute(builder: (_) => const ProfileViewScreen())),
+      ).push(
+        MaterialPageRoute(
+          builder: (_) => ProfileViewScreen(role: widget.role),
+        ),
+      ),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
         child: Column(
@@ -493,11 +631,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _handleBottomTab(RoleBottomTab tab) {
-    setState(() => _currentBottomTab = tab);
-
+  void _handleBottomTab(RoleBottomTab tab) async {
     switch (tab) {
       case RoleBottomTab.home:
+        setState(() => _currentBottomTab = tab);
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
             0,
@@ -507,19 +644,27 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         break;
       case RoleBottomTab.employees:
+        setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
-        ).push(MaterialPageRoute(builder: (_) => EmployeeManagementScreen()));
+        ).push(
+          buildSlidePageRoute(EmployeeManagementScreen(role: widget.role)),
+        );
         break;
       case RoleBottomTab.scan:
+        setState(() => _currentBottomTab = tab);
         _showScanPlaceholder();
         break;
       case RoleBottomTab.invoices:
+        setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
-        ).push(MaterialPageRoute(builder: (_) => OrderManagementScreen()));
+        ).push(
+          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
+        );
         break;
       case RoleBottomTab.offers:
+        setState(() => _currentBottomTab = tab);
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
             0,
@@ -532,9 +677,33 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         break;
       case RoleBottomTab.cart:
-        _openCartSheet(context);
+        if (_currentBottomTab != RoleBottomTab.cart) {
+          setState(() => _currentBottomTab = RoleBottomTab.cart);
+        }
+        if (_cart.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Giỏ hàng đang trống')),
+          );
+          setState(() => _currentBottomTab = RoleBottomTab.home);
+          break;
+        }
+        await Navigator.of(context).push(
+          buildSlidePageRoute(
+            CheckoutScreen(
+              cart: Map.from(_cart),
+              role: widget.role,
+              onCheckoutComplete: () async {
+                setState(() => _cart.clear());
+                await _persistCart();
+              },
+            ),
+          ),
+        );
+        if (!mounted) return;
+        setState(() => _currentBottomTab = RoleBottomTab.home);
         break;
       case RoleBottomTab.orders:
+        setState(() => _currentBottomTab = tab);
         final rawUserId = DBService.settings().get('current_user_id');
         final currentUserId = rawUserId is int
             ? rawUserId
@@ -546,9 +715,12 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         break;
       case RoleBottomTab.account:
+        setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
-        ).push(MaterialPageRoute(builder: (_) => const ProfileViewScreen()));
+        ).push(
+          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
+        );
         break;
     }
   }
@@ -600,15 +772,43 @@ class _HomeScreenState extends State<HomeScreen> {
             const _PromoBanner(), // Tách thành Widget riêng
             const SizedBox(height: 16),
 
-            // Tiêu đề Ưu đãi hôm nay
+            const Text(
+              'Danh mục sản phẩm',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Ưu đãi hôm nay',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                Expanded(
+                  child: SizedBox(
+                    height: 38,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: ['Tất cả', 'Trái cây', 'Đồ uống', 'Gia vị']
+                          .map(
+                            (category) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                label: Text(category),
+                                selected: _selectedCategory == category,
+                                onSelected: (_) {
+                                  setState(() {
+                                    _selectedCategory = category;
+                                    _loadedProductCount = _productsPerPage;
+                                  });
+                                },
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
                 ),
-                TextButton(onPressed: () {}, child: const Text('Tất cả')),
+                IconButton(
+                  onPressed: _openFilterSheet,
+                  icon: const Icon(Icons.tune_rounded),
+                  tooltip: 'Bộ lọc',
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -619,21 +819,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 valueListenable: DBService.products().listenable(),
                 builder: (context, Box<Product> box, _) {
                   final allItems = box.values.toList().cast<Product>();
-                  final List<Product> filteredItems;
-
-                  // 1. Lọc sản phẩm theo truy vấn tìm kiếm (prefix match)
-                  if (_searchQuery.isEmpty) {
-                    filteredItems = allItems; // Không tìm, dùng tất cả
-                  } else {
-                    final q = _searchQuery;
-                    filteredItems = allItems.where((product) {
-                      final name = product.name.toLowerCase();
-                      // Nếu truy vấn dài hơn tên sản phẩm, không khớp
-                      if (q.length > name.length) return false;
-                      // So khớp tiền tố: gõ 1 ký tự -> lọc theo ký tự đầu, 2 ký tự -> 2 ký tự đầu, v.v.
-                      return name.startsWith(q);
-                    }).toList();
-                  }
+                  final filteredItems = _applyFilters(allItems);
 
                   // 2. ✅ SỬA LỖI Ở ĐÂY: Gán kết quả cho biến
                   final itemsToShow = filteredItems
@@ -643,7 +829,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // 3. Kiểm tra danh sách rỗng
                   if (itemsToShow.isEmpty) {
-                    if (_searchQuery.isNotEmpty) {
+                    if (_searchQuery.isNotEmpty || _selectedCategory != 'Tất cả') {
                       return const Center(
                         child: Text('Không tìm thấy sản phẩm nào.'),
                       );
@@ -867,6 +1053,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       MaterialPageRoute(
                         builder: (_) => CheckoutScreen(
                           cart: Map.from(_cart),
+                          role: widget.role,
                           onCheckoutComplete: () async {
                             setState(() => _cart.clear());
                             await _persistCart();

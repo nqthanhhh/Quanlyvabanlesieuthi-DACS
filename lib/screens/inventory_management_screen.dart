@@ -6,6 +6,7 @@ import 'package:sieuthimini/screens/import_inventory_screen.dart';
 import '../models/inventory_item.dart';
 import '../models/product.dart';
 import '../services/db_service.dart';
+import '../utils/constants.dart';
 import 'add_inventory_item_screen.dart';
 import 'inventory_check_screen.dart';
 import 'inventory_history_screen.dart'; // Màn hình lịch sử xuất nhập kho
@@ -20,8 +21,6 @@ class InventoryManagementScreen extends StatefulWidget {
 }
 
 class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
-  static const int _MIN_STOCK = 50;
-
   final TextEditingController _searchController = TextEditingController();
   String _selectedCategory = 'Tất cả';
 
@@ -40,7 +39,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     for (var item in box.values) {
       totalValue += item.stockQuantity * item.price;
 
-      if (item.stockQuantity <= _MIN_STOCK) {
+      if (item.stockQuantity <= AppConstants.minStockThreshold) {
         lowStockCount++;
       }
     }
@@ -113,7 +112,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     if (item.stockQuantity == 0) {
       status = 'Hết hàng';
       statusColor = Colors.red;
-    } else if (item.stockQuantity <= _MIN_STOCK) {
+    } else if (item.stockQuantity <= AppConstants.minStockThreshold) {
       status = 'Sắp hết';
       statusColor = Colors.orange;
     } else {
@@ -440,19 +439,21 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
           ValueListenableBuilder<Box<InventoryItem>>(
             valueListenable: DBService.inventoryProducts().listenable(),
             builder: (context, box, _) {
-              final products = DBService.products().values.toList().cast<Product>();
+              final products = DBService.products().values
+                  .toList()
+                  .cast<Product>();
               final items = box.values.toList();
-              final categories = <String>{
-                'Tất cả',
-                ...items
-                    .whereType<InventoryItem>()
-                    .map((it) => _inventoryCategory(it, products)),
-              }.toList()
-                ..sort((a, b) {
-                  if (a == 'Tất cả') return -1;
-                  if (b == 'Tất cả') return 1;
-                  return a.compareTo(b);
-                });
+              final categories =
+                  <String>{
+                    'Tất cả',
+                    ...items.whereType<InventoryItem>().map(
+                      (it) => _inventoryCategory(it, products),
+                    ),
+                  }.toList()..sort((a, b) {
+                    if (a == 'Tất cả') return -1;
+                    if (b == 'Tất cả') return 1;
+                    return a.compareTo(b);
+                  });
 
               if (_selectedCategory != 'Tất cả' &&
                   !categories.contains(_selectedCategory)) {
@@ -464,7 +465,11 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
               }
 
               return Padding(
-                padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 8.0),
+                padding: const EdgeInsets.only(
+                  left: 16.0,
+                  right: 16.0,
+                  bottom: 8.0,
+                ),
                 child: SizedBox(
                   height: 38,
                   child: ListView(
@@ -493,7 +498,9 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
             child: ValueListenableBuilder<Box<InventoryItem>>(
               valueListenable: DBService.inventoryProducts().listenable(),
               builder: (context, box, _) {
-                final products = DBService.products().values.toList().cast<Product>();
+                final products = DBService.products().values
+                    .toList()
+                    .cast<Product>();
                 final query = _searchController.text.trim().toLowerCase();
                 final List<InventoryItem> items = box.values.where((it) {
                   if (query.isEmpty) return true;
@@ -506,7 +513,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                   displayItems = items
                       .where(
                         (it) =>
-                            _inventoryCategory(it, products) == _selectedCategory,
+                            _inventoryCategory(it, products) ==
+                            _selectedCategory,
                       )
                       .toList();
                 }
@@ -529,7 +537,9 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                 final Map<String, List<InventoryItem>> grouped = {};
                 for (final item in displayItems) {
                   final category = _inventoryCategory(item, products);
-                  grouped.putIfAbsent(category, () => <InventoryItem>[]).add(item);
+                  grouped
+                      .putIfAbsent(category, () => <InventoryItem>[])
+                      .add(item);
                 }
 
                 return ListView(

@@ -1,6 +1,7 @@
 // lib/models/order.dart
 import 'package:hive/hive.dart';
 import 'order_line.dart'; // Import OrderLine
+import '../utils/type_converters.dart';
 
 part 'order.g.dart'; // File tự động tạo bởi build_runner
 
@@ -53,32 +54,31 @@ class Order extends HiveObject {
     required this.items,
   });
 
-  static double _toDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
   factory Order.fromJson(Map<String, dynamic> json) {
     final rawItems = (json['items'] as List?) ?? const [];
     return Order(
-      customerId: _toNullableInt(json['customer_id'] ?? json['customerId']),
-      shippingAddress: _toNullableString(
+      customerId: TypeConverters.toNullableInt(
+        json['customer_id'] ?? json['customerId'],
+      ),
+      shippingAddress: TypeConverters.toNullableString(
         json['shipping_address'] ?? json['shippingAddress'],
       ),
-      paymentMethod: _toNullableString(
+      paymentMethod: TypeConverters.toNullableString(
         json['payment_method'] ?? json['paymentMethod'] ?? json['method'],
       ),
-      paymentStatus: _toNullableString(
+      paymentStatus: TypeConverters.toNullableString(
         json['payment_status'] ?? json['paymentStatus'],
       ),
-      note: _toNullableString(json['note']),
+      note: TypeConverters.toNullableString(json['note']),
       id: (json['order_id'] ?? json['id']).toString(),
       orderDate:
           DateTime.tryParse(
             (json['created_at'] ?? json['orderDate'] ?? '').toString(),
           ) ??
           DateTime.now(),
-      totalAmount: _toDouble(json['totalAmount'] ?? json['final_amount']),
+      totalAmount: TypeConverters.toDouble(
+        json['totalAmount'] ?? json['final_amount'],
+      ),
       customerName:
           (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ')
               .toString(),
@@ -88,19 +88,6 @@ class Order extends HiveObject {
           .map((e) => OrderLine.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
     );
-  }
-
-  static int? _toNullableInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
-  }
-
-  static String? _toNullableString(dynamic value) {
-    if (value == null) return null;
-    final text = value.toString();
-    return text.isEmpty ? null : text;
   }
 
   Map<String, dynamic> toJson({int? customerId, int? employeeId}) {

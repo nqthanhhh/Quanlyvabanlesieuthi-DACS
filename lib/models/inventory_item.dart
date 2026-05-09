@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../utils/type_converters.dart';
 
 /// InventoryItem is a separate model used only for warehouse/inventory records.
 /// We provide a manual TypeAdapter so it works without code generation.
@@ -19,28 +20,21 @@ class InventoryItem {
     this.stockQuantity = 0,
   });
 
-  static int _toInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  static double _toDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
     return InventoryItem(
       id: (json['barcode'] ?? json['id'] ?? json['inventory_item_id'])
           .toString(),
       name: (json['item_name'] ?? json['name'] ?? '').toString(),
-      price: _toDouble(json['price']),
+      price: TypeConverters.toDouble(json['price']),
       importPrice: json['import_price'] == null && json['importPrice'] == null
           ? null
-          : _toDouble(json['import_price'] ?? json['importPrice']),
+          : TypeConverters.toDouble(
+              json['import_price'] ?? json['importPrice'],
+            ),
       unit: (json['unit'] ?? 'sp').toString(),
-      stockQuantity: _toInt(json['stock'] ?? json['stockQuantity']),
+      stockQuantity: TypeConverters.toInt(
+        json['stock'] ?? json['stockQuantity'],
+      ),
     );
   }
 

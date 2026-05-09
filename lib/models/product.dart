@@ -1,5 +1,6 @@
 // lib/models/product.dart
 import 'package:hive/hive.dart';
+import '../utils/type_converters.dart';
 
 part 'product.g.dart';
 
@@ -43,39 +44,25 @@ class Product extends HiveObject {
     this.minStock = 10,
   });
 
-  static int _toInt(dynamic value, {int defaultValue = 0}) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? defaultValue;
-  }
-
-  static double _toDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  static int? _toNullableInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
-  }
-
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
       id: (json['product_id'] ?? json['id']).toString(),
       name: (json['product_name'] ?? json['name'] ?? '').toString(),
-      price: _toDouble(json['price']),
+      price: TypeConverters.toDouble(json['price']),
       unit: (json['unit'] ?? 'sp').toString(),
-      stockQuantity: _toInt(json['stock'] ?? json['stockQuantity']),
+      stockQuantity: TypeConverters.toInt(
+        json['stock'] ?? json['stockQuantity'],
+      ),
       createdAt: json['created_at'] == null
           ? null
           : DateTime.tryParse(json['created_at'].toString()),
       imageUrl: (json['image_url'] ?? json['imageUrl'])?.toString(),
       barcode: json['barcode']?.toString(),
-      categoryId: _toNullableInt(json['category_id'] ?? json['categoryId']),
+      categoryId: TypeConverters.toNullableInt(
+        json['category_id'] ?? json['categoryId'],
+      ),
       categoryName: (json['category_name'] ?? json['categoryName'])?.toString(),
-      minStock: _toInt(json['min_stock'], defaultValue: 10),
+      minStock: TypeConverters.toInt(json['min_stock'], defaultValue: 10),
     );
   }
 

@@ -7,6 +7,7 @@ import '../models/order.dart';
 import '../models/product.dart';
 import '../models/user.dart';
 import '../models/inventory_item.dart';
+import '../utils/type_converters.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -89,15 +90,10 @@ class ApiService {
         .timeout(_timeout);
     final body = _decode(response);
     final user = Map<String, dynamic>.from((body as Map)['user'] as Map);
-    _currentUserId = _toNullableInt(user['user_id'] ?? user['userId']);
+    _currentUserId = TypeConverters.toNullableInt(
+      user['user_id'] ?? user['userId'],
+    );
     return user;
-  }
-
-  static int? _toNullableInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
   }
 
   static Future<void> register({

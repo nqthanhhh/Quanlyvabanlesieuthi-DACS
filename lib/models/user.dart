@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../utils/type_converters.dart';
 
 part 'user.g.dart';
 
@@ -50,16 +51,9 @@ class User extends HiveObject {
     this.avatarPath,
   });
 
-  static int? _toNullableInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
-  }
-
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      userId: _toNullableInt(json['user_id'] ?? json['id']),
+      userId: TypeConverters.toNullableInt(json['user_id'] ?? json['id']),
       email: (json['email'] ?? '').toString(),
       password: (json['password'] ?? '').toString(),
       role: (json['role_name'] ?? json['role'] ?? '').toString(),

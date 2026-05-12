@@ -22,12 +22,23 @@ class ApiService {
   static int? _currentUserId;
 
   static String get baseUrl {
+    // 1. Ưu tiên cấu hình từ môi trường nếu có
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;
+
+    // 2. Nếu là Web
     if (kIsWeb) return 'http://localhost:3000';
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:3000';
+
+    // 3. Nếu là Android (Máy ảo) - Đây là phần quan trọng nhất
+    try {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        return 'http://10.0.2.2:3000';
+      }
+    } catch (e) {
+      // Tránh lỗi nếu không nhận diện được platform
     }
+
+    // 4. Mặc định cho iOS emulator hoặc các trường hợp khác
     return 'http://localhost:3000';
   }
 

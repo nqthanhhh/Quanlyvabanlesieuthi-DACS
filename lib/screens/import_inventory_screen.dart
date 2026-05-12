@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/inventory_item.dart'; // <<< IMPORT InventoryItem
 import '../services/db_service.dart'; // <<< Đảm bảo bạn có DBService và hàm inventoryHistory()
+import '../services/api_service.dart';
 
 class ImportInventoryScreen extends StatefulWidget {
   const ImportInventoryScreen({super.key});
@@ -26,6 +27,36 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
   final TextEditingController _importPriceController = TextEditingController();
   final TextEditingController _unitController = TextEditingController();
   final TextEditingController _qtyController = TextEditingController(text: '0');
+
+  List<Map<String, dynamic>> _categories = [];
+  int? _selectedCategoryId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await ApiService.fetchCategories();
+      if (!mounted) return;
+      setState(() {
+        _categories = categories;
+        _selectedCategoryId =
+            _selectedCategoryId ??
+            (categories.isNotEmpty
+                ? categories.first['category_id'] as int
+                : null);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _categories = [];
+        _selectedCategoryId = null;
+      });
+    }
+  }
 
   String? _pickedImagePath;
   bool _processing = false;
@@ -175,6 +206,10 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
       final unit = _unitController.text.trim();
       final qty = int.parse(_qtyController.text.trim());
 
+      if (_selectedCategoryId == null) {
+        throw Exception('Vui lòng chọn danh mục');
+      }
+
       final saved = await DBService.createInventoryItemRemote(
         barcode: id,
         name: name,
@@ -182,6 +217,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
         importPrice: importPrice,
         unit: unit,
         quantity: qty,
+        categoryId: _selectedCategoryId,
         imagePath: _pickedImagePath,
       );
 
@@ -425,6 +461,24 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    value: _selectedCategoryId,
+                    decoration: const InputDecoration(
+                      labelText: 'Danh mục sản phẩm',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _categories
+                        .map(
+                          (c) => DropdownMenuItem<int>(
+                            value: c['category_id'] as int,
+                            child: Text(c['category_name'].toString()),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() => _selectedCategoryId = v),
+                    validator: (v) =>
+                        v == null ? 'Vui lòng chọn danh mục' : null,
+                  ),
                   const SizedBox(height: 12),
                   Row(
                     children: [

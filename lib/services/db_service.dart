@@ -612,6 +612,7 @@ class DBService {
     required double importPrice,
     required String unit,
     required int quantity,
+    int? categoryId,
     String? imagePath,
   }) async {
     final item = InventoryItem(
@@ -621,6 +622,7 @@ class DBService {
       unit: unit,
       id: barcode,
       stockQuantity: 0,
+      categoryId: categoryId,
     );
 
     final saved = await ApiService.createInventoryItem(item);

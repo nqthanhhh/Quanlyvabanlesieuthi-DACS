@@ -7,7 +7,7 @@ import '../models/inventory_item.dart';
 import '../models/product.dart';
 import '../services/db_service.dart';
 import '../utils/constants.dart';
-import 'add_inventory_item_screen.dart';
+import 'edit_inventory_item_screen.dart';
 import 'inventory_check_screen.dart';
 import 'inventory_history_screen.dart'; // Màn hình lịch sử xuất nhập kho
 import 'low_stock_screen.dart'; // 💡 IMPORT MÀN HÌNH MỚI

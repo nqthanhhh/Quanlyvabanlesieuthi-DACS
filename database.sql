@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   inventory_item_id INT AUTO_INCREMENT PRIMARY KEY,
   barcode VARCHAR(50) NOT NULL UNIQUE,
   item_name VARCHAR(150) NOT NULL,
+  category_id INT NULL, -- <== THÊM DÒNG NÀY VÀO ĐÂY
   image_url VARCHAR(255),
   price DECIMAL(10,2) NOT NULL,
   import_price DECIMAL(10,2) NULL,
@@ -84,7 +85,7 @@ CREATE TABLE IF NOT EXISTS carts (
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
-
+clt
 CREATE TABLE IF NOT EXISTS cart_items (
   cart_item_id INT AUTO_INCREMENT PRIMARY KEY,
   cart_id INT NOT NULL,
@@ -390,3 +391,17 @@ VALUES
 ('PROD013', 'Trà xanh C2 hương chanh', 'url_c2.jpg', 8000, 5500, 'Chai', 300, 'available'),
 ('PROD014', 'Trà đá TRADA hương hoa nhài', 'url_trada.jpg', 10000, 6500, 'Lon', 100, 'available'),
 ('PROD015', 'Trà xanh Lipton vị chanh mật ong', 'url_lipton.jpg', 12000, 8000, 'Chai', 150, 'available');
+-- Cập nhật thêm cột category_id cho bảng inventory_items
+-- ALTER TABLE inventory_items
+-- ADD COLUMN category_id INT NULL AFTER item_name;
+
+-- -- Thêm khóa ngoại (nếu đã có bảng categories)
+-- ALTER TABLE inventory_items
+-- ADD CONSTRAINT fk_inventory_items_categories
+-- FOREIGN KEY (category_id) REFERENCES categories(category_id)
+-- ON UPDATE CASCADE
+-- ON DELETE SET NULL;
+UPDATE inventory_items ii
+JOIN products p ON p.barcode = ii.barcode
+SET ii.category_id = p.category_id
+WHERE ii.category_id IS NULL;

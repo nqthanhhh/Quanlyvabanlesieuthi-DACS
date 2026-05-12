@@ -73,9 +73,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
       if (!mounted) return;
       setState(() {
         _categories = categories;
-        _selectedCategoryId ??= categories.isNotEmpty
-            ? categories.first['category_id'] as int
-            : null;
+        // Không tự động chọn categories.first (có thể lệch sang Gia vị ID=3).
+        // Khi release từ kho lên kệ, buộc người dùng/logic phải chọn đúng danh mục.
+        if (_selectedCategoryId != null) {
+          // giữ nguyên
+        }
       });
     } catch (_) {
       if (mounted) setState(() => _categories = []);
@@ -144,6 +146,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Lấy từ kho: ${item.name}'),
+
         content: Form(
           key: formKey,
           child: Column(
@@ -213,14 +216,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
   ) async {
     setState(() => _isProcessing = true);
     try {
-      if (_selectedCategoryId == null) {
-        throw Exception('Vui lòng thêm hoặc chọn danh mục.');
+      final int? categoryId = item.categoryId;
+      if (categoryId == null) {
+        throw Exception(
+          'Hàng trong kho chưa có danh mục (categoryId). Vui lòng kiểm tra lại khi nhập kho.',
+        );
       }
 
       await DBService.releaseInventoryToShelf(
         item: item,
         quantity: takeAmount,
-        categoryId: _selectedCategoryId!,
+        categoryId: categoryId,
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -390,38 +396,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
               ),
               const SizedBox(height: 8),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      initialValue: _selectedCategoryId,
-                      decoration: const InputDecoration(
-                        labelText: 'Danh mục',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _categories
-                          .map(
-                            (category) => DropdownMenuItem<int>(
-                              value: category['category_id'] as int,
-                              child: Text(category['category_name'].toString()),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() => _selectedCategoryId = value);
-                      },
-                      validator: (value) =>
-                          value == null ? 'Vui lòng chọn danh mục' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _createCategoryQuick,
-                    icon: const Icon(Icons.add),
-                    tooltip: 'Thêm danh mục',
-                  ),
-                ],
-              ),
+              // Danh mục lấy theo inventory_items.category_id khi release từ kho.
+              // Vì inventory_items đang có thể NULL, release sẽ bị chặn để tránh nhầm category.
               const SizedBox(height: 8),
 
               // Gợi ý sản phẩm từ kho (tìm kiếm theo id/name dựa trên nội dung ô ID)

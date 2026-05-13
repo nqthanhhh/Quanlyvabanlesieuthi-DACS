@@ -9,6 +9,7 @@ import 'checkout_screen.dart';
 import 'employee.dart';
 import 'order_management_screen.dart';
 import 'profile_edit_screen.dart';
+import 'scan_product_screen.dart';
 
 class ProfileViewScreen extends StatefulWidget {
   final String role;
@@ -50,9 +51,9 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
   Future<void> _openCheckoutFromTab() async {
     final email = DBService.settings().get('current_user_email') as String?;
     if (email == null || email.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')),
+      );
       return;
     }
 
@@ -78,6 +79,36 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
     );
   }
 
+  Future<void> _scanAndOpenCart() async {
+    final product = await Navigator.of(
+      context,
+    ).push(buildSlidePageRoute(const ScanProductScreen()));
+    if (product == null || !mounted) return;
+    try {
+      final cart = await DBService.addProductToCurrentCart(product);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        buildSlidePageRoute(
+          CheckoutScreen(
+            cart: cart,
+            role: widget.role,
+            onCheckoutComplete: () async {
+              final email = DBService.currentUserEmail();
+              if (email != null) {
+                await DBService.saveCartForUser(email, <String, int>{});
+              }
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
   void _handleBottomTab(RoleBottomTab tab) {
     switch (tab) {
       case RoleBottomTab.home:
@@ -99,6 +130,8 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
         _openCheckoutFromTab();
         break;
       case RoleBottomTab.scan:
+        _scanAndOpenCart();
+        break;
       case RoleBottomTab.offers:
       case RoleBottomTab.orders:
         break;
@@ -159,8 +192,8 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
                       user.role == 'admin'
                           ? 'Quản lý'
                           : user.role == 'employee'
-                              ? 'Nhân viên'
-                              : 'Khách hàng',
+                          ? 'Nhân viên'
+                          : 'Khách hàng',
                       style: const TextStyle(color: Colors.black54),
                     ),
                   ],

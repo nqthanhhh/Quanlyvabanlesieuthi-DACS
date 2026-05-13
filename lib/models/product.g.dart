@@ -22,13 +22,19 @@ class ProductAdapter extends TypeAdapter<Product> {
       price: (fields[2] as num).toDouble(),
       unit: fields[3].toString(),
       stockQuantity: (fields[4] as num).toInt(),
+      createdAt: fields[5] as DateTime?,
+      imageUrl: fields[6]?.toString(),
+      barcode: fields[7]?.toString(),
+      categoryId: (fields[8] as num?)?.toInt(),
+      categoryName: fields[9]?.toString(),
+      minStock: (fields[10] as num?)?.toInt() ?? 10,
     );
   }
 
   @override
   void write(BinaryWriter writer, Product obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -38,7 +44,19 @@ class ProductAdapter extends TypeAdapter<Product> {
       ..writeByte(3)
       ..write(obj.unit)
       ..writeByte(4)
-      ..write(obj.stockQuantity);
+      ..write(obj.stockQuantity)
+      ..writeByte(5)
+      ..write(obj.createdAt)
+      ..writeByte(6)
+      ..write(obj.imageUrl)
+      ..writeByte(7)
+      ..write(obj.barcode)
+      ..writeByte(8)
+      ..write(obj.categoryId)
+      ..writeByte(9)
+      ..write(obj.categoryName)
+      ..writeByte(10)
+      ..write(obj.minStock);
   }
 
   @override

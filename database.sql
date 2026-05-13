@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS orders (
   order_id INT AUTO_INCREMENT PRIMARY KEY,
   customer_id INT,
   employee_id INT,
+  shift_id INT,
   order_type VARCHAR(30) NOT NULL,
   total_amount DECIMAL(10,2) NOT NULL,
   discount_amount DECIMAL(10,2) DEFAULT 0,
@@ -307,6 +308,7 @@ CREATE TABLE IF NOT EXISTS work_shifts (
   shift_date DATE NOT NULL,
   start_time TIME,
   end_time TIME,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
   note VARCHAR(255),
 
   CONSTRAINT fk_work_shifts_employee

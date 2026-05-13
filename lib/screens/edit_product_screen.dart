@@ -22,7 +22,9 @@ class _EditProductScreenState extends State<EditProductScreen> {
   @override
   void initState() {
     super.initState();
-    _idController = TextEditingController(text: widget.product.id);
+    _idController = TextEditingController(
+      text: widget.product.barcode ?? widget.product.id,
+    );
     _nameController = TextEditingController(text: widget.product.name);
     _priceController = TextEditingController(
       text: widget.product.price.toString(),
@@ -121,12 +123,14 @@ class _EditProductScreenState extends State<EditProductScreen> {
             children: [
               TextFormField(
                 controller: _idController,
+                readOnly: true,
                 decoration: const InputDecoration(
-                  labelText: 'Mã sản phẩm (ID)',
+                  labelText: 'Mã vạch / Mã nội bộ',
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Nhập Mã' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Thiếu mã sản phẩm'
+                    : null,
               ),
               const SizedBox(height: 12),
               TextFormField(

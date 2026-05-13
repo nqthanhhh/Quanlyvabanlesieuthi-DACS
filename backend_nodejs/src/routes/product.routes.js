@@ -62,6 +62,112 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/scan/:code', async (req, res) => {
+  try {
+    const code = req.params.code.trim();
+    if (!code) {
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập mã vạch / mã nội bộ' });
+    }
+
+    const [products] = await pool.execute(
+      `SELECT p.*, c.category_name
+       FROM products p
+       JOIN categories c ON c.category_id = p.category_id
+       WHERE p.barcode = ? AND p.status <> 'deleted'
+       LIMIT 1`,
+      [code]
+    );
+    if (products.length > 0) {
+      const product = toProduct(products[0]);
+      return res.json({
+        success: true,
+        data: {
+          ...product,
+          stock_quantity: product.stock,
+          type: 'product',
+          product,
+        },
+      });
+    }
+
+    const [inventoryItems] = await pool.execute(
+      `SELECT *
+       FROM inventory_items
+       WHERE barcode = ? AND status <> 'deleted'
+       LIMIT 1`,
+      [code]
+    );
+    if (inventoryItems.length > 0) {
+      const item = inventoryItems[0];
+      return res.json({
+        success: true,
+        data: {
+          type: 'inventory_item',
+          inventory_item: {
+            id: item.barcode,
+            inventory_item_id: item.inventory_item_id,
+            barcode: item.barcode,
+            name: item.item_name,
+            item_name: item.item_name,
+            image_url: item.image_url,
+            price: Number(item.price),
+            import_price: item.import_price == null ? null : Number(item.import_price),
+            unit: item.unit || 'sp',
+            stock: item.stock,
+            stockQuantity: item.stock,
+            status: item.status,
+          },
+        },
+      });
+    }
+
+    res.status(404).json({ success: false, message: 'Không tìm thấy mã vạch / mã nội bộ' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi quét mã sản phẩm', error: error.message });
+  }
+});
+
+router.post('/generate-code', async (req, res) => {
+  try {
+    const { category_id, prefix } = req.body;
+    let codePrefix = String(prefix || '').trim().toUpperCase();
+
+    if (!codePrefix && category_id) {
+      const [categories] = await pool.execute(
+        'SELECT category_name FROM categories WHERE category_id = ? LIMIT 1',
+        [category_id]
+      );
+      const categoryName = (categories[0]?.category_name || '').toLowerCase();
+      if (categoryName.includes('rau') || categoryName.includes('trái') || categoryName.includes('fruit')) {
+        codePrefix = 'FRUIT';
+      }
+    }
+    if (!codePrefix) codePrefix = 'SP';
+    codePrefix = codePrefix.replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'SP';
+
+    for (let index = 1; index <= 999999; index += 1) {
+      const code = `${codePrefix}${String(index).padStart(6, '0')}`;
+      const [existingProducts] = await pool.execute(
+        'SELECT product_id FROM products WHERE barcode = ? LIMIT 1',
+        [code]
+      );
+      if (existingProducts.length > 0) continue;
+
+      const [existingInventory] = await pool.execute(
+        'SELECT inventory_item_id FROM inventory_items WHERE barcode = ? LIMIT 1',
+        [code]
+      );
+      if (existingInventory.length === 0) {
+        return res.json({ success: true, data: { code } });
+      }
+    }
+
+    res.status(409).json({ success: false, message: 'Không tạo được mã mới không trùng' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi tạo mã nội bộ', error: error.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const [rows] = await pool.execute(
@@ -109,6 +215,13 @@ router.post('/', async (req, res) => {
     }
     if (productPrice <= 0) {
       return res.status(400).json({ success: false, message: 'Giá bán phải lớn hơn 0' });
+    }
+    const [existingCodes] = await pool.execute(
+      'SELECT product_id FROM products WHERE barcode = ? LIMIT 1',
+      [productBarcode]
+    );
+    if (existingCodes.length > 0) {
+      return res.status(409).json({ success: false, message: 'Mã vạch / mã nội bộ đã tồn tại' });
     }
     const importPrice = await getLatestImportPrice(productBarcode);
     if (importPrice != null && productPrice < importPrice) {

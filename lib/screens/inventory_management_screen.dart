@@ -127,7 +127,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: Colors.grey.shade200, width: 1),
       ),
-      child: ListTile(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
         onTap: () async {
           await Navigator.of(context).push(
             MaterialPageRoute(
@@ -135,51 +136,163 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
             ),
           );
         },
-
-        leading: Container(
-          width: 50,
-          height: 50,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.inventory_2_outlined,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Mã vạch / Mã nội bộ: ${item.id}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _inventoryInfoChip(
+                    Icons.inventory_outlined,
+                    'Tồn kho',
+                    '${item.stockQuantity} ${item.unit}',
+                    statusColor,
+                  ),
+                  _inventoryInfoChip(
+                    Icons.straighten,
+                    'Đơn vị',
+                    item.unit,
+                    Colors.blueGrey,
+                  ),
+                  _inventoryInfoChip(
+                    Icons.call_received,
+                    'Giá nhập',
+                    '${item.importPrice?.toStringAsFixed(0) ?? '-'} đ',
+                    Colors.teal,
+                  ),
+                  _inventoryInfoChip(
+                    Icons.sell_outlined,
+                    'Giá bán',
+                    '${item.price.toStringAsFixed(0)} đ',
+                    Colors.deepOrange,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: _onImportInventoryPressed,
+                  icon: const Icon(Icons.add_box_outlined, size: 18),
+                  label: const Text('Nhập thêm'),
+                ),
+              ),
+            ],
           ),
-          child: Icon(Icons.inventory_2_outlined, color: Colors.blue.shade700),
         ),
+      ),
+    );
+  }
 
-        title: Text(
-          item.name,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Mã: ${item.id}'),
-            Text('Giá: ${item.price.toStringAsFixed(0)} đ / ${item.unit}'),
-          ],
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              'Tồn: ${item.stockQuantity} ${item.unit}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: statusColor,
-              ),
+  Widget _inventoryInfoChip(
+    IconData icon,
+    String label,
+    String value,
+    Color color,
+  ) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 132),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              status,
-              style: TextStyle(
-                fontSize: 12,
-                color: statusColor.withOpacity(0.8),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -269,7 +382,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                       controller: _searchController,
                       onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
-                        hintText: 'Tìm kiếm mặt hàng trong kho',
+                        hintText: 'Tìm tên hoặc mã vạch / mã nội bộ',
                         border: InputBorder.none,
                         isDense: true,
                         contentPadding: EdgeInsets.zero,

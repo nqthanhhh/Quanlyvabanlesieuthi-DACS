@@ -17,7 +17,7 @@ router.get('/:userId', async (req, res) => {
       return res.json({ success: true, data: { user_id: Number(req.params.userId), items: [] } });
     }
     const [items] = await pool.execute(
-      `SELECT ci.cart_item_id, ci.product_id, ci.quantity, p.product_name, p.price, p.image_url, p.stock
+      `SELECT ci.cart_item_id, ci.product_id, ci.quantity, p.product_name, p.barcode, p.price, p.image_url, p.stock
        FROM cart_items ci
        JOIN products p ON p.product_id = ci.product_id
        WHERE ci.cart_id = ?

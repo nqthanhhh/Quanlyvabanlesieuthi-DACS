@@ -24,6 +24,7 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
   String _address = '';
   DateTime? _startDate;
   int _birthYear = 0;
+  bool _isSaving = false;
 
   bool get isEditing => widget.user != null;
 
@@ -61,30 +62,43 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     _formKey.currentState!.save();
+    setState(() => _isSaving = true);
     try {
       if (isEditing) {
-      final u = widget.user!;
-      u.email = _email;
-      u.password = _password;
-      u.role = _role;
-      u.fullName = _fullName;
-      u.phone = _phone;
-      u.address = _address;
+        final u = widget.user!;
+        u.email = _email;
+        u.password = _password;
+        u.role = _role;
+        u.fullName = _fullName;
+        u.phone = _phone;
+        u.address = _address;
         if (u.userId == null) throw Exception('Thiếu user_id');
         await ApiService.updateUser(u.userId!, u);
       } else {
-      final newUser = User(
-        email: _email,
-        password: _password,
-        role: _role,
-        fullName: _fullName,
-        phone: _phone,
-        address: _address,
-      );
+        final newUser = User(
+          email: _email,
+          password: _password,
+          role: 'employee',
+          fullName: _fullName,
+          phone: _phone,
+          address: _address,
+          status: 'active',
+          points: 0,
+        );
         await ApiService.createUser(newUser);
       }
       await DBService.syncUsersFromApi();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isEditing ? 'Đã cập nhật nhân viên' : 'Đã thêm nhân viên',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
     } catch (e) {
+      if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -99,8 +113,11 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
         ),
       );
       return;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
 
+    if (!mounted) return;
     Navigator.of(context).pop(true); // notify caller to refresh
   }
 
@@ -121,9 +138,18 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
             children: [
               TextFormField(
                 initialValue: _email,
+                readOnly: isEditing,
                 decoration: const InputDecoration(labelText: 'Email'),
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Vui lòng nhập email' : null,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Vui lòng nhập email';
+                  }
+                  final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                  if (!emailRegex.hasMatch(v.trim())) {
+                    return 'Email không hợp lệ';
+                  }
+                  return null;
+                },
                 onSaved: (v) => _email = v!.trim(),
               ),
               const SizedBox(height: 12),
@@ -142,25 +168,33 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
                         setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Vui lòng nhập mật khẩu' : null,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Vui lòng nhập mật khẩu';
+                  }
+                  if (v.trim().length < 6) {
+                    return 'Mật khẩu tối thiểu 6 ký tự';
+                  }
+                  return null;
+                },
                 onSaved: (v) => _password = v!.trim(),
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _role,
-                items: const [
-                  DropdownMenuItem(value: 'admin', child: Text('Quản lý')),
-                  DropdownMenuItem(value: 'employee', child: Text('Nhân viên')),
-                  DropdownMenuItem(value: 'customer', child: Text('Khách hàng')),
-                ],
-                onChanged: (v) => setState(() => _role = v ?? 'employee'),
-                decoration: const InputDecoration(labelText: 'Vai trò'),
+              TextFormField(
+                initialValue: 'Nhân viên',
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: 'Vai trò',
+                  helperText: 'Tài khoản nhân viên dùng role_id = 2',
+                ),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 initialValue: _fullName,
                 decoration: const InputDecoration(labelText: 'Tên đầy đủ'),
+                validator: (v) => v == null || v.trim().isEmpty
+                    ? 'Vui lòng nhập họ tên'
+                    : null,
                 onSaved: (v) => _fullName = v?.trim() ?? '',
               ),
               const SizedBox(height: 12),
@@ -168,12 +202,25 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
                 initialValue: _phone,
                 decoration: const InputDecoration(labelText: 'Số điện thoại'),
                 keyboardType: TextInputType.phone,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Vui lòng nhập số điện thoại';
+                  }
+                  final phoneRegex = RegExp(r'^[0-9+\-\s]{8,15}$');
+                  if (!phoneRegex.hasMatch(v.trim())) {
+                    return 'Số điện thoại không hợp lệ';
+                  }
+                  return null;
+                },
                 onSaved: (v) => _phone = v?.trim() ?? '',
               ),
               const SizedBox(height: 12),
               TextFormField(
                 initialValue: _address,
                 decoration: const InputDecoration(labelText: 'Địa chỉ'),
+                validator: (v) => v == null || v.trim().isEmpty
+                    ? 'Vui lòng nhập địa chỉ'
+                    : null,
                 onSaved: (v) => _address = v?.trim() ?? '',
               ),
               const SizedBox(height: 12),
@@ -210,7 +257,16 @@ class _AddEditEmployeeScreenState extends State<AddEditEmployeeScreen> {
                 ],
               ),
               const SizedBox(height: 20),
-              ElevatedButton(onPressed: _save, child: const Text('Lưu')),
+              ElevatedButton(
+                onPressed: _isSaving ? null : _save,
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Lưu'),
+              ),
             ],
           ),
         ),

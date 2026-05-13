@@ -210,6 +210,28 @@ class DBService {
     }
   }
 
+  static Future<User> updateCurrentUserProfile({
+    required User user,
+    required String fullName,
+    required String phone,
+    required String address,
+    String? password,
+  }) async {
+    if (user.userId == null) {
+      throw ApiException('Thiếu user_id để cập nhật thông tin cá nhân');
+    }
+    final saved = await ApiService.updateUserProfile(
+      userId: user.userId!,
+      fullName: fullName,
+      phone: phone,
+      address: address,
+      password: password,
+    );
+    await users().put(saved.email, saved);
+    await settings().put('current_user_email', saved.email);
+    return saved;
+  }
+
   static Future<void> syncOrdersFromApi() async {
     final remoteOrders = await ApiService.fetchOrders();
     final box = orders();
@@ -515,14 +537,73 @@ class DBService {
 
   static Future<Map<String, int>> loadCartForCurrentUser(String email) async {
     final userId = settings().get('current_user_id') as int?;
-    if (userId == null) return getCartForUser(email);
+    final localCart = getCartForUser(email);
+    if (userId == null) return localCart;
     try {
       final remoteCart = await ApiService.fetchCart(userId);
+      if (remoteCart.isEmpty && localCart.isNotEmpty) {
+        await ApiService.saveCart(userId, localCart);
+        return localCart;
+      }
       await carts().put(email, remoteCart);
       return remoteCart;
     } catch (_) {
-      return getCartForUser(email);
+      return localCart;
     }
+  }
+
+  static String? currentUserEmail() {
+    final value = settings().get('current_user_email');
+    return value is String && value.isNotEmpty ? value : null;
+  }
+
+  static int? currentUserId() {
+    final value = settings().get('current_user_id');
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static Future<Product> findSaleProductByCode(String code) async {
+    final normalized = code.trim();
+    if (normalized.isEmpty) {
+      throw ApiException('Vui lòng nhập mã vạch / mã nội bộ');
+    }
+
+    final result = await ApiService.scanProductCode(normalized);
+    final type = (result['type'] ?? '').toString();
+    final productMap = result['product'];
+    if (type != 'product' || productMap is! Map) {
+      throw ApiException('Không tìm thấy sản phẩm bán hàng');
+    }
+
+    final product = Product.fromJson(Map<String, dynamic>.from(productMap));
+    await products().put(product.id, product);
+    if (product.imageUrl != null && product.imageUrl!.isNotEmpty) {
+      await productImages().put(product.id, product.imageUrl!);
+    }
+    return product;
+  }
+
+  static Future<Map<String, int>> addProductToCurrentCart(
+    Product product,
+  ) async {
+    if (product.stockQuantity <= 0) {
+      throw ApiException('Sản phẩm đã hết hàng');
+    }
+
+    final email = currentUserEmail();
+    if (email == null) {
+      throw ApiException('Không tìm thấy người dùng hiện tại');
+    }
+
+    final cart = await loadCartForCurrentUser(email);
+    final currentQty = cart[product.id] ?? 0;
+    if (currentQty + 1 > product.stockQuantity) {
+      throw ApiException('Không thể thêm quá số lượng tồn kho');
+    }
+    cart[product.id] = currentQty + 1;
+    await saveCartForUser(email, cart);
+    return cart;
   }
 
   static Future<Product> createProduct(
@@ -642,6 +723,34 @@ class DBService {
 
   static Future<double?> fetchLatestImportPrice(String barcode) {
     return ApiService.fetchInventoryImportPrice(barcode);
+  }
+
+  static Future<String> generateInternalProductCode({String? prefix}) {
+    return ApiService.generateProductCode(prefix: prefix);
+  }
+
+  static Future<InventoryItem?> findInventoryItemByCode(String code) async {
+    try {
+      final result = await ApiService.scanProductCode(code);
+      final itemMap = result['inventory_item'];
+      if (itemMap is Map) {
+        return InventoryItem.fromJson(Map<String, dynamic>.from(itemMap));
+      }
+      final productMap = result['product'];
+      if (productMap is Map) {
+        final product = Product.fromJson(Map<String, dynamic>.from(productMap));
+        return InventoryItem(
+          id: product.barcode ?? product.id,
+          name: product.name,
+          price: product.price,
+          unit: product.unit,
+          stockQuantity: product.stockQuantity,
+        );
+      }
+    } on ApiException {
+      return null;
+    }
+    return null;
   }
 
   static Future<Product> releaseInventoryToShelf({

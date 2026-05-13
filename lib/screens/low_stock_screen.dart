@@ -69,7 +69,7 @@ class LowStockScreen extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Mã: ${product.id}'),
+            Text('Mã vạch / mã nội bộ: ${product.id}'),
             Text(
               'Giá: ${product.price.toStringAsFixed(0)} đ / ${product.unit}',
             ),

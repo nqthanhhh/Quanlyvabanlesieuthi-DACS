@@ -5,6 +5,7 @@ part 'user.g.dart';
 
 @HiveType(typeId: 1)
 class User extends HiveObject {
+  @HiveField(13)
   int? userId;
 
   @HiveField(0)
@@ -37,6 +38,15 @@ class User extends HiveObject {
   @HiveField(9)
   String? avatarPath; // local file path or asset
 
+  @HiveField(10)
+  String status;
+
+  @HiveField(11)
+  int points;
+
+  @HiveField(12)
+  DateTime? createdAt;
+
   User({
     this.userId,
     required this.email,
@@ -49,6 +59,9 @@ class User extends HiveObject {
     this.gender = '',
     this.startDate,
     this.avatarPath,
+    this.status = 'active',
+    this.points = 0,
+    this.createdAt,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -60,6 +73,11 @@ class User extends HiveObject {
       fullName: (json['full_name'] ?? json['fullName'] ?? '').toString(),
       phone: (json['phone'] ?? '').toString(),
       address: (json['address'] ?? '').toString(),
+      status: (json['status'] ?? 'active').toString(),
+      points: TypeConverters.toNullableInt(json['points']) ?? 0,
+      createdAt: json['created_at'] == null
+          ? null
+          : DateTime.tryParse(json['created_at'].toString()),
     );
   }
 
@@ -72,6 +90,7 @@ class User extends HiveObject {
       'password': password,
       'address': address.isEmpty ? null : address,
       'role': role,
+      'status': status,
     };
   }
 }

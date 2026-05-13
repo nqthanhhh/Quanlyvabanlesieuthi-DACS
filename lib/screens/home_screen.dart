@@ -14,6 +14,7 @@ import 'customer_management_screen.dart';
 import 'order_list_screen.dart';
 import 'order_management_screen.dart';
 import 'product_performance_report_screen.dart';
+import 'scan_product_screen.dart';
 import 'security_info_screen.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
@@ -58,17 +59,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
     bool anyContains(List<String> needles) {
       for (final n in needles) {
-        if (id.contains(n) || name.contains(n) || barcode.contains(n)) return true;
+        if (id.contains(n) || name.contains(n) || barcode.contains(n))
+          return true;
       }
       return false;
     }
 
-    if (anyContains(['banana', 'chuoi', 'chuối'])) return 'assets/images/chuoi.png';
+    if (anyContains(['banana', 'chuoi', 'chuối']))
+      return 'assets/images/chuoi.png';
     if (anyContains(['apple', 'tao', 'táo'])) return 'assets/images/tao.png';
     if (anyContains(['coke', 'coca'])) return 'assets/images/nuoccoca.png';
     if (anyContains(['diet_coke', 'diet'])) return 'assets/images/dietcoca.png';
-    if (anyContains(['tomato', 'cachua', 'càchua', 'cà chua'])) return 'assets/images/cachua.png';
-    if (anyContains(['brocoli', 'broccoli', 'bongcai', 'bôngcải', 'bông cải'])) return 'assets/images/bongcai.png';
+    if (anyContains(['tomato', 'cachua', 'càchua', 'cà chua']))
+      return 'assets/images/cachua.png';
+    if (anyContains(['brocoli', 'broccoli', 'bongcai', 'bôngcải', 'bông cải']))
+      return 'assets/images/bongcai.png';
 
     // Luôn có ảnh fallback để tránh hiển thị icon trống
     return 'assets/images/anh1.png';
@@ -79,7 +84,8 @@ class _HomeScreenState extends State<HomeScreen> {
     // - URL (backend trả về) -> Image.network
     // - Path local (inventory) -> Image.file
     // - Không có -> Image.asset fallback
-    final stored = (DBService.productImages().get(p.id) ?? p.imageUrl ?? '').toString();
+    final stored = (DBService.productImages().get(p.id) ?? p.imageUrl ?? '')
+        .toString();
     if (stored.isNotEmpty && stored.startsWith('http')) {
       return Image.network(
         stored,
@@ -120,11 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
       errorBuilder: (c, e, s) => Container(
         color: Colors.grey.shade100,
         alignment: Alignment.center,
-        child: const Icon(
-          Icons.image,
-          size: 36,
-          color: Colors.black26,
-        ),
+        child: const Icon(Icons.image, size: 36, color: Colors.black26),
       ),
     );
   }
@@ -210,7 +212,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (explicit.contains('đồ uống') || explicit.contains('nuoc')) {
       return 'Đồ uống';
     }
-    if (explicit.contains('gia vị') || explicit.contains('xốt')) return 'Gia vị';
+    if (explicit.contains('gia vị') || explicit.contains('xốt'))
+      return 'Gia vị';
 
     final name = product.name.toLowerCase();
     final barcode = (product.barcode ?? '').toLowerCase();
@@ -253,7 +256,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final q = _searchQuery;
       result = result.where((product) {
         final name = product.name.toLowerCase();
-        return name.contains(q);
+        final barcode = (product.barcode ?? '').toLowerCase();
+        return name.contains(q) || barcode.contains(q);
       });
     }
 
@@ -443,12 +447,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // Tách Profile Section trong Drawer
   Widget _buildProfileSection() {
     return GestureDetector(
-      onTap: () => Navigator.of(
-        context,
-      ).push(
-        MaterialPageRoute(
-          builder: (_) => ProfileViewScreen(role: widget.role),
-        ),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ProfileViewScreen(role: widget.role)),
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
@@ -517,7 +517,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Tách Widget Card Sản phẩm (Đã tối ưu UI theo mẫu)
   Widget _buildProductCard(Product p) {
-    print('🧩 DEBUG: ${p.name} có id là "${p.id}"');
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
@@ -631,6 +630,88 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _scanAndAddToCart() async {
+    final product = await Navigator.of(
+      context,
+    ).push<Product?>(buildSlidePageRoute(const ScanProductScreen()));
+    if (product == null || !mounted) {
+      setState(() => _currentBottomTab = RoleBottomTab.home);
+      return;
+    }
+
+    try {
+      final updatedCart = await DBService.addProductToCurrentCart(product);
+      if (!mounted) return;
+      setState(() {
+        _cart
+          ..clear()
+          ..addAll(updatedCart);
+        _currentBottomTab = RoleBottomTab.cart;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã thêm ${product.name} vào giỏ hàng')),
+      );
+      await _openCheckoutScreen();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+      setState(() => _currentBottomTab = RoleBottomTab.home);
+    }
+  }
+
+  Future<void> _openCheckoutScreen() async {
+    if (_cart.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Giỏ hàng đang trống')));
+      setState(() => _currentBottomTab = RoleBottomTab.home);
+      return;
+    }
+
+    final allProducts = DBService.getAllProducts();
+    final validIds = allProducts.map((product) => product.id).toSet();
+    _cart.removeWhere((productId, quantity) {
+      return quantity <= 0 || !validIds.contains(productId);
+    });
+    if (_cart.isEmpty) {
+      await _persistCart();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không tìm thấy sản phẩm trong giỏ hàng')),
+      );
+      setState(() => _currentBottomTab = RoleBottomTab.home);
+      return;
+    }
+
+    await _persistCart();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      buildSlidePageRoute(
+        CheckoutScreen(
+          cart: Map.from(_cart),
+          role: widget.role,
+          onCheckoutComplete: () async {
+            setState(() => _cart.clear());
+            await _persistCart();
+          },
+        ),
+      ),
+    );
+    if (!mounted) return;
+    final email = _currentUserEmail;
+    if (email != null) {
+      final saved = DBService.getCartForUser(email);
+      setState(() {
+        _cart
+          ..clear()
+          ..addAll(saved);
+      });
+    }
+    setState(() => _currentBottomTab = RoleBottomTab.home);
+  }
+
   void _handleBottomTab(RoleBottomTab tab) async {
     switch (tab) {
       case RoleBottomTab.home:
@@ -645,23 +726,19 @@ class _HomeScreenState extends State<HomeScreen> {
         break;
       case RoleBottomTab.employees:
         setState(() => _currentBottomTab = tab);
-        Navigator.of(
-          context,
-        ).push(
+        Navigator.of(context).push(
           buildSlidePageRoute(EmployeeManagementScreen(role: widget.role)),
         );
         break;
       case RoleBottomTab.scan:
         setState(() => _currentBottomTab = tab);
-        _showScanPlaceholder();
+        await _scanAndAddToCart();
         break;
       case RoleBottomTab.invoices:
         setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
-        ).push(
-          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
-        );
+        ).push(buildSlidePageRoute(OrderManagementScreen(role: widget.role)));
         break;
       case RoleBottomTab.offers:
         setState(() => _currentBottomTab = tab);
@@ -680,27 +757,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_currentBottomTab != RoleBottomTab.cart) {
           setState(() => _currentBottomTab = RoleBottomTab.cart);
         }
-        if (_cart.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Giỏ hàng đang trống')),
-          );
-          setState(() => _currentBottomTab = RoleBottomTab.home);
-          break;
-        }
-        await Navigator.of(context).push(
-          buildSlidePageRoute(
-            CheckoutScreen(
-              cart: Map.from(_cart),
-              role: widget.role,
-              onCheckoutComplete: () async {
-                setState(() => _cart.clear());
-                await _persistCart();
-              },
-            ),
-          ),
-        );
-        if (!mounted) return;
-        setState(() => _currentBottomTab = RoleBottomTab.home);
+        await _openCheckoutScreen();
         break;
       case RoleBottomTab.orders:
         setState(() => _currentBottomTab = tab);
@@ -718,27 +775,9 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
-        ).push(
-          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
-        );
+        ).push(buildSlidePageRoute(ProfileViewScreen(role: widget.role)));
         break;
     }
-  }
-
-  void _showScanPlaceholder() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Quét mã'),
-        content: const Text('Chức năng quét mã sẽ được kết nối ở bước sau.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Đóng'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -829,7 +868,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // 3. Kiểm tra danh sách rỗng
                   if (itemsToShow.isEmpty) {
-                    if (_searchQuery.isNotEmpty || _selectedCategory != 'Tất cả') {
+                    if (_searchQuery.isNotEmpty ||
+                        _selectedCategory != 'Tất cả') {
                       return const Center(
                         child: Text('Không tìm thấy sản phẩm nào.'),
                       );

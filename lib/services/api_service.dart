@@ -162,6 +162,57 @@ class ApiService {
     return User.fromJson(_dataMap(body));
   }
 
+  static Future<User> updateUserProfile({
+    required int userId,
+    required String fullName,
+    required String phone,
+    required String address,
+    String? password,
+  }) async {
+    final response = await http
+        .put(
+          _uri('/api/users/$userId/profile'),
+          headers: _headers,
+          body: jsonEncode({
+            'full_name': fullName,
+            'phone': phone.isEmpty ? null : phone,
+            'address': address.isEmpty ? null : address,
+            if (password != null && password.isNotEmpty) 'password': password,
+          }),
+        )
+        .timeout(_timeout);
+    return User.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<Map<String, dynamic>> fetchEmployeeSummary(int userId) async {
+    final response = await http
+        .get(_uri('/api/users/$userId/employee-summary'))
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> startWorkShift(int employeeId) async {
+    final response = await http
+        .post(
+          _uri('/api/work-shifts/start'),
+          headers: _headers,
+          body: jsonEncode({'employee_id': employeeId}),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> endWorkShift(int employeeId) async {
+    final response = await http
+        .post(
+          _uri('/api/work-shifts/end'),
+          headers: _headers,
+          body: jsonEncode({'employee_id': employeeId}),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
   static Future<void> deleteUser(int userId) async {
     final response = await http
         .delete(_uri('/api/users/$userId'))
@@ -223,6 +274,31 @@ class ApiService {
         .delete(_uri('/api/products/$productId'))
         .timeout(_timeout);
     _decode(response);
+  }
+
+  static Future<Map<String, dynamic>> scanProductCode(String code) async {
+    final response = await http
+        .get(_uri('/api/products/scan/${Uri.encodeComponent(code)}'))
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<String> generateProductCode({
+    int? categoryId,
+    String? prefix,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/products/generate-code'),
+          headers: _headers,
+          body: jsonEncode({
+            if (categoryId != null) 'category_id': categoryId,
+            if (prefix != null && prefix.isNotEmpty) 'prefix': prefix,
+          }),
+        )
+        .timeout(_timeout);
+    final body = _dataMap(_decode(response));
+    return (body['code'] ?? '').toString();
   }
 
   static Future<String> uploadProductImage(String filePath) async {
@@ -456,21 +532,18 @@ class ApiService {
   }
 
   static Future<void> saveCart(int userId, Map<String, int> cart) async {
+    final items = <Map<String, int>>[];
+    for (final entry in cart.entries) {
+      final productId = int.tryParse(entry.key);
+      if (productId != null && entry.value > 0) {
+        items.add({'product_id': productId, 'quantity': entry.value});
+      }
+    }
     final response = await http
         .put(
           _uri('/api/carts/$userId'),
           headers: _headers,
-          body: jsonEncode({
-            'items': cart.entries
-                .where((entry) => entry.value > 0)
-                .map(
-                  (entry) => {
-                    'product_id': int.parse(entry.key),
-                    'quantity': entry.value,
-                  },
-                )
-                .toList(),
-          }),
+          body: jsonEncode({'items': items}),
         )
         .timeout(_timeout);
     _decode(response);

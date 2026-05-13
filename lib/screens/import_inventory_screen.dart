@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/inventory_item.dart'; // <<< IMPORT InventoryItem
+import '../models/product.dart';
+import '../services/api_service.dart';
 import '../services/db_service.dart'; // <<< Đảm bảo bạn có DBService và hàm inventoryHistory()
 import '../services/api_service.dart';
 
@@ -60,6 +62,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
 
   String? _pickedImagePath;
   bool _processing = false;
+  bool _codeLookupLoading = false;
 
   @override
   void dispose() {
@@ -79,6 +82,110 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     );
     if (file != null) {
       setState(() => _pickedImagePath = file.path);
+    }
+  }
+
+  Future<void> _openScanDialog() async {
+    final controller = TextEditingController(text: _searchController.text);
+    final code = await showDialog<String?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Quét mã'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Mã vạch / Mã nội bộ',
+            helperText: 'Nhập mã thủ công để demo trên simulator',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Tìm'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (code != null && code.isNotEmpty) {
+      await _lookupCode(code);
+    }
+  }
+
+  Future<void> _generateInternalCode() async {
+    setState(() => _codeLookupLoading = true);
+    try {
+      final code = await DBService.generateInternalProductCode();
+      _idController.text = code;
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Đã tạo mã nội bộ $code')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Không tạo được mã: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _codeLookupLoading = false);
+    }
+  }
+
+  Future<void> _lookupCode(String code) async {
+    final normalizedCode = code.trim();
+    if (normalizedCode.isEmpty) return;
+
+    setState(() => _codeLookupLoading = true);
+    try {
+      final localItem = DBService.inventoryProducts().get(normalizedCode);
+      if (localItem != null) {
+        await _addToExisting(localItem);
+        return;
+      }
+
+      final result = await ApiService.scanProductCode(normalizedCode);
+      final inventoryMap = result['inventory_item'];
+      if (inventoryMap is Map) {
+        final item = InventoryItem.fromJson(
+          Map<String, dynamic>.from(inventoryMap),
+        );
+        await _addToExisting(item);
+        return;
+      }
+
+      final productMap = result['product'];
+      if (productMap is Map) {
+        final product = Product.fromJson(Map<String, dynamic>.from(productMap));
+        _idController.text = product.barcode ?? normalizedCode;
+        _nameController.text = product.name;
+        _priceController.text = product.price.toStringAsFixed(0);
+        _unitController.text = product.unit;
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Mã có sản phẩm bán hàng, hãy thêm vào kho'),
+          ),
+        );
+        return;
+      }
+    } catch (_) {
+      _idController.text = normalizedCode;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mã chưa tồn tại, đã điền vào form thêm hàng mới'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _codeLookupLoading = false);
     }
   }
 
@@ -193,7 +300,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
       if (DBService.inventoryProducts().containsKey(id)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Mã sản phẩm đã tồn tại!'),
+            content: Text('Mã vạch / mã nội bộ đã tồn tại!'),
             backgroundColor: Colors.red,
           ),
         );
@@ -277,7 +384,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
               controller: _searchController,
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
-                hintText: 'Tìm theo tên hoặc mã ...',
+                hintText: 'Tìm theo tên hoặc mã vạch / mã nội bộ ...',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -290,6 +397,28 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                 ),
               ),
               onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _codeLookupLoading ? null : _openScanDialog,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Quét mã'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _codeLookupLoading
+                        ? null
+                        : () => _lookupCode(_searchController.text.trim()),
+                    icon: const Icon(Icons.search),
+                    label: const Text('Tìm mã'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
 
@@ -350,7 +479,9 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                       return ListTile(
                         leading: leading,
                         title: Text(name),
-                        subtitle: Text('Mã: $id • Tồn: $stock $unit'),
+                        subtitle: Text(
+                          'Mã vạch / Mã nội bộ: $id • Tồn: $stock $unit',
+                        ),
                         trailing: ElevatedButton(
                           onPressed: _processing
                               ? null
@@ -385,11 +516,23 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                   TextFormField(
                     controller: _idController,
                     decoration: const InputDecoration(
-                      labelText: 'Mã SP (Dùng làm Key)',
+                      labelText: 'Mã vạch / Mã nội bộ',
                       border: OutlineInputBorder(),
                     ),
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Nhập mã SP' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Nhập mã vạch / mã nội bộ'
+                        : null,
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _codeLookupLoading
+                          ? null
+                          : _generateInternalCode,
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text('Tạo mã nội bộ'),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

@@ -20,6 +20,7 @@ const inventoryRoutes = require('./routes/inventory.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const reportRoutes = require('./routes/report.routes');
 const reviewRoutes = require('./routes/review.routes');
+const workShiftRoutes = require('./routes/workShift.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -31,6 +32,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/work-shifts', workShiftRoutes);
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 app.get('/', (req, res) => {

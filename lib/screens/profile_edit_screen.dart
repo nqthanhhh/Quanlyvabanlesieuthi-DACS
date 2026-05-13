@@ -18,9 +18,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _fullNameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
   String _gender = 'male';
   DateTime? _startDate;
   String? _avatarPath;
+  bool _obscurePassword = true;
+  bool _isSaving = false;
 
   User? _user;
 
@@ -50,6 +53,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _fullNameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -67,14 +71,40 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Future<void> _save() async {
     if (_user == null) return;
     if (!_formKey.currentState!.validate()) return;
-    _user!.fullName = _fullNameCtrl.text.trim();
-    _user!.phone = _phoneCtrl.text.trim();
-    _user!.address = _addressCtrl.text.trim();
-    _user!.gender = _gender;
-    _user!.startDate = _startDate;
-    _user!.avatarPath = _avatarPath;
-    await _user!.save();
-    if (mounted) Navigator.of(context).pop();
+    setState(() => _isSaving = true);
+    try {
+      final saved = await DBService.updateCurrentUserProfile(
+        user: _user!,
+        fullName: _fullNameCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
+        address: _addressCtrl.text.trim(),
+        password: _passwordCtrl.text.trim().isEmpty
+            ? null
+            : _passwordCtrl.text.trim(),
+      );
+      saved.gender = _gender;
+      saved.startDate = _startDate;
+      saved.avatarPath = _avatarPath;
+      await saved.save();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã cập nhật thông tin cá nhân'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lỗi cập nhật: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   Future<void> _pickStartDate() async {
@@ -136,11 +166,49 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   controller: _phoneCtrl,
                   decoration: const InputDecoration(labelText: 'Số điện thoại'),
                   keyboardType: TextInputType.phone,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Vui lòng nhập số điện thoại';
+                    }
+                    final phoneRegex = RegExp(r'^[0-9+\-\s]{8,15}$');
+                    if (!phoneRegex.hasMatch(v.trim())) {
+                      return 'Số điện thoại không hợp lệ';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _addressCtrl,
                   decoration: const InputDecoration(labelText: 'Địa chỉ'),
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? 'Vui lòng nhập địa chỉ'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _passwordCtrl,
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    labelText: 'Mật khẩu mới',
+                    helperText: 'Để trống nếu không đổi mật khẩu',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
+                    ),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return null;
+                    if (v.trim().length < 6) {
+                      return 'Mật khẩu tối thiểu 6 ký tự';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -165,7 +233,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   onTap: _pickStartDate,
                 ),
                 const SizedBox(height: 20),
-                ElevatedButton(onPressed: _save, child: const Text('Lưu')),
+                ElevatedButton(
+                  onPressed: _isSaving ? null : _save,
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Lưu'),
+                ),
               ],
             ),
           ),

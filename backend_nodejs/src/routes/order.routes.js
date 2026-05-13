@@ -15,6 +15,42 @@ const paymentJoinSql = `
   ) pay ON pay.order_id = o.order_id
 `;
 
+async function getActiveShiftId(connection, employeeId) {
+  if (!employeeId) return null;
+  const [statusColumns] = await connection.execute(
+    `SELECT COUNT(*) AS count
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'work_shifts'
+       AND COLUMN_NAME = 'status'`
+  );
+  const hasShiftStatus = Number(statusColumns[0]?.count || 0) > 0;
+  const activeWhere = hasShiftStatus
+    ? "end_time IS NULL AND status IN ('active', 'working')"
+    : 'end_time IS NULL';
+  const [rows] = await connection.execute(
+    `SELECT shift_id
+     FROM work_shifts
+     WHERE employee_id = ?
+       AND ${activeWhere}
+     ORDER BY shift_date DESC, start_time DESC, shift_id DESC
+     LIMIT 1`,
+    [employeeId]
+  );
+  return rows[0]?.shift_id || null;
+}
+
+async function ordersHasShiftId(connection) {
+  const [rows] = await connection.execute(
+    `SELECT COUNT(*) AS count
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'orders'
+       AND COLUMN_NAME = 'shift_id'`
+  );
+  return Number(rows[0]?.count || 0) > 0;
+}
+
 function normalizeOrder(row) {
   return {
     ...row,
@@ -186,6 +222,11 @@ router.post('/', async (req, res) => {
     }
 
     await connection.beginTransaction();
+    const employeeId = employee_id ? Number(employee_id) : null;
+    const hasOrdersShiftId = await ordersHasShiftId(connection);
+    const activeShiftId = hasOrdersShiftId
+      ? await getActiveShiftId(connection, employeeId)
+      : null;
 
     let total = 0;
     const normalizedItems = [];
@@ -213,21 +254,40 @@ router.post('/', async (req, res) => {
       normalizedItems.push({ productId, quantity, price, subtotal });
     }
 
+    const insertColumns = hasOrdersShiftId
+      ? 'customer_id, employee_id, shift_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note'
+      : 'customer_id, employee_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note';
+    const insertValues = hasOrdersShiftId
+      ? '?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?'
+      : '?, ?, ?, ?, 0, ?, ?, ?, ?, ?';
+    const insertParams = hasOrdersShiftId
+      ? [
+          customer_id || null,
+          employeeId,
+          activeShiftId,
+          order_type,
+          total,
+          total,
+          status,
+          payment_status,
+          shipping_address || null,
+          note || null,
+        ]
+      : [
+          customer_id || null,
+          employeeId,
+          order_type,
+          total,
+          total,
+          status,
+          payment_status,
+          shipping_address || null,
+          note || null,
+        ];
+
     const [orderResult] = await connection.execute(
-      `INSERT INTO orders
-       (customer_id, employee_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note)
-       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
-      [
-        customer_id || null,
-        employee_id || null,
-        order_type,
-        total,
-        total,
-        status,
-        payment_status,
-        shipping_address || null,
-        note || null,
-      ]
+      `INSERT INTO orders (${insertColumns}) VALUES (${insertValues})`,
+      insertParams
     );
 
     for (const item of normalizedItems) {

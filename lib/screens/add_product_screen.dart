@@ -372,14 +372,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Mã sản phẩm
+              // Mã vạch / mã nội bộ
               TextFormField(
                 controller: _idController,
                 onChanged: (v) => setState(() {}),
-                readOnly: _isEditing, // KHÔNG cho phép sửa ID khi chỉnh sửa
+                readOnly: _isEditing,
                 decoration: InputDecoration(
-                  labelText: 'Mã Sản phẩm (ID)',
-                  hintText: 'VD: TAO_DO, COKE...',
+                  labelText: 'Mã vạch / Mã nội bộ',
+                  hintText: 'VD: PROD007, SP000001, 893...',
                   border: const OutlineInputBorder(),
                   filled: _isEditing,
                   fillColor: _isEditing ? Colors.grey.shade100 : Colors.white,
@@ -389,7 +389,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập Mã Sản phẩm.';
+                    return 'Vui lòng nhập mã vạch / mã nội bộ.';
                   }
                   return null;
                 },
@@ -494,7 +494,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                   : leading,
                               title: Text(it.name),
                               subtitle: Text(
-                                'Mã: ${it.id} • Tồn: ${it.stockQuantity} ${it.unit}',
+                                'Mã vạch / mã nội bộ: ${it.id} • Tồn: ${it.stockQuantity} ${it.unit}',
                               ),
                               trailing: ElevatedButton(
                                 onPressed: _isProcessing
@@ -522,7 +522,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: Text(
-                    'Nhập Mã sản phẩm, chọn một mục trong "Gợi ý từ kho" rồi chọn số lượng. Sản phẩm sẽ được thêm tự động.',
+                    'Nhập mã vạch / mã nội bộ, chọn một mục trong "Gợi ý từ kho" rồi chọn số lượng. Sản phẩm sẽ được thêm tự động.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey[700]),
                   ),

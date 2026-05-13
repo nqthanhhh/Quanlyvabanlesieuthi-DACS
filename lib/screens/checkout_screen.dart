@@ -1,6 +1,7 @@
 // lib/screens/checkout_screen.dart
 import 'package:flutter/material.dart';
 import '../models/product.dart';
+import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
@@ -8,6 +9,7 @@ import 'employee.dart';
 import 'order_management_screen.dart';
 import 'payment_screen.dart';
 import 'profile_view_screen.dart';
+import 'scan_product_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final Map<String, int> cart;
@@ -27,17 +29,31 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   late final Map<String, int> _editableCart;
+  String? _currentUserEmail;
 
   @override
   void initState() {
     super.initState();
     _editableCart = Map<String, int>.from(widget.cart);
+    _currentUserEmail = DBService.currentUserEmail();
   }
 
-  double _calculateTotal(List<Product> allProducts) {
+  Map<String, Product> _productById(List<Product> allProducts) {
+    return {for (final product in allProducts) product.id: product};
+  }
+
+  Future<void> _persistEditableCart() async {
+    final email = _currentUserEmail;
+    if (email != null) {
+      await DBService.saveCartForUser(email, _editableCart);
+    }
+  }
+
+  double _calculateTotal(Map<String, Product> productsById) {
     double total = 0;
     for (var entry in _editableCart.entries) {
-      final product = allProducts.firstWhere((p) => p.id == entry.key);
+      final product = productsById[entry.key];
+      if (product == null) continue;
       total += product.price * entry.value;
     }
     return total;
@@ -47,11 +63,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_editableCart.isEmpty) return;
 
     final List<Product> allProducts = DBService.getAllProducts();
-    final double total = _calculateTotal(allProducts);
+    final productsById = _productById(allProducts);
+    _editableCart.removeWhere((id, quantity) {
+      return quantity <= 0 || !productsById.containsKey(id);
+    });
+    if (_editableCart.isEmpty) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không tìm thấy sản phẩm trong giỏ hàng')),
+      );
+      Future.microtask(_persistEditableCart);
+      return;
+    }
+    final double total = _calculateTotal(productsById);
 
     final Map<String, int> detailedCart = {};
     for (var entry in _editableCart.entries) {
-      final product = allProducts.firstWhere((p) => p.id == entry.key);
+      final product = productsById[entry.key];
+      if (product == null) continue;
       detailedCart[product.name] = entry.value;
     }
 
@@ -69,36 +98,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  void _handleBottomTab(RoleBottomTab tab) {
+  Future<void> _handleBottomTab(RoleBottomTab tab) async {
     if (tab == RoleBottomTab.cart) return;
     switch (tab) {
       case RoleBottomTab.home:
         Navigator.of(context).popUntil((route) => route.isFirst);
         break;
       case RoleBottomTab.scan:
-        showDialog<void>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Quét mã'),
-            content: const Text('Chức năng quét mã đang được cập nhật.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Đóng'),
-              ),
-            ],
-          ),
-        );
+        await _scanAndAppendProduct();
         break;
       case RoleBottomTab.invoices:
-        Navigator.of(context).push(
-          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
-        );
+        Navigator.of(
+          context,
+        ).push(buildSlidePageRoute(OrderManagementScreen(role: widget.role)));
         break;
       case RoleBottomTab.account:
-        Navigator.of(context).push(
-          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
-        );
+        Navigator.of(
+          context,
+        ).push(buildSlidePageRoute(ProfileViewScreen(role: widget.role)));
         break;
       case RoleBottomTab.employees:
         Navigator.of(context).push(
@@ -109,6 +126,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       case RoleBottomTab.orders:
       case RoleBottomTab.cart:
         break;
+    }
+  }
+
+  Future<void> _scanAndAppendProduct() async {
+    final product = await Navigator.of(
+      context,
+    ).push<Product?>(buildSlidePageRoute(const ScanProductScreen()));
+    if (product == null || !mounted) return;
+    try {
+      final currentQty = _editableCart[product.id] ?? 0;
+      if (currentQty + 1 > product.stockQuantity) {
+        throw ApiException('Không thể thêm quá số lượng tồn kho');
+      }
+      setState(() {
+        _editableCart[product.id] = currentQty + 1;
+      });
+      await _persistEditableCart();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã thêm ${product.name} vào giỏ hàng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
     }
   }
 
@@ -123,6 +166,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     setState(() {
       _editableCart[product.id] = currentQty + 1;
     });
+    Future.microtask(_persistEditableCart);
   }
 
   void _decreaseQty(Product product) {
@@ -131,28 +175,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _editableCart.remove(product.id);
       });
+      Future.microtask(_persistEditableCart);
       return;
     }
     setState(() {
       _editableCart[product.id] = currentQty - 1;
     });
+    Future.microtask(_persistEditableCart);
   }
 
   @override
   Widget build(BuildContext context) {
     final List<Product> allProducts = DBService.getAllProducts();
-    final double total = _calculateTotal(allProducts);
+    final productsById = _productById(allProducts);
+    final visibleEntries = _editableCart.entries
+        .where((entry) => productsById.containsKey(entry.key))
+        .toList();
+    final double total = _calculateTotal(productsById);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Giỏ Hàng', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Giỏ Hàng',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         elevation: 0.5,
       ),
       body: Column(
         children: [
           Expanded(
-            child: _editableCart.isEmpty
+            child: visibleEntries.isEmpty
                 ? const Center(
                     child: Text(
                       'Giỏ hàng trống',
@@ -161,12 +214,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.all(16.0),
-                    itemCount: _editableCart.length,
+                    itemCount: visibleEntries.length,
                     itemBuilder: (context, index) {
-                      final entry = _editableCart.entries.elementAt(index);
-                      final product = allProducts.firstWhere(
-                        (p) => p.id == entry.key,
-                      );
+                      final entry = visibleEntries[index];
+                      final product = productsById[entry.key]!;
                       final qty = entry.value;
                       final lineTotal = product.price * qty;
 
@@ -194,7 +245,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   const Spacer(),
                                   IconButton(
                                     onPressed: () => _decreaseQty(product),
-                                    icon: const Icon(Icons.remove_circle_outline),
+                                    icon: const Icon(
+                                      Icons.remove_circle_outline,
+                                    ),
                                   ),
                                   Text(
                                     '$qty',
@@ -247,7 +300,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Tổng cộng:', style: TextStyle(fontSize: 18)),
+                        const Text(
+                          'Tổng cộng:',
+                          style: TextStyle(fontSize: 18),
+                        ),
                         Text(
                           '${total.toStringAsFixed(0)} ₫',
                           style: TextStyle(
@@ -262,17 +318,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   SizedBox(
                     height: 50,
                     child: ElevatedButton(
-                      onPressed: _editableCart.isEmpty
+                      onPressed: visibleEntries.isEmpty
                           ? null
                           : _navigateToPaymentScreen,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange.shade400,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       child: const Text(
                         'Xác nhận đơn hàng',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),

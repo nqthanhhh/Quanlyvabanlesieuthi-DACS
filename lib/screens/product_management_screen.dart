@@ -168,7 +168,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Mã: ${product.id}',
+              'Mã vạch / mã nội bộ: ${product.barcode ?? product.id}',
               style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
             Text(
@@ -323,7 +323,10 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
               }
 
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 2.0,
+                ),
                 child: SizedBox(
                   height: 38,
                   child: ListView(
@@ -335,9 +338,8 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                             child: ChoiceChip(
                               label: Text(category),
                               selected: _selectedCategory == category,
-                              onSelected: (_) => setState(
-                                () => _selectedCategory = category,
-                              ),
+                              onSelected: (_) =>
+                                  setState(() => _selectedCategory = category),
                             ),
                           ),
                         )
@@ -395,9 +397,9 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 
                 // Sắp xếp: danh mục -> tên
                 filteredProducts.sort((a, b) {
-                  final cateCmp = _getCategoryName(a).compareTo(
-                    _getCategoryName(b),
-                  );
+                  final cateCmp = _getCategoryName(
+                    a,
+                  ).compareTo(_getCategoryName(b));
                   if (cateCmp != 0) return cateCmp;
                   return a.name.compareTo(b.name);
                 });
@@ -414,7 +416,9 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                     ...grouped.entries.expand((entry) {
                       return <Widget>[
                         _buildSectionHeader(entry.key, entry.value.length),
-                        ...entry.value.map((p) => _buildProductTile(context, p)),
+                        ...entry.value.map(
+                          (p) => _buildProductTile(context, p),
+                        ),
                       ];
                     }),
                   ],

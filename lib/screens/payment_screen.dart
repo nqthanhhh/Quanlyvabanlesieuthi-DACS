@@ -10,6 +10,8 @@ import 'employee.dart';
 import 'order_management_screen.dart';
 import 'order_success_screen.dart';
 import 'profile_view_screen.dart';
+import 'checkout_screen.dart';
+import 'scan_product_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
   final String role;
@@ -111,9 +113,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     } catch (e) {
       if (!mounted) return;
       final message = e.toString().replaceFirst('Exception: ', '');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) {
         setState(() => _isProcessing = false);
@@ -121,7 +123,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  void _handleBottomTab(RoleBottomTab tab) {
+  Future<void> _handleBottomTab(RoleBottomTab tab) async {
     switch (tab) {
       case RoleBottomTab.home:
         Navigator.of(context).popUntil((route) => route.isFirst);
@@ -130,29 +132,40 @@ class _PaymentScreenState extends State<PaymentScreen> {
         Navigator.of(context).pop();
         break;
       case RoleBottomTab.scan:
-        showDialog<void>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Quét mã'),
-            content: const Text('Chức năng quét mã đang được cập nhật.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Đóng'),
+        final product = await Navigator.of(
+          context,
+        ).push<Product?>(buildSlidePageRoute(const ScanProductScreen()));
+        if (product == null || !mounted) return;
+        try {
+          final updatedCart = await DBService.addProductToCurrentCart(product);
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            buildSlidePageRoute(
+              CheckoutScreen(
+                cart: updatedCart,
+                role: widget.role,
+                onCheckoutComplete: widget.onCheckoutComplete,
               ),
-            ],
-          ),
-        );
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.toString().replaceFirst('Exception: ', '')),
+            ),
+          );
+        }
         break;
       case RoleBottomTab.invoices:
-        Navigator.of(context).push(
-          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
-        );
+        Navigator.of(
+          context,
+        ).push(buildSlidePageRoute(OrderManagementScreen(role: widget.role)));
         break;
       case RoleBottomTab.account:
-        Navigator.of(context).push(
-          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
-        );
+        Navigator.of(
+          context,
+        ).push(buildSlidePageRoute(ProfileViewScreen(role: widget.role)));
         break;
       case RoleBottomTab.employees:
         Navigator.of(context).push(

@@ -27,6 +27,12 @@ class _OrderListScreenState extends State<OrderListScreen> {
     // 💡 2. THÊM LISTENER CHO SCROLL CONTROLLER
     _scrollController.addListener(_scrollListener);
   }
+  void _refreshOrders() {
+    setState(() {
+      // Khi setState, ValueListenableBuilder sẽ tự trigger, nhưng thêm setState giúp reload các biến như _loadedOrderCount
+      _loadedOrderCount = 10; // reset số lượng load ban đầu
+    });
+  }
 
   // 💡 3. HÀM XỬ LÝ SỰ KIỆN CUỘN
   void _scrollListener() {

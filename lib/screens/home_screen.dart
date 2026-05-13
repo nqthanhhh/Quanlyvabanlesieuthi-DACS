@@ -17,6 +17,10 @@ import 'product_performance_report_screen.dart';
 import 'security_info_screen.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
+import '../services/api_service.dart';
+import '../screens/checkout_online_screen.dart';
+import 'order_history_screen.dart';
+import 'employee_order_screen.dart';
 
 enum HomeFilterOption { bestSeller, priceAsc, priceDesc, inStockOnly }
 
@@ -34,7 +38,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final Map<String, int> _cart = {};
-  String? _currentUserEmail;
+  int? _currentUserId;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedCategory = 'Tất cả';
@@ -148,23 +152,41 @@ class _HomeScreenState extends State<HomeScreen> {
   // Hàm tải giỏ hàng người dùng
   Future<void> _loadCurrentUserCart() async {
     final settings = DBService.settings();
-    final email = settings.get('current_user_email') as String?;
-    _currentUserEmail = email;
-    if (email != null) {
-      final saved = await DBService.loadCartForCurrentUser(email);
-      if (saved.isNotEmpty) {
+
+    final rawUserId = settings.get('current_user_id');
+
+    _currentUserId = rawUserId is int
+        ? rawUserId
+        : int.tryParse(rawUserId.toString());
+
+    if (_currentUserId != null) {
+      try {
+        final saved = await ApiService.fetchCart(_currentUserId!);
+
         setState(() {
           _cart
             ..clear()
             ..addAll(saved);
         });
+      } catch (e) {
+        debugPrint('Lỗi load cart: $e');
       }
     }
   }
 
   Future<void> _persistCart() async {
-    if (_currentUserEmail != null) {
-      await DBService.saveCartForUser(_currentUserEmail!, _cart);
+    print('>>> USER ID: $_currentUserId');
+    print('>>> CART: $_cart');
+
+    if (_currentUserId != null) {
+      try {
+        await ApiService.saveCart(_currentUserId!, _cart);
+        print('>>> SAVE MYSQL OK');
+      } catch (e) {
+        print('>>> SAVE ERROR: $e');
+      }
+    } else {
+      print('>>> USER ID NULL ❌');
     }
   }
 
@@ -643,84 +665,120 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
         break;
-      case RoleBottomTab.employees:
-        setState(() => _currentBottomTab = tab);
-        Navigator.of(
-          context,
-        ).push(
-          buildSlidePageRoute(EmployeeManagementScreen(role: widget.role)),
-        );
-        break;
-      case RoleBottomTab.scan:
-        setState(() => _currentBottomTab = tab);
-        _showScanPlaceholder();
-        break;
-      case RoleBottomTab.invoices:
-        setState(() => _currentBottomTab = tab);
-        Navigator.of(
-          context,
-        ).push(
-          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
-        );
-        break;
-      case RoleBottomTab.offers:
-        setState(() => _currentBottomTab = tab);
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-          );
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đang hiển thị ưu đãi hôm nay')),
-        );
-        break;
+
       case RoleBottomTab.cart:
-        if (_currentBottomTab != RoleBottomTab.cart) {
-          setState(() => _currentBottomTab = RoleBottomTab.cart);
-        }
-        if (_cart.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Giỏ hàng đang trống')),
+        if (widget.role == 'employee') {
+          // Nhân viên mở màn hình đơn hàng chờ xác nhận
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const EmployeeOrderScreen()),
           );
-          setState(() => _currentBottomTab = RoleBottomTab.home);
-          break;
+        } else {
+          // Khách hàng mở CheckoutOnlineScreen
+          if (_cart.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Giỏ hàng đang trống')),
+            );
+            setState(() => _currentBottomTab = RoleBottomTab.home);
+            break;
+          }
+
+          // Lấy user hiện tại
+          final currentUser = DBService.users().values.firstWhere(
+                (u) => u.role == 'customer',
+            orElse: () => DBService.users().values.first,
+          );
+
+          // Mở CheckoutOnlineScreen với callback để xóa cart
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CheckoutOnlineScreen(
+                userEmail: currentUser.email ?? '',
+                customerId: currentUser.userId,
+                onCheckoutComplete: () {
+                  setState(() {
+                    _cart.clear(); // xóa giỏ hàng cũ sau khi thanh toán
+                  });
+                },
+              ),
+            ),
+          );
         }
-        await Navigator.of(context).push(
-          buildSlidePageRoute(
-            CheckoutScreen(
-              cart: Map.from(_cart),
-              role: widget.role,
-              onCheckoutComplete: () async {
-                setState(() => _cart.clear());
-                await _persistCart();
+        break;
+
+        // Lấy user hiện tại từ DBService theo email
+        final currentUser = DBService.users().values.firstWhere(
+              (u) => u.role == 'customer',
+          orElse: () => DBService.users().values.first,
+        );
+
+        // Mở CheckoutOnlineScreen với callback onCheckoutComplete
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CheckoutOnlineScreen(
+              userEmail: currentUser.email ?? '',
+              customerId: currentUser.userId,
+              onCheckoutComplete: () {
+                setState(() {
+                  _cart.clear(); // giỏ hàng rỗng sau khi thanh toán
+                });
               },
             ),
           ),
         );
-        if (!mounted) return;
-        setState(() => _currentBottomTab = RoleBottomTab.home);
         break;
+
       case RoleBottomTab.orders:
-        setState(() => _currentBottomTab = tab);
-        final rawUserId = DBService.settings().get('current_user_id');
-        final currentUserId = rawUserId is int
-            ? rawUserId
-            : int.tryParse(rawUserId?.toString() ?? '');
-        Navigator.of(context).push(
+        final currentUser = DBService.users().values.firstWhere(
+              (u) => u.role == 'customer',
+          orElse: () => DBService.users().values.first,
+        );
+
+        Navigator.push(
+          context,
           MaterialPageRoute(
-            builder: (_) => OrderListScreen(customerId: currentUserId),
+            builder: (_) => OrderHistoryScreen(
+              customerId: currentUser.userId,
+            ),
           ),
         );
         break;
+
+      case RoleBottomTab.scan:
+        setState(() => _currentBottomTab = tab);
+        _showScanPlaceholder();
+        break;
+
+      case RoleBottomTab.invoices:
+        setState(() => _currentBottomTab = tab);
+        Navigator.of(context).push(
+          buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
+        );
+        break;
+
       case RoleBottomTab.account:
         setState(() => _currentBottomTab = tab);
-        Navigator.of(
-          context,
-        ).push(
+        Navigator.of(context).push(
           buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
         );
+        break;
+
+      case RoleBottomTab.employees:
+        setState(() => _currentBottomTab = tab);
+        Navigator.of(context).push(
+          buildSlidePageRoute(EmployeeManagementScreen(role: widget.role)),
+        );
+        break;
+
+      case RoleBottomTab.offers:
+        setState(() => _currentBottomTab = tab);
+        // logic nếu có offers
+        break;
+
+      default:
+      // Để tránh lỗi enum mới mà chưa xử lý
         break;
     }
   }
@@ -1051,14 +1109,24 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.of(context).pop();
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => CheckoutScreen(
-                          cart: Map.from(_cart),
-                          role: widget.role,
-                          onCheckoutComplete: () async {
-                            setState(() => _cart.clear());
-                            await _persistCart();
-                          },
-                        ),
+                        builder: (_) {
+                          // Lấy user hiện tại trong Hive, ưu tiên role 'customer'
+                          final currentUser = DBService.users().values.firstWhere(
+                                (u) => u.role == 'customer',
+                            orElse: () => DBService.users().values.first,
+                          );
+
+                          return CheckoutOnlineScreen(
+                            userEmail: currentUser.email ?? '',
+                            customerId: currentUser.userId,
+                            onCheckoutComplete: () async {
+                              // Xóa giỏ hàng local
+                              setState(() => _cart.clear());
+                              // Xóa giỏ hàng remote trên server (nếu API kết nối)
+                              await DBService.saveCartForUser(currentUser.email ?? '', <String, int>{});
+                            },
+                          );
+                        },
                       ),
                     );
                   },

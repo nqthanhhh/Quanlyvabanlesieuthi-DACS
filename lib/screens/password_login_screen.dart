@@ -6,24 +6,34 @@ import '../services/api_service.dart';
 
 class PasswordLoginScreen extends StatefulWidget {
   final void Function(String role) onLogin;
-  const PasswordLoginScreen({super.key, required this.onLogin});
+
+  const PasswordLoginScreen({
+    super.key,
+    required this.onLogin,
+  });
 
   @override
-  State<PasswordLoginScreen> createState() => _PasswordLoginScreenState();
+  State<PasswordLoginScreen> createState() =>
+      _PasswordLoginScreenState();
 }
 
-class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
+class _PasswordLoginScreenState
+    extends State<PasswordLoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+
   bool _remember = false;
   bool _obscurePass = true;
 
   @override
   void initState() {
     super.initState();
+
     final settings = DBService.settings();
+
     final savedEmail = settings.get('remember_email');
     final savedPass = settings.get('remember_pass');
+
     if (savedEmail != null && savedPass != null) {
       _emailCtrl.text = savedEmail as String;
       _passCtrl.text = savedPass as String;
@@ -41,55 +51,94 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
   Future<void> _submit() async {
     final email = _emailCtrl.text.trim();
     final pass = _passCtrl.text.trim();
+
     if (email.isEmpty || pass.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng nhập email và mật khẩu')),
+        const SnackBar(
+          content: Text('Vui lòng nhập email và mật khẩu'),
+        ),
       );
       return;
     }
+
     try {
       final user = await ApiService.login(email, pass);
-      final role = (user['role_name'] ?? user['role'] ?? 'customer').toString();
-      // persist credentials when remember is checked
+
+      final role =
+      (user['role_name'] ?? user['role'] ?? 'customer')
+          .toString();
+
       final settings = DBService.settings();
+
+      // =========================
+      // REMEMBER ACCOUNT
+      // =========================
       if (_remember) {
-        settings.put('remember_email', email);
-        settings.put('remember_pass', pass);
+        await settings.put('remember_email', email);
+        await settings.put('remember_pass', pass);
       } else {
-        if (settings.containsKey('remember_email')) {
-          settings.delete('remember_email');
-        }
-        if (settings.containsKey('remember_pass')) {
-          settings.delete('remember_pass');
-        }
+        await settings.delete('remember_email');
+        await settings.delete('remember_pass');
       }
-      // set current user email so other screens can load per-user data (e.g., cart)
-      final settings2 = DBService.settings();
-      await settings2.put('current_user_id', user['user_id']);
-      await settings2.put('current_user_email', user['email']);
-      await settings2.put('current_role', role);
+
+      // =========================
+      // CURRENT USER SESSION
+      // =========================
+      await settings.put(
+        'current_user_id',
+        user['user_id'],
+      );
+
+      await settings.put(
+        'current_user_email',
+        user['email'],
+      );
+
+      await settings.put(
+        'current_user_name',
+        user['full_name'],
+      );
+
+      await settings.put(
+        'current_user_role',
+        role,
+      );
+
+      // =========================
+      // SYNC API DATA
+      // =========================
       try {
         await DBService.syncAllFromApi();
       } catch (syncError) {
-        debugPrint('Dang nhap thanh cong nhung dong bo API loi: $syncError');
+        debugPrint(
+          'Đăng nhập thành công nhưng đồng bộ API lỗi: $syncError',
+        );
+
         if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Đăng nhập thành công, nhưng chưa đồng bộ được dữ liệu mới',
+              'Đăng nhập thành công nhưng chưa đồng bộ được dữ liệu mới',
             ),
           ),
         );
       }
+
       if (!mounted) return;
+
       widget.onLogin(role);
+
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            e is ApiException ? e.message : 'Email hoặc mật khẩu không đúng',
+            e is ApiException
+                ? e.message
+                : 'Email hoặc mật khẩu không đúng',
           ),
         ),
       );
@@ -104,7 +153,11 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
       child: Center(
@@ -122,20 +175,27 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: BackButton(),
+        leading: const BackButton(),
       ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment:
+            CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
+
               const Text(
                 'Đăng nhập',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+
               const SizedBox(height: 20),
+
               TextField(
                 controller: _emailCtrl,
                 decoration: InputDecoration(
@@ -144,12 +204,15 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
                   filled: true,
                   fillColor: Colors.grey.shade100,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius:
+                    BorderRadius.circular(12),
                     borderSide: BorderSide.none,
                   ),
                 ),
               ),
+
               const SizedBox(height: 12),
+
               TextField(
                 controller: _passCtrl,
                 obscureText: _obscurePass,
@@ -158,73 +221,129 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
                   hintText: 'Mật khẩu',
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePass ? Icons.visibility_off : Icons.visibility,
+                      _obscurePass
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                     ),
-                    onPressed: () =>
-                        setState(() => _obscurePass = !_obscurePass),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePass =
+                        !_obscurePass;
+                      });
+                    },
                   ),
                   filled: true,
                   fillColor: Colors.grey.shade100,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius:
+                    BorderRadius.circular(12),
                     borderSide: BorderSide.none,
                   ),
                 ),
               ),
+
               const SizedBox(height: 12),
+
               Row(
                 children: [
                   Checkbox(
                     value: _remember,
-                    onChanged: (v) => setState(() => _remember = v ?? false),
+                    onChanged: (v) {
+                      setState(() {
+                        _remember = v ?? false;
+                      });
+                    },
                   ),
                   const Text('Nhớ tài khoản'),
                 ],
               ),
+
               const SizedBox(height: 30),
+
               ElevatedButton(
                 onPressed: _submit,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color.fromARGB(255, 0, 73, 125),
+                  backgroundColor:
+                  const Color.fromARGB(
+                    255,
+                    0,
+                    73,
+                    125,
+                  ),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  padding:
+                  const EdgeInsets.symmetric(
+                    vertical: 16,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(36),
+                    borderRadius:
+                    BorderRadius.circular(36),
                   ),
                 ),
                 child: const Text('Đăng nhập'),
               ),
+
               const SizedBox(height: 8),
-              TextButton(onPressed: () {}, child: const Text('Quên mật khẩu')),
+
+              TextButton(
+                onPressed: () {},
+                child: const Text('Quên mật khẩu'),
+              ),
+
               const SizedBox(height: 40),
+
               Row(
                 children: const [
                   Expanded(child: Divider()),
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Text('Hoặc tiếp tục với'),
+                    padding:
+                    EdgeInsets.symmetric(
+                      horizontal: 8.0,
+                    ),
+                    child: Text(
+                      'Hoặc tiếp tục với',
+                    ),
                   ),
                   Expanded(child: Divider()),
                 ],
               ),
+
               const SizedBox(height: 12),
+
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                mainAxisAlignment:
+                MainAxisAlignment.spaceEvenly,
                 children: [
-                  _socialButton('assets/images/material-icon-theme_google.svg'),
-                  _socialButton('assets/images/Vector.svg'),
-                  _socialButton('assets/images/ic_baseline-apple.svg'),
+                  _socialButton(
+                    'assets/images/material-icon-theme_google.svg',
+                  ),
+                  _socialButton(
+                    'assets/images/Vector.svg',
+                  ),
+                  _socialButton(
+                    'assets/images/ic_baseline-apple.svg',
+                  ),
                 ],
               ),
+
               const Spacer(),
+
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment:
+                MainAxisAlignment.center,
                 children: [
-                  const Text('Bạn chưa có tài khoản? '),
+                  const Text(
+                    'Bạn chưa có tài khoản? ',
+                  ),
                   TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
-                    ),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                          const RegisterScreen(),
+                        ),
+                      );
+                    },
                     child: const Text('Đăng kí'),
                   ),
                 ],

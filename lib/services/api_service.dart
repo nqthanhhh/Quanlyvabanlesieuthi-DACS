@@ -7,6 +7,8 @@ import '../models/order.dart';
 import '../models/product.dart';
 import '../models/user.dart';
 import '../models/inventory_item.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
   final String message;
@@ -492,4 +494,5 @@ class ApiService {
       body,
     ).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
+
 }

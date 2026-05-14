@@ -3,7 +3,9 @@ import 'dart:async';
 import '../models/order.dart';
 import '../models/order_line.dart';
 import '../models/product.dart';
+import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../services/voucher_service.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 import 'employee.dart';
@@ -37,6 +39,80 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String? _selectedPaymentMethod;
   bool _isProcessing = false;
   static const Duration _checkoutTimeout = Duration(seconds: 12);
+
+  // Voucher variables
+  int? _appliedVoucherId;
+  double _discountAmount = 0;
+  String? _voucherMessage;
+  final TextEditingController _voucherController = TextEditingController();
+
+  @override
+  void dispose() {
+    _voucherController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _applyVoucher(String voucherCode) async {
+    try {
+      final userId = DBService.settings().get('current_user_id') ?? 0;
+      final result = await VoucherService.validateVoucher(
+        code: voucherCode,
+        orderTotal: widget.totalAmount,
+        userId: userId as int,
+      );
+
+      if (mounted) {
+        if (result['success']) {
+          final data = result['data'];
+          setState(() {
+            _appliedVoucherId = data['id'];
+            _discountAmount = data['discountAmount'] as double;
+            _voucherMessage = 'Áp dụng mã ${data['code']} thành công!';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_voucherMessage ?? ''),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          setState(() {
+            _appliedVoucherId = null;
+            _discountAmount = 0;
+            _voucherMessage = result['message'] ?? 'Mã voucher không hợp lệ';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_voucherMessage ?? ''),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _appliedVoucherId = null;
+          _discountAmount = 0;
+          _voucherMessage = 'Lỗi: ${e.toString()}';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi kiểm tra voucher: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removeVoucher() {
+    setState(() {
+      _appliedVoucherId = null;
+      _discountAmount = 0;
+      _voucherMessage = null;
+    });
+  }
 
   Future<void> _placeOrder() async {
     if (_isProcessing) return;
@@ -75,16 +151,32 @@ class _PaymentScreenState extends State<PaymentScreen> {
         throw Exception('Giỏ hàng đang trống, không thể thanh toán.');
       }
 
+      final currentUserId = DBService.settings().get('current_user_id') as int?;
       final newOrder = Order(
         id: 'DH-${DateTime.now().microsecondsSinceEpoch}',
         orderDate: DateTime.now(),
-        totalAmount: widget.totalAmount,
+        totalAmount: widget.totalAmount - _discountAmount,
         customerName: 'Khách lẻ',
+        // Gán customerId = người đang đăng nhập để backend ghi user_vouchers đúng user
+        customerId: currentUserId,
         status: 'Hoàn thành',
         items: orderLines,
+        voucherId: _appliedVoucherId,
+        discountAmount: _discountAmount,
       );
 
-      await DBService.saveOrder(newOrder).timeout(_checkoutTimeout);
+      // Nếu có voucher, gửi kèm; không thì dùng saveOrder
+      if (_appliedVoucherId != null) {
+        await DBService.saveOrderWithVoucher(
+          newOrder,
+          voucherId: _appliedVoucherId,
+          discountAmount: _discountAmount,
+          // Đảm bảo backend insert user_vouchers theo người đang đăng nhập
+          userId: currentUserId is int ? currentUserId : null,
+        ).timeout(_checkoutTimeout);
+      } else {
+        await DBService.saveOrder(newOrder).timeout(_checkoutTimeout);
+      }
       widget.onCheckoutComplete();
 
       if (!mounted) return;
@@ -98,7 +190,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         context,
         buildSlidePageRoute(
           OrderSuccessScreen(
-            totalAmount: '${widget.totalAmount.toStringAsFixed(0)} ₫',
+            totalAmount:
+                '${(widget.totalAmount - _discountAmount).toStringAsFixed(0)} ₫',
             paymentMethod: paymentMethodString,
           ),
         ),
@@ -191,45 +284,49 @@ class _PaymentScreenState extends State<PaymentScreen> {
         elevation: 0,
         foregroundColor: Colors.black,
       ),
-      body: Column(
-        children: [
-          _buildInvoiceDetailsCard(),
-          const SizedBox(height: 16),
-          _buildPaymentMethodCard(),
-          const Spacer(),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: SizedBox(
-              height: 50,
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isProcessing || _selectedPaymentMethod == null
-                    ? null
-                    : _placeOrder,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF5C6BC0),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            _buildInvoiceDetailsCard(),
+            const SizedBox(height: 16),
+            _buildVoucherCard(),
+            const SizedBox(height: 16),
+            _buildPaymentMethodCard(),
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: SizedBox(
+                height: 50,
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isProcessing || _selectedPaymentMethod == null
+                      ? null
+                      : _placeOrder,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF5C6BC0),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    disabledBackgroundColor: Colors.grey,
                   ),
-                  disabledBackgroundColor: Colors.grey,
-                ),
-                child: _isProcessing
-                    ? const CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 3,
-                      )
-                    : const Text(
-                        'Xác nhận thanh toán',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                  child: _isProcessing
+                      ? const CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 3,
+                        )
+                      : const Text(
+                          'Xác nhận thanh toán',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       bottomNavigationBar: RoleBottomNavigationBar(
         role: widget.role,
@@ -291,6 +388,158 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
               ],
             ),
+            if (_discountAmount > 0) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Giảm giá:',
+                    style: TextStyle(fontSize: 16, color: Colors.green),
+                  ),
+                  Text(
+                    '-${_discountAmount.toStringAsFixed(0)} ₫',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Thành tiền:',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    '${(widget.totalAmount - _discountAmount).toStringAsFixed(0)} ₫',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoucherCard() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16.0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Mã khuyến mãi',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                if (_appliedVoucherId != null)
+                  TextButton.icon(
+                    onPressed: _removeVoucher,
+                    icon: const Icon(Icons.close),
+                    label: const Text('Bỏ'),
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_appliedVoucherId != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  border: Border.all(color: Colors.green),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.green),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _voucherMessage ?? 'Voucher đã áp dụng',
+                        style: const TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _voucherController,
+                          enabled: _appliedVoucherId == null,
+                          decoration: InputDecoration(
+                            hintText: 'Nhập mã voucher',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          ),
+                          onSubmitted: (value) {
+                            if (value.isNotEmpty) {
+                              _applyVoucher(value);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _appliedVoucherId != null
+                            ? null
+                            : () {
+                                if (_voucherController.text.isNotEmpty) {
+                                  _applyVoucher(_voucherController.text);
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                        ),
+                        child: const Text('Áp dụng'),
+                      ),
+                    ],
+                  ),
+                  if (_voucherMessage != null && _appliedVoucherId == null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _voucherMessage!,
+                      style: const TextStyle(color: Colors.red, fontSize: 14),
+                    ),
+                  ],
+                ],
+              ),
           ],
         ),
       ),

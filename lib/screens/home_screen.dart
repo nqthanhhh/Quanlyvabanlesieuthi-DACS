@@ -16,6 +16,7 @@ import 'order_management_screen.dart';
 import 'product_performance_report_screen.dart';
 import 'scan_product_screen.dart';
 import 'security_info_screen.dart';
+import 'admin_vouchers_screen.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 
@@ -41,15 +42,12 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedCategory = 'Tất cả';
   HomeFilterOption _filterOption = HomeFilterOption.bestSeller;
   RoleBottomTab _currentBottomTab = RoleBottomTab.home;
-  final bool _isLoading = true;
   // *** INFINITE SCROLL LOGIC ***
   final ScrollController _scrollController = ScrollController();
   final int _productsPerPage = 6;
   int _loadedProductCount = 6;
   bool _isLoadingMore = false;
   // *****************************
-  final List<Product> _allProducts = [];
-  final List<Product> _displayedProducts = [];
 
   // Mapping sản phẩm sang đường dẫn ảnh asset (fallback khi không có ảnh từ backend)
   String _imageFor(Product p) {
@@ -408,6 +406,20 @@ class _HomeScreenState extends State<HomeScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const CustomerManagementScreen(),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.card_giftcard_outlined),
+          title: const Text('Quản lý mã khuyến mãi'),
+          onTap: () {
+            Navigator.of(context).pop();
+            final settings = DBService.settings();
+            final token = settings.get('auth_token') ?? '';
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => AdminVouchersScreen(token: token.toString()),
               ),
             );
           },
@@ -909,38 +921,6 @@ class _HomeScreenState extends State<HomeScreen> {
         role: widget.role,
         currentTab: _currentBottomTab,
         onTabSelected: _handleBottomTab,
-      ),
-    );
-  }
-
-  // Tách Floating Action Button
-  Widget _buildCartFloatingActionButton() {
-    final totalItems = _cart.values.fold<int>(0, (a, b) => a + b);
-
-    return FloatingActionButton(
-      onPressed: () => _openCartSheet(context),
-      backgroundColor: Colors.orange.shade400,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const Icon(Icons.shopping_cart),
-          if (_cart.isNotEmpty)
-            Positioned(
-              right: -6,
-              top: -6,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  totalItems.toString(),
-                  style: const TextStyle(fontSize: 12, color: Colors.white),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

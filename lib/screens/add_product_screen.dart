@@ -31,7 +31,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
   late TextEditingController _unitController;
   late TextEditingController _stockQuantityController;
   bool _isProcessing = false;
-  int? _selectedTakeAmount;
   String? _selectedInventoryId;
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryId;
@@ -81,47 +80,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
       });
     } catch (_) {
       if (mounted) setState(() => _categories = []);
-    }
-  }
-
-  Future<void> _createCategoryQuick() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Thêm danh mục'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: 'Tên danh mục'),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Lưu'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty) return;
-    try {
-      final created = await ApiService.createCategory(name);
-      await _loadCategories();
-      if (mounted) {
-        setState(() => _selectedCategoryId = created['category_id'] as int);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e is ApiException ? e.message : 'Lỗi thêm danh mục'),
-          ),
-        );
-      }
     }
   }
 
@@ -195,14 +153,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // If editing, fill fields for manual edit behavior. If adding new,
       // immediately attempt to add product from inventory with chosen qty.
       if (_isEditing) {
+        // Gán text vào controller TRƯỚC setState để tránh lỗi TextFormField
+        _idController.text = item.id;
+        _nameController.text = item.name;
+        _priceController.text = item.price.toString();
+        _unitController.text = item.unit;
+        _stockQuantityController.text = result.toString();
+
         setState(() {
           _selectedInventoryId = item.id;
-          _selectedTakeAmount = result;
-          _idController.text = item.id;
-          _nameController.text = item.name;
-          _priceController.text = item.price.toString();
-          _unitController.text = item.unit;
-          _stockQuantityController.text = result.toString();
         });
       } else {
         await _addProductFromInventory(item, result);
@@ -240,7 +199,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
       setState(() {
         _idController.clear();
         _selectedInventoryId = null;
-        _selectedTakeAmount = null;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

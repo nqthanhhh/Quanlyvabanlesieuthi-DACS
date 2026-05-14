@@ -484,7 +484,50 @@ class DBService {
     }
 
     final employeeId = settings().get('current_user_id') as int?;
-    final saved = await ApiService.createOrder(order, employeeId: employeeId);
+    final saved = await ApiService.createOrder(
+      order,
+      customerId: order.customerId,
+      employeeId: employeeId,
+    );
+    await orders().put(saved.id, saved);
+    // Đồng bộ tồn kho chạy nền để UI thanh toán phản hồi nhanh hơn.
+    unawaited(
+      syncProductsFromApi().catchError((e) {
+        print('Đồng bộ sản phẩm sau thanh toán thất bại: $e');
+      }),
+    );
+  }
+
+  static Future<void> saveOrderWithVoucher(
+    Order order, {
+    int? voucherId,
+    double discountAmount = 0,
+    int? userId,
+  }) async {
+    if (forceUseLocalProductSeed) {
+      await orders().put(order.id, order);
+      return;
+    }
+
+    final rawCurrentUserId = settings().get('current_user_id');
+    final employeeId = rawCurrentUserId is int
+        ? rawCurrentUserId
+        : int.tryParse(rawCurrentUserId?.toString() ?? '');
+
+    // Lấy user_id: customer_id -> userId -> employeeId
+    // (Đảm bảo truyền xuống backend luôn là int để backend insert user_vouchers đúng)
+    final userIdToUse = order.customerId ?? userId ?? employeeId;
+
+    // Gọi API với thêm voucher info
+    final saved = await ApiService.createOrderWithVoucher(
+      order,
+      customerId: order.customerId,
+      employeeId: employeeId,
+      voucherId: voucherId,
+      discountAmount: discountAmount,
+      userId: userIdToUse,
+    );
+
     await orders().put(saved.id, saved);
     // Đồng bộ tồn kho chạy nền để UI thanh toán phản hồi nhanh hơn.
     unawaited(

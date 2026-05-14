@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS carts (
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
-clt
+
 CREATE TABLE IF NOT EXISTS cart_items (
   cart_item_id INT AUTO_INCREMENT PRIMARY KEY,
   cart_id INT NOT NULL,
@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_id INT,
   employee_id INT,
   shift_id INT,
+  voucher_id INT, -- Thêm cột này vào đây
   order_type VARCHAR(30) NOT NULL,
   total_amount DECIMAL(10,2) NOT NULL,
   discount_amount DECIMAL(10,2) DEFAULT 0,
@@ -130,6 +131,13 @@ CREATE TABLE IF NOT EXISTS orders (
   CONSTRAINT fk_orders_employee
     FOREIGN KEY (employee_id)
     REFERENCES users(user_id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  -- Thêm khóa ngoại voucher vào đây
+  CONSTRAINT fk_orders_vouchers
+    FOREIGN KEY (voucher_id)
+    REFERENCES vouchers(voucher_id)
     ON UPDATE CASCADE
     ON DELETE SET NULL
 ) ENGINE=InnoDB;
@@ -327,6 +335,45 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+-- VOUCHER TABLES
+CREATE TABLE IF NOT EXISTS vouchers (
+  voucher_id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  description TEXT,
+  discount_type ENUM('fixed', 'percent') NOT NULL,
+  discount_value DECIMAL(10,2) NOT NULL,
+  min_order_amount DECIMAL(10,2) DEFAULT 0,
+  max_discount DECIMAL(10,2) DEFAULT NULL,
+  usage_limit INT DEFAULT NULL,
+  used_count INT DEFAULT 0,
+  expiry_date DATE DEFAULT NULL,
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_vouchers (
+  user_voucher_id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  voucher_id INT NOT NULL,
+  used_count INT DEFAULT 0,
+  last_used_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_user_voucher (user_id, voucher_id),
+
+  CONSTRAINT fk_user_vouchers_users
+    FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_user_vouchers_vouchers
+    FOREIGN KEY (voucher_id)
+    REFERENCES vouchers(voucher_id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 INSERT IGNORE INTO roles(role_name)
 VALUES
 ('customer'),
@@ -335,9 +382,9 @@ VALUES
 
 INSERT IGNORE INTO users(full_name, email, phone, password, address, role_id, status)
 VALUES
-('Admin', 'admin@gmail.com', '0900000001', 'admin123', 'Tai khoan quan tri', (SELECT role_id FROM roles WHERE role_name = 'admin'), 'active'),
-('Nhan vien', 'employee@gmail.com', '0900000002', 'employee123', 'Tai khoan nhan vien', (SELECT role_id FROM roles WHERE role_name = 'employee'), 'active');
-
+('Admin', 'a@gmail.com', '0900000001', '123', 'Tai khoan quan tri', (SELECT role_id FROM roles WHERE role_name = 'admin'), 'active'),
+('Nhan vien', 'b@gmail.com', '0900000002', '123', 'Tai khoan nhan vien', (SELECT role_id FROM roles WHERE role_name = 'employee'), 'active'),
+('Khach hang', 'c@gmail.com', '0900000003', '123', 'Tai khoan khach hang', (SELECT role_id FROM roles WHERE role_name = 'customer'), 'active');
 INSERT IGNORE INTO categories(category_name)
 VALUES
 ('Đồ uống'),
@@ -393,16 +440,6 @@ VALUES
 ('PROD013', 'Trà xanh C2 hương chanh', 'url_c2.jpg', 8000, 5500, 'Chai', 300, 'available'),
 ('PROD014', 'Trà đá TRADA hương hoa nhài', 'url_trada.jpg', 10000, 6500, 'Lon', 100, 'available'),
 ('PROD015', 'Trà xanh Lipton vị chanh mật ong', 'url_lipton.jpg', 12000, 8000, 'Chai', 150, 'available');
--- Cập nhật thêm cột category_id cho bảng inventory_items
--- ALTER TABLE inventory_items
--- ADD COLUMN category_id INT NULL AFTER item_name;
-
--- -- Thêm khóa ngoại (nếu đã có bảng categories)
--- ALTER TABLE inventory_items
--- ADD CONSTRAINT fk_inventory_items_categories
--- FOREIGN KEY (category_id) REFERENCES categories(category_id)
--- ON UPDATE CASCADE
--- ON DELETE SET NULL;
 UPDATE inventory_items ii
 JOIN products p ON p.barcode = ii.barcode
 SET ii.category_id = p.category_id

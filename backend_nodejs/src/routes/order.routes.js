@@ -1,5 +1,5 @@
-const express = require('express');
-const pool = require('../config/db');
+const express = require("express");
+const pool = require("../config/db");
 
 const router = express.Router();
 
@@ -22,12 +22,12 @@ async function getActiveShiftId(connection, employeeId) {
      FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE()
        AND TABLE_NAME = 'work_shifts'
-       AND COLUMN_NAME = 'status'`
+       AND COLUMN_NAME = 'status'`,
   );
   const hasShiftStatus = Number(statusColumns[0]?.count || 0) > 0;
   const activeWhere = hasShiftStatus
     ? "end_time IS NULL AND status IN ('active', 'working')"
-    : 'end_time IS NULL';
+    : "end_time IS NULL";
   const [rows] = await connection.execute(
     `SELECT shift_id
      FROM work_shifts
@@ -35,7 +35,7 @@ async function getActiveShiftId(connection, employeeId) {
        AND ${activeWhere}
      ORDER BY shift_date DESC, start_time DESC, shift_id DESC
      LIMIT 1`,
-    [employeeId]
+    [employeeId],
   );
   return rows[0]?.shift_id || null;
 }
@@ -46,7 +46,7 @@ async function ordersHasShiftId(connection) {
      FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE()
        AND TABLE_NAME = 'orders'
-       AND COLUMN_NAME = 'shift_id'`
+       AND COLUMN_NAME = 'shift_id'`,
   );
   return Number(rows[0]?.count || 0) > 0;
 }
@@ -57,9 +57,9 @@ function normalizeOrder(row) {
     id: String(row.order_id),
     orderDate: row.created_at,
     totalAmount: Number(row.final_amount),
-    customerName: row.customer_name || 'Khách lẻ',
+    customerName: row.customer_name || "Khách lẻ",
     paymentStatus: row.payment_status || row.latest_payment_status,
-    paymentMethod: row.payment_method || 'cash',
+    paymentMethod: row.payment_method || "cash",
     shippingAddress: row.shipping_address,
   };
 }
@@ -73,7 +73,7 @@ async function fetchOrder(orderId) {
      LEFT JOIN users eu ON eu.user_id = o.employee_id
      ${paymentJoinSql}
      WHERE o.order_id = ?`,
-    [orderId]
+    [orderId],
   );
   if (orders.length === 0) return null;
 
@@ -83,7 +83,7 @@ async function fetchOrder(orderId) {
      JOIN products p ON p.product_id = oi.product_id
      WHERE oi.order_id = ?
      ORDER BY oi.order_item_id`,
-    [orderId]
+    [orderId],
   );
 
   return {
@@ -99,7 +99,7 @@ async function fetchOrder(orderId) {
   };
 }
 
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const [rows] = await pool.execute(
       `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
@@ -108,15 +108,21 @@ router.get('/', async (req, res) => {
        LEFT JOIN users cu ON cu.user_id = o.customer_id
        LEFT JOIN users eu ON eu.user_id = o.employee_id
        ${paymentJoinSql}
-       ORDER BY o.created_at DESC`
+       ORDER BY o.created_at DESC`,
     );
     res.json({ success: true, data: rows.map(normalizeOrder) });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Lỗi lấy đơn hàng', error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Lỗi lấy đơn hàng",
+        error: error.message,
+      });
   }
 });
 
-router.get('/online', async (req, res) => {
+router.get("/online", async (req, res) => {
   try {
     const [rows] = await pool.execute(
       `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
@@ -127,21 +133,27 @@ router.get('/online', async (req, res) => {
        ${paymentJoinSql}
        WHERE o.order_type = 'online'
          AND o.status IN ('pending', 'confirmed', 'preparing')
-       ORDER BY o.created_at ASC`
+       ORDER BY o.created_at ASC`,
     );
     res.json({ success: true, data: rows.map(normalizeOrder) });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Lỗi lấy đơn online', error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Lỗi lấy đơn online",
+        error: error.message,
+      });
   }
 });
 
 async function fetchHistory(req, res) {
   try {
-    const customerId = Number(req.params.customerId || req.get('x-user-id'));
+    const customerId = Number(req.params.customerId || req.get("x-user-id"));
     const params = [];
-    let customerWhere = '';
+    let customerWhere = "";
     if (customerId) {
-      customerWhere = 'AND o.customer_id = ?';
+      customerWhere = "AND o.customer_id = ?";
       params.push(customerId);
     }
 
@@ -151,7 +163,7 @@ async function fetchHistory(req, res) {
        WHERE o.status IN ('completed', 'Hoàn thành', 'hoàn thành')
          ${customerWhere}
        ORDER BY o.created_at DESC`,
-      params
+      params,
     );
     const orders = [];
     for (const row of rows) {
@@ -160,68 +172,166 @@ async function fetchHistory(req, res) {
     }
     res.json({ success: true, data: orders });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Lỗi lấy lịch sử mua hàng', error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Lỗi lấy lịch sử mua hàng",
+        error: error.message,
+      });
   }
 }
 
-router.get('/history', fetchHistory);
-router.get('/history/:customerId', fetchHistory);
+router.get("/history", fetchHistory);
+router.get("/history/:customerId", fetchHistory);
 
-router.get('/:id', async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const order = await fetchOrder(req.params.id);
     if (!order) {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đơn hàng" });
     }
     res.json({ success: true, data: order });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Lỗi lấy đơn hàng', error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Lỗi lấy đơn hàng",
+        error: error.message,
+      });
   }
 });
 
-router.patch('/:id/status', async (req, res) => {
+router.patch("/:id/status", async (req, res) => {
   try {
-    const status = String(req.body.status || '').trim();
-    const allowed = ['pending', 'confirmed', 'preparing', 'completed', 'cancelled'];
+    const status = String(req.body.status || "").trim();
+    const allowed = [
+      "pending",
+      "confirmed",
+      "preparing",
+      "completed",
+      "cancelled",
+    ];
     if (!allowed.includes(status)) {
-      return res.status(400).json({ success: false, message: 'Trạng thái đơn hàng không hợp lệ' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Trạng thái đơn hàng không hợp lệ" });
     }
 
     const [result] = await pool.execute(
-      'UPDATE orders SET status = ? WHERE order_id = ?',
-      [status, req.params.id]
+      "UPDATE orders SET status = ? WHERE order_id = ?",
+      [status, req.params.id],
     );
     if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đơn hàng" });
     }
 
     const order = await fetchOrder(req.params.id);
-    res.json({ success: true, message: 'Đã cập nhật trạng thái đơn hàng', data: order });
+    res.json({
+      success: true,
+      message: "Đã cập nhật trạng thái đơn hàng",
+      data: order,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Lỗi cập nhật trạng thái đơn hàng', error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Lỗi cập nhật trạng thái đơn hàng",
+        error: error.message,
+      });
   }
 });
 
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const {
       customer_id,
       employee_id,
-      order_type = 'offline',
-      status = 'completed',
-      payment_status = 'paid',
+      order_type = "offline",
+      status = "completed",
+      payment_status = "paid",
       shipping_address,
       note,
-      payment_method = 'cash',
+      payment_method = "cash",
       items,
+      voucher_id,
+      discount_amount = 0,
+      user_id,
     } = req.body;
 
+    // DEBUG: Log dữ liệu nhận được
+    console.log("[ORDER DEBUG] Received:", {
+      voucher_id,
+      discount_amount,
+      user_id,
+      customer_id,
+      employee_id,
+      items_count: items?.length,
+    });
+
     if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ success: false, message: 'Đơn hàng cần có items' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Đơn hàng cần có items" });
     }
 
     await connection.beginTransaction();
+
+    // Kiểm tra voucher nếu được cung cấp
+    let finalDiscountAmount = Number(discount_amount) || 0;
+    if (voucher_id) {
+      const [vouchers] = await connection.execute(
+        "SELECT voucher_id, used_count, usage_limit, status, expiry_date FROM vouchers WHERE voucher_id = ? FOR UPDATE",
+        [voucher_id],
+      );
+
+      if (vouchers.length === 0) {
+        throw new Error("Mã voucher không tồn tại");
+      }
+
+      const voucher = vouchers[0];
+
+      // Kiểm tra voucher còn hoạt động không
+      if (voucher.status !== "active") {
+        throw new Error("Mã voucher không còn hoạt động");
+      }
+
+      // Kiểm tra hạn sử dụng
+      if (voucher.expiry_date && new Date(voucher.expiry_date) < new Date()) {
+        throw new Error("Mã voucher đã hết hạn");
+      }
+
+      // Kiểm tra giới hạn sử dụng
+      if (voucher.usage_limit && voucher.used_count >= voucher.usage_limit) {
+        throw new Error("Mã voucher đã hết lượt sử dụng");
+      }
+
+      // Cập nhật used_count cho voucher
+      await connection.execute(
+        "UPDATE vouchers SET used_count = used_count + 1 WHERE voucher_id = ?",
+        [voucher_id],
+      );
+
+      // Lưu vào bảng user_vouchers nếu user_id có
+      if (user_id) {
+        await connection.execute(
+          `INSERT INTO user_vouchers (user_id, voucher_id, used_count, last_used_at)
+           VALUES (?, ?, 1, NOW())
+           ON DUPLICATE KEY UPDATE
+           used_count = used_count + 1,
+           last_used_at = NOW()`,
+          [user_id, voucher_id],
+        );
+      }
+    }
+
     const employeeId = employee_id ? Number(employee_id) : null;
     const hasOrdersShiftId = await ordersHasShiftId(connection);
     const activeShiftId = hasOrdersShiftId
@@ -234,12 +344,12 @@ router.post('/', async (req, res) => {
       const productId = Number(item.product_id || item.productId);
       const quantity = Number(item.quantity);
       if (!productId || quantity <= 0) {
-        throw new Error('Item không hợp lệ');
+        throw new Error("Item không hợp lệ");
       }
 
       const [products] = await connection.execute(
-        'SELECT product_id, product_name, price, stock FROM products WHERE product_id = ? FOR UPDATE',
-        [productId]
+        "SELECT product_id, product_name, price, stock FROM products WHERE product_id = ? FOR UPDATE",
+        [productId],
       );
       if (products.length === 0) {
         throw new Error(`Không tìm thấy sản phẩm ${productId}`);
@@ -255,19 +365,21 @@ router.post('/', async (req, res) => {
     }
 
     const insertColumns = hasOrdersShiftId
-      ? 'customer_id, employee_id, shift_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note'
-      : 'customer_id, employee_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note';
+      ? "customer_id, employee_id, shift_id, voucher_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note"
+      : "customer_id, employee_id, voucher_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note";
     const insertValues = hasOrdersShiftId
-      ? '?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?'
-      : '?, ?, ?, ?, 0, ?, ?, ?, ?, ?';
+      ? "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+      : "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
     const insertParams = hasOrdersShiftId
       ? [
           customer_id || null,
           employeeId,
           activeShiftId,
+          voucher_id || null,
           order_type,
           total,
-          total,
+          finalDiscountAmount,
+          total - finalDiscountAmount,
           status,
           payment_status,
           shipping_address || null,
@@ -276,9 +388,11 @@ router.post('/', async (req, res) => {
       : [
           customer_id || null,
           employeeId,
+          voucher_id || null,
           order_type,
           total,
-          total,
+          finalDiscountAmount,
+          total - finalDiscountAmount,
           status,
           payment_status,
           shipping_address || null,
@@ -287,32 +401,46 @@ router.post('/', async (req, res) => {
 
     const [orderResult] = await connection.execute(
       `INSERT INTO orders (${insertColumns}) VALUES (${insertValues})`,
-      insertParams
+      insertParams,
     );
 
     for (const item of normalizedItems) {
       await connection.execute(
         `INSERT INTO order_items (order_id, product_id, quantity, price, subtotal)
          VALUES (?, ?, ?, ?, ?)`,
-        [orderResult.insertId, item.productId, item.quantity, item.price, item.subtotal]
+        [
+          orderResult.insertId,
+          item.productId,
+          item.quantity,
+          item.price,
+          item.subtotal,
+        ],
       );
-      await connection.execute('UPDATE products SET stock = stock - ? WHERE product_id = ?', [
-        item.quantity,
-        item.productId,
-      ]);
+      await connection.execute(
+        "UPDATE products SET stock = stock - ? WHERE product_id = ?",
+        [item.quantity, item.productId],
+      );
     }
 
     await connection.execute(
-      'INSERT INTO payments (order_id, method, amount, status, paid_at) VALUES (?, ?, ?, ?, NOW())',
-      [orderResult.insertId, payment_method, total, payment_status]
+      "INSERT INTO payments (order_id, method, amount, status, paid_at) VALUES (?, ?, ?, ?, NOW())",
+      [orderResult.insertId, payment_method, total, payment_status],
     );
 
     await connection.commit();
     const order = await fetchOrder(orderResult.insertId);
-    res.status(201).json({ success: true, message: 'Đã tạo đơn hàng', data: order });
+    res
+      .status(201)
+      .json({ success: true, message: "Đã tạo đơn hàng", data: order });
   } catch (error) {
     await connection.rollback();
-    res.status(500).json({ success: false, message: 'Lỗi tạo đơn hàng', error: error.message });
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Lỗi tạo đơn hàng",
+        error: error.message,
+      });
   } finally {
     connection.release();
   }

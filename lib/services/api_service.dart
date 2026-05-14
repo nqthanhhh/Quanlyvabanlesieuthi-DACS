@@ -378,6 +378,39 @@ class ApiService {
     return Order.fromJson(_dataMap(_decode(response)));
   }
 
+  static Future<Order> createOrderWithVoucher(
+    Order order, {
+    int? customerId,
+    int? employeeId,
+    int? voucherId,
+    double discountAmount = 0,
+    int? userId,
+  }) async {
+    final orderData = order.toJson(
+      customerId: customerId,
+      employeeId: employeeId,
+    );
+    // Thêm voucher info vào payload
+    if (voucherId != null) {
+      orderData['voucher_id'] = voucherId;
+    }
+    if (discountAmount > 0) {
+      orderData['discount_amount'] = discountAmount;
+    }
+    if (userId != null) {
+      orderData['user_id'] = userId;
+    }
+
+    final response = await http
+        .post(
+          _uri('/api/orders'),
+          headers: _headers,
+          body: jsonEncode(orderData),
+        )
+        .timeout(_timeout);
+    return Order.fromJson(_dataMap(_decode(response)));
+  }
+
   static Future<Map<String, dynamic>> createReview({
     required String orderId,
     required String productId,

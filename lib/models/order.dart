@@ -7,21 +7,6 @@ part 'order.g.dart'; // File tự động tạo bởi build_runner
 
 @HiveType(typeId: 2) // Chọn typeId chưa dùng (2)
 class Order extends HiveObject {
-  @HiveField(6)
-  int? customerId;
-
-  @HiveField(7)
-  String? shippingAddress;
-
-  @HiveField(8)
-  String? paymentMethod;
-
-  @HiveField(9)
-  String? paymentStatus;
-
-  @HiveField(10)
-  String? note;
-
   @HiveField(0)
   String id;
 
@@ -40,23 +25,63 @@ class Order extends HiveObject {
   @HiveField(5)
   List<OrderLine> items; // Danh sách sản phẩm trong đơn hàng
 
+  @HiveField(6)
+  int? customerId;
+
+  @HiveField(7)
+  String? shippingAddress;
+
+  @HiveField(8)
+  String? paymentMethod;
+
+  @HiveField(9)
+  String? paymentStatus;
+
+  @HiveField(10)
+  String? note;
+
+  @HiveField(11)
+  int? voucherId; // Mã voucher được áp dụng
+
+  @HiveField(12)
+  double discountAmount; // Số tiền giảm
+
   Order({
-    this.customerId,
-    this.shippingAddress,
-    this.paymentMethod,
-    this.paymentStatus,
-    this.note,
     required this.id,
     required this.orderDate,
     required this.totalAmount,
     required this.customerName,
     required this.status,
     required this.items,
+    this.customerId,
+    this.shippingAddress,
+    this.paymentMethod,
+    this.paymentStatus,
+    this.note,
+    this.voucherId,
+    this.discountAmount = 0,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
     final rawItems = (json['items'] as List?) ?? const [];
     return Order(
+      id: (json['order_id'] ?? json['id']).toString(),
+      orderDate:
+          DateTime.tryParse(
+            (json['created_at'] ?? json['orderDate'] ?? '').toString(),
+          ) ??
+          DateTime.now(),
+      totalAmount: TypeConverters.toDouble(
+        json['total_amount'] ?? json['totalAmount'],
+      ),
+      customerName:
+          (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ')
+              .toString(),
+      status: (json['status'] ?? '').toString(),
+      items: rawItems
+          .whereType<Map>()
+          .map((e) => OrderLine.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
       customerId: TypeConverters.toNullableInt(
         json['customer_id'] ?? json['customerId'],
       ),
@@ -70,23 +95,8 @@ class Order extends HiveObject {
         json['payment_status'] ?? json['paymentStatus'],
       ),
       note: TypeConverters.toNullableString(json['note']),
-      id: (json['order_id'] ?? json['id']).toString(),
-      orderDate:
-          DateTime.tryParse(
-            (json['created_at'] ?? json['orderDate'] ?? '').toString(),
-          ) ??
-          DateTime.now(),
-      totalAmount: TypeConverters.toDouble(
-        json['totalAmount'] ?? json['final_amount'],
-      ),
-      customerName:
-          (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ')
-              .toString(),
-      status: (json['status'] ?? '').toString(),
-      items: rawItems
-          .whereType<Map>()
-          .map((e) => OrderLine.fromJson(Map<String, dynamic>.from(e)))
-          .toList(),
+      voucherId: TypeConverters.toNullableInt(json['voucher_id']),
+      discountAmount: TypeConverters.toDouble(json['discount_amount'] ?? 0),
     );
   }
 
@@ -100,6 +110,8 @@ class Order extends HiveObject {
       'shipping_address': shippingAddress,
       'payment_method': paymentMethod ?? 'cash',
       'note': note,
+      'voucher_id': voucherId,
+      'discount_amount': discountAmount,
       'items': items.map((e) => e.toJson()).toList(),
     };
   }

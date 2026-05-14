@@ -9,7 +9,6 @@ import '../models/inventory_item.dart'; // <<< IMPORT InventoryItem
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart'; // <<< Đảm bảo bạn có DBService và hàm inventoryHistory()
-import '../services/api_service.dart';
 
 class ImportInventoryScreen extends StatefulWidget {
   const ImportInventoryScreen({super.key});

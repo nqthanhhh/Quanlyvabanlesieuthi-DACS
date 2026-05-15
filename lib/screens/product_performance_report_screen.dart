@@ -75,9 +75,40 @@ class _ProductPerformanceReportScreenState
         product['category_name'] ??= local.categoryName;
         product['image_url'] ??= local.imageUrl;
         product['current_stock'] ??= local.stockQuantity;
+        product['created_at'] ??= local.createdAt?.toIso8601String();
       }
 
       product['sell_through_rate'] = _calculateSellThroughRate(product);
+    }
+
+    final existingIds = products
+        .map(
+          (product) =>
+              (product['product_id'] ?? product['id'] ?? '').toString(),
+        )
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    for (final product in localProducts) {
+      if (existingIds.contains(product.id)) continue;
+      products.add({
+        'product_id': product.id,
+        'product_name': product.name,
+        'barcode': product.barcode,
+        'image_url': product.imageUrl,
+        'category_name': product.categoryName,
+        'sale_price': product.price,
+        'unit': product.unit,
+        'total_quantity_sold': 0,
+        'total_revenue': 0,
+        'orders_count': 0,
+        'total_profit': null,
+        'average_sale_price': 0,
+        'current_stock': product.stockQuantity,
+        'min_stock': product.minStock,
+        'import_price': null,
+        'sell_through_rate': product.stockQuantity > 0 ? 0 : null,
+        'created_at': product.createdAt?.toIso8601String(),
+      });
     }
   }
 
@@ -130,6 +161,34 @@ class _ProductPerformanceReportScreenState
   String _productName(Map<String, dynamic> product) {
     final name = (product['product_name'] ?? '').toString().trim();
     return name.isEmpty ? 'Sản phẩm chưa đặt tên' : name;
+  }
+
+  DateTime? _createdAtOf(Map<String, dynamic> product) {
+    final raw = product['created_at'] ?? product['createdAt'];
+    if (raw == null) return null;
+    if (raw is DateTime) return raw;
+    return DateTime.tryParse(raw.toString());
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  List<Map<String, dynamic>> _newProducts(List<Map<String, dynamic>> products) {
+    final newest = products.toList();
+    newest.sort((a, b) {
+      final dateA = _createdAtOf(a);
+      final dateB = _createdAtOf(b);
+      if (dateA != null && dateB != null) {
+        return dateB.compareTo(dateA);
+      }
+      if (dateA != null) return -1;
+      if (dateB != null) return 1;
+      return _toInt(
+        b['product_id'] ?? b['id'],
+      ).compareTo(_toInt(a['product_id'] ?? a['id']));
+    });
+    return newest.take(6).toList();
   }
 
   Widget _buildSummary(List<Map<String, dynamic>> products) {
@@ -281,6 +340,73 @@ class _ProductPerformanceReportScreenState
     );
   }
 
+  Widget _buildNewProductsSection(List<Map<String, dynamic>> products) {
+    final newest = _newProducts(products);
+    if (newest.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Sản phẩm mới',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+            ),
+            Text(
+              '${newest.length} mới nhất',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 150,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: newest.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final product = newest[index];
+              final createdAt = _createdAtOf(product);
+              final salePrice = _toDouble(
+                product['sale_price'] ?? product['price'],
+              );
+              return _NewProductCard(
+                name: _productName(product),
+                category: (product['category_name'] ?? 'Chưa phân loại')
+                    .toString(),
+                price: salePrice <= 0
+                    ? 'Chưa có giá'
+                    : _formatCurrency(salePrice),
+                createdAt: createdAt == null
+                    ? 'Chưa rõ ngày'
+                    : _formatDate(createdAt),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => _ProductPerformanceDetailScreen(
+                        product: product,
+                        rank: products.indexOf(product) + 1,
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Color _performanceColor(double? performance) {
     if (performance == null) return Colors.grey.shade700;
     if (performance >= 70) return _primary;
@@ -360,6 +486,9 @@ class _ProductPerformanceReportScreenState
                   children: [
                     _buildSummary(products),
                     const SizedBox(height: 18),
+                    _buildNewProductsSection(products),
+                    if (_newProducts(products).isNotEmpty)
+                      const SizedBox(height: 18),
                     const Text(
                       'Xếp hạng bán chạy',
                       style: TextStyle(
@@ -431,6 +560,17 @@ class _ProductPerformanceDetailScreen extends StatelessWidget {
   String _productName() {
     final name = (product['product_name'] ?? '').toString().trim();
     return name.isEmpty ? 'Sản phẩm chưa đặt tên' : name;
+  }
+
+  DateTime? _createdAt() {
+    final raw = product['created_at'] ?? product['createdAt'];
+    if (raw == null) return null;
+    if (raw is DateTime) return raw;
+    return DateTime.tryParse(raw.toString());
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
   Widget _buildHeroImage() {
@@ -552,6 +692,7 @@ class _ProductPerformanceDetailScreen extends StatelessWidget {
     final stock = _toInt(product['current_stock']);
     final ordersCount = _toInt(product['orders_count']);
     final unit = (product['unit'] ?? 'sp').toString();
+    final createdAt = _createdAt();
     final profitMargin = profit == null || revenue <= 0
         ? null
         : (profit / revenue) * 100;
@@ -682,10 +823,116 @@ class _ProductPerformanceDetailScreen extends StatelessWidget {
                 ),
                 _detailRow('Mã sản phẩm', '${product['product_id'] ?? '-'}'),
                 _detailRow('Mã vạch', '${product['barcode'] ?? '-'}'),
+                _detailRow(
+                  'Ngày thêm',
+                  createdAt == null
+                      ? 'Chưa có dữ liệu'
+                      : _formatDate(createdAt),
+                ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NewProductCard extends StatelessWidget {
+  final String name;
+  final String category;
+  final String price;
+  final String createdAt;
+  final VoidCallback onTap;
+
+  const _NewProductCard({
+    required this.name,
+    required this.category,
+    required this.price,
+    required this.createdAt,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 210,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF146C43).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.fiber_new_outlined,
+                        size: 18,
+                        color: Color(0xFF146C43),
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(Icons.chevron_right, color: Colors.grey.shade500),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  category,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                ),
+                const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        price,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF146C43),
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      createdAt,
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

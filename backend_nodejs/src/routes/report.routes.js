@@ -188,22 +188,45 @@ router.get("/product-performance", async (req, res) => {
       `SELECT
          p.product_id,
          p.product_name,
-         COALESCE(SUM(oi.quantity), 0) AS total_quantity_sold,
-         COALESCE(SUM(oi.subtotal), 0) AS total_revenue,
-         CASE
-           WHEN SUM(CASE WHEN cost.import_price IS NULL THEN 1 ELSE 0 END) > 0
-             THEN NULL
-           ELSE COALESCE(SUM(oi.subtotal - (oi.quantity * cost.import_price)), 0)
-         END AS total_profit,
+         p.barcode,
+         p.image_url,
+         p.price AS sale_price,
+         p.unit,
          p.stock AS current_stock,
-         cost.import_price
+         p.min_stock,
+         c.category_name,
+         COALESCE(sales.total_quantity_sold, 0) AS total_quantity_sold,
+         COALESCE(sales.total_revenue, 0) AS total_revenue,
+         COALESCE(sales.orders_count, 0) AS orders_count,
+         CASE
+           WHEN cost.import_price IS NULL AND COALESCE(sales.total_quantity_sold, 0) > 0
+             THEN NULL
+           ELSE COALESCE(sales.total_revenue, 0) - (COALESCE(sales.total_quantity_sold, 0) * COALESCE(cost.import_price, 0))
+         END AS total_profit,
+         CASE
+           WHEN COALESCE(sales.total_quantity_sold, 0) = 0 THEN 0
+           ELSE COALESCE(sales.total_revenue, 0) / COALESCE(sales.total_quantity_sold, 1)
+         END AS average_sale_price,
+         cost.import_price,
+         CASE
+           WHEN COALESCE(sales.total_quantity_sold, 0) + p.stock = 0 THEN 0
+           ELSE (COALESCE(sales.total_quantity_sold, 0) * 100.0) / (COALESCE(sales.total_quantity_sold, 0) + p.stock)
+         END AS sell_through_rate
        FROM products p
-       JOIN order_items oi ON oi.product_id = p.product_id
-       JOIN orders o ON o.order_id = oi.order_id
+       JOIN categories c ON c.category_id = p.category_id
        LEFT JOIN (${latestImportPriceSql}) cost ON cost.barcode = p.barcode
+       LEFT JOIN (
+         SELECT
+           oi.product_id,
+           SUM(oi.quantity) AS total_quantity_sold,
+           SUM(oi.subtotal) AS total_revenue,
+           COUNT(DISTINCT o.order_id) AS orders_count
+         FROM order_items oi
+         JOIN orders o ON o.order_id = oi.order_id
+         WHERE ${paidOrderCondition}
+         GROUP BY oi.product_id
+       ) sales ON sales.product_id = p.product_id
        WHERE p.status <> 'deleted'
-         AND ${paidOrderCondition}
-       GROUP BY p.product_id, p.product_name, p.stock, cost.import_price
        ORDER BY total_quantity_sold DESC, total_revenue DESC, p.product_name ASC`,
     );
 
@@ -212,13 +235,22 @@ router.get("/product-performance", async (req, res) => {
       data: rows.map((row) => ({
         product_id: row.product_id,
         product_name: row.product_name,
+        barcode: row.barcode,
+        image_url: row.image_url,
+        category_name: row.category_name,
+        sale_price: Number(row.sale_price || 0),
+        unit: row.unit || "sp",
         total_quantity_sold: Number(row.total_quantity_sold || 0),
         total_revenue: Number(row.total_revenue || 0),
+        orders_count: Number(row.orders_count || 0),
         total_profit:
           row.total_profit == null ? null : Number(row.total_profit || 0),
+        average_sale_price: Number(row.average_sale_price || 0),
         current_stock: Number(row.current_stock || 0),
+        min_stock: Number(row.min_stock || 0),
         import_price:
           row.import_price == null ? null : Number(row.import_price || 0),
+        sell_through_rate: Number(row.sell_through_rate || 0),
       })),
     });
   } catch (error) {

@@ -5,8 +5,10 @@ import 'package:http/http.dart' as http;
 
 import '../models/order.dart';
 import '../models/product.dart';
+import '../models/product_review.dart';
 import '../models/user.dart';
 import '../models/inventory_item.dart';
+import '../utils/constants.dart';
 import '../utils/type_converters.dart';
 
 class ApiException implements Exception {
@@ -22,24 +24,37 @@ class ApiService {
   static int? _currentUserId;
 
   static String get baseUrl {
-    // 1. Ưu tiên cấu hình từ môi trường nếu có
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;
 
-    // 2. Nếu là Web
+    final override = AppConstants.apiBaseUrlOverride;
+    if (override != null && override.isNotEmpty) return override;
+
     if (kIsWeb) return 'http://localhost:3000';
 
-    // 3. Nếu là Android (Máy ảo) - Đây là phần quan trọng nhất
     try {
       if (defaultTargetPlatform == TargetPlatform.android) {
+        // Chỉ máy ảo Android: 10.0.2.2 = localhost của máy host
         return 'http://10.0.2.2:3000';
       }
-    } catch (e) {
-      // Tránh lỗi nếu không nhận diện được platform
-    }
+    } catch (_) {}
 
-    // 4. Mặc định cho iOS emulator hoặc các trường hợp khác
     return 'http://localhost:3000';
+  }
+
+  static String connectionErrorMessage(Object error) {
+    final msg = error.toString().toLowerCase();
+    if (msg.contains('timeout') ||
+        msg.contains('timed out') ||
+        msg.contains('socketexception') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('connection refused') ||
+        msg.contains('clientexception')) {
+      return 'Không kết nối được backend ($baseUrl). '
+          'Kiểm tra backend đang chạy (npm start) và địa chỉ API: '
+          'máy ảo dùng 10.0.2.2, điện thoại thật cần IP máy tính trong constants.dart.';
+    }
+    return 'Email hoặc mật khẩu không đúng';
   }
 
   static Uri _uri(String path) => Uri.parse('$baseUrl$path');
@@ -409,6 +424,26 @@ class ApiService {
         )
         .timeout(_timeout);
     return Order.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<List<ProductReview>> fetchProductReviews(String productId) async {
+    try {
+      final response = await http
+          .get(_uri('/api/reviews/products/$productId'))
+          .timeout(_timeout);
+      final body = _decode(response);
+      final reviews = _dataList(body)
+          .map(
+            (e) => ProductReview.fromJson(
+              Map<String, dynamic>.from(e as Map),
+            ),
+          )
+          .toList();
+      if (reviews.isNotEmpty) return reviews;
+      return ProductReview.mockForProduct(productId);
+    } catch (_) {
+      return ProductReview.mockForProduct(productId);
+    }
   }
 
   static Future<Map<String, dynamic>> createReview({

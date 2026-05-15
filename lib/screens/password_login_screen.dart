@@ -86,12 +86,11 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
+      final message = e is ApiException
+          ? e.message
+          : ApiService.connectionErrorMessage(e);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e is ApiException ? e.message : 'Email hoặc mật khẩu không đúng',
-          ),
-        ),
+        SnackBar(content: Text(message)),
       );
     }
   }

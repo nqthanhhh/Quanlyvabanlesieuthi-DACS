@@ -64,6 +64,10 @@ app.get("/api/test-db", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server đang chạy tại http://localhost:${PORT}`);
+  console.log(
+    "Điện thoại thật (cùng Wi-Fi): dùng IP máy tính, ví dụ http://192.168.x.x:" +
+      PORT,
+  );
 });

@@ -29,6 +29,11 @@ class Product extends HiveObject {
   int? categoryId;
   String? categoryName;
   int minStock;
+  String? description;
+  /// Đặc tính nổi bật — lưu cục bộ; backend hiện chỉ có `description`.
+  String? highlights;
+  /// `active` | `inactive` | `deleted`
+  String? status;
 
   Product({
     required this.id,
@@ -42,7 +47,14 @@ class Product extends HiveObject {
     this.categoryId,
     this.categoryName,
     this.minStock = 10,
+    this.description,
+    this.highlights,
+    this.status = 'active',
   });
+
+  bool get isActive => (status ?? 'active').toLowerCase() == 'active';
+
+  String get sku => barcode ?? id;
 
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
@@ -63,6 +75,9 @@ class Product extends HiveObject {
       ),
       categoryName: (json['category_name'] ?? json['categoryName'])?.toString(),
       minStock: TypeConverters.toInt(json['min_stock'], defaultValue: 10),
+      description: json['description']?.toString(),
+      highlights: json['highlights']?.toString(),
+      status: (json['status'] ?? 'active').toString(),
     );
   }
 
@@ -71,12 +86,14 @@ class Product extends HiveObject {
       'product_id': int.tryParse(id),
       'product_name': name,
       'barcode': barcode,
+      'description': description,
       'price': price,
       'unit': unit,
       'stock': stockQuantity,
       'min_stock': minStock,
       'category_id': categoryId,
       'image_url': imageUrl,
+      'status': status ?? 'active',
     };
   }
 }

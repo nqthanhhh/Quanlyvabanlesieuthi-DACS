@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/product.dart';
 import '../services/db_service.dart';
-import 'edit_product_screen.dart'; // Màn hình chỉnh sửa sản phẩm
-import 'add_product_screen.dart'; // Màn hình thêm sản phẩm
+import 'edit_product_screen.dart';
+import 'add_product_screen.dart';
+import 'product_detail_screen.dart';
+import '../utils/product_stock_utils.dart';
 
 class ProductManagementScreen extends StatefulWidget {
   const ProductManagementScreen({super.key});
@@ -20,27 +22,17 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 
   // --- HÀM HỖ TRỢ ---
 
-  // Hàm xác định trạng thái dựa trên số lượng tồn kho
-  Map<String, dynamic> _getStockStatus(int stock) {
-    String status;
-    Color statusColor;
-
-    // 💡 LOGIC TỒN KHO MỚI
-    if (stock <= 10) {
-      status = 'Hết hàng';
-      statusColor = Colors.red;
-    } else if (stock < 50) {
-      // Từ 11 đến 49
-      status = 'Sắp hết';
-      statusColor = Colors.orange;
-    } else {
-      // Từ 50 trở lên
-      status = 'Còn hàng';
-      statusColor = Colors.green;
+  Map<String, dynamic> _getStockStatus(Product product) {
+    if (!(product.isActive)) {
+      return {'status': 'Ngừng bán', 'color': Colors.grey.shade700};
     }
-
-    return {'status': status, 'color': statusColor};
+    return {
+      'status': ProductStockUtils.label(product),
+      'color': ProductStockUtils.color(product),
+    };
   }
+
+  String _assetFallback(Product p) => 'assets/images/anh1.png';
 
   String _getCategoryName(Product product) {
     final categoryName = product.categoryName?.trim();
@@ -129,16 +121,67 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     }
   }
 
-  // Chuyển hướng đến màn hình chỉnh sửa
-  void _navigateToEdit(Product product) {
+  void _navigateToView(Product product) {
     Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProductDetailScreen(
+          product: product,
+          assetFallback: _assetFallback,
+          readOnly: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _navigateToEdit(Product product) async {
+    final updated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => EditProductScreen(product: product)),
     );
+    if (updated == true && mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _deactivateProduct(Product product) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ngừng bán sản phẩm'),
+        content: Text('Ngừng bán "${product.name}" trên kệ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ngừng bán'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      product.status = 'inactive';
+      await DBService.updateProductRemote(product);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Đã ngừng bán ${product.name}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   // Widget hiển thị một sản phẩm trong danh sách
   Widget _buildProductTile(BuildContext context, Product product) {
-    final statusData = _getStockStatus(product.stockQuantity);
+    final statusData = _getStockStatus(product);
     final String status = statusData['status'];
     final Color statusColor = statusData['color'];
 
@@ -213,13 +256,29 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
             // Nút Thao tác (Popup Menu)
             PopupMenuButton<String>(
               onSelected: (String result) {
-                if (result == 'edit') {
-                  _navigateToEdit(product);
-                } else if (result == 'delete') {
-                  _deleteProduct(context, product);
+                switch (result) {
+                  case 'view':
+                    _navigateToView(product);
+                    break;
+                  case 'edit':
+                    _navigateToEdit(product);
+                    break;
+                  case 'deactivate':
+                    _deactivateProduct(product);
+                    break;
+                  case 'delete':
+                    _deleteProduct(context, product);
+                    break;
                 }
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                  value: 'view',
+                  child: ListTile(
+                    leading: Icon(Icons.visibility_outlined, size: 20),
+                    title: Text('Xem chi tiết'),
+                  ),
+                ),
                 const PopupMenuItem<String>(
                   value: 'edit',
                   child: ListTile(
@@ -227,6 +286,14 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                     title: Text('Chỉnh sửa'),
                   ),
                 ),
+                if (product.isActive)
+                  const PopupMenuItem<String>(
+                    value: 'deactivate',
+                    child: ListTile(
+                      leading: Icon(Icons.block, size: 20),
+                      title: Text('Ngừng bán'),
+                    ),
+                  ),
                 const PopupMenuItem<String>(
                   value: 'delete',
                   child: ListTile(
@@ -241,7 +308,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
             ),
           ],
         ),
-        onTap: () => _navigateToEdit(product),
+        onTap: () => _navigateToView(product),
       ),
     );
   }
@@ -374,14 +441,13 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                 // 💡 LOGIC LỌC THEO TRẠNG THÁI MỚI
                 if (_selectedFilter != 'Tất cả') {
                   filteredProducts = filteredProducts.where((product) {
-                    final int stock = product.stockQuantity;
-
+                    final label = ProductStockUtils.label(product);
                     if (_selectedFilter == 'Hết hàng') {
-                      return stock <= 10;
+                      return label == 'Hết hàng';
                     } else if (_selectedFilter == 'Sắp hết') {
-                      return stock > 10 && stock < 50; // Tức là 11 đến 49
+                      return label == 'Sắp hết';
                     } else if (_selectedFilter == 'Còn hàng') {
-                      return stock >= 50;
+                      return label == 'Còn hàng';
                     }
                     return true;
                   }).toList();

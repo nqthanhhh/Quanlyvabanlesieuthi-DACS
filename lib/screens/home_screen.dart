@@ -18,7 +18,10 @@ import 'scan_product_screen.dart';
 import 'security_info_screen.dart';
 import 'admin_vouchers_screen.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
+import '../widgets/product_list_card.dart';
 import '../widgets/slide_page_route.dart';
+import 'product_detail_screen.dart';
+import '../utils/product_stock_utils.dart';
 
 enum HomeFilterOption { bestSeller, priceAsc, priceDesc, inStockOnly }
 
@@ -268,7 +271,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<Product> _applyFilters(List<Product> items) {
-    Iterable<Product> result = items;
+    Iterable<Product> result = items.where((p) => p.isActive);
 
     if (_selectedCategory != 'Tất cả') {
       result = result.where((p) => _categoryOf(p) == _selectedCategory);
@@ -312,26 +315,6 @@ class _HomeScreenState extends State<HomeScreen> {
       buffer.write(value[i]);
     }
     return '${buffer.toString()} VNĐ';
-  }
-
-  String _stockText(Product product) {
-    if (product.stockQuantity <= 0) {
-      return 'Hết hàng';
-    }
-    if (product.stockQuantity <= product.minStock) {
-      return 'Sắp hết';
-    }
-    return 'Còn hàng';
-  }
-
-  Color _stockColor(Product product) {
-    if (product.stockQuantity <= 0) {
-      return Colors.red.shade600;
-    }
-    if (product.stockQuantity <= product.minStock) {
-      return Colors.orange.shade700;
-    }
-    return _primaryGreen;
   }
 
   void _openFilterSheet() {
@@ -570,180 +553,69 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Tách Widget Card Sản phẩm
-  Widget _buildProductCard(Product p) {
-    final stockColor = _stockColor(p);
-
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      elevation: 1,
-      shadowColor: Colors.black.withValues(alpha: 0.08),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          if (p.stockQuantity <= 0) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Sản phẩm "${p.name}" đã hết hàng')),
-            );
-            return;
-          }
-          _addToCart(p);
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: ColoredBox(
-                          color: const Color(0xFFF1F3F5),
-                          child: _buildProductImage(p),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          _stockText(p),
-                          style: TextStyle(
-                            color: stockColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                p.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${_categoryOf(p)} • ${p.unit}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    'Tồn ${p.stockQuantity}',
-                    style: const TextStyle(
-                      color: Colors.black45,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Text(
-                      _formatVnd(p.price),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: _primaryGreen,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 38,
-                    height: 38,
-                    child: IconButton.filled(
-                      padding: EdgeInsets.zero,
-                      style: IconButton.styleFrom(
-                        backgroundColor: p.stockQuantity <= 0
-                            ? Colors.grey.shade300
-                            : _primaryGreen,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      onPressed: () {
-                        if (p.stockQuantity <= 0) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Sản phẩm "${p.name}" đã hết hàng'),
-                            ),
-                          );
-                          return;
-                        }
-                        _addToCart(p);
-                      },
-                      icon: const Icon(Icons.add_shopping_cart, size: 19),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+  void _openProductDetail(Product p) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProductDetailScreen(
+          product: p,
+          assetFallback: _imageFor,
+          onAddToCart: (product, quantity) async {
+            _addToCart(product, quantity: quantity, showSnack: false);
+          },
+          onBuyNow: (product, quantity) async {
+            _addToCart(product, quantity: quantity, showSnack: false);
+            if (!mounted) return;
+            await _openCheckoutScreen();
+          },
         ),
       ),
     );
   }
 
-  // Tách Logic Thêm vào giỏ hàng
-  void _addToCart(Product p) {
-    // Kiểm tra tồn kho dựa vào số lượng hiện có trong giỏ
-    final current = _cart[p.id] ?? 0;
-    if (current + 1 > p.stockQuantity) {
+  Widget _buildProductCard(Product p) {
+    return ProductListCard(
+      product: p,
+      categoryLabel: _categoryOf(p),
+      priceText: _formatVnd(p.price),
+      image: _buildProductImage(p),
+      onOpenDetail: () => _openProductDetail(p),
+      onAddToCart: () => _addToCart(p),
+    );
+  }
+
+  void _addToCart(Product p, {int quantity = 1, bool showSnack = true}) {
+    if (quantity <= 0) return;
+    if (!ProductStockUtils.canPurchase(p)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Đã hết hàng, không thể thêm ${p.name}.')),
+        SnackBar(content: Text('Sản phẩm "${p.name}" đã hết hàng')),
+      );
+      return;
+    }
+
+    final current = _cart[p.id] ?? 0;
+    if (current + quantity > p.stockQuantity) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Chỉ còn ${p.stockQuantity} ${p.unit}, không thể thêm thêm ${p.name}.',
+          ),
+        ),
       );
       return;
     }
 
     setState(() {
-      _cart.update(p.id, (v) => v + 1, ifAbsent: () => 1);
+      _cart.update(p.id, (v) => v + quantity, ifAbsent: () => quantity);
     });
     Future.microtask(() => _persistCart());
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã thêm ${p.name} vào giỏ hàng'),
-        duration: const Duration(milliseconds: 100),
-      ),
-    );
+    if (showSnack) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã thêm ${p.name} vào giỏ hàng'),
+          duration: const Duration(milliseconds: 1500),
+        ),
+      );
+    }
   }
 
   Future<void> _scanAndAddToCart() async {

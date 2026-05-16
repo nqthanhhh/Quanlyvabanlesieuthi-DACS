@@ -6,12 +6,14 @@ import '../services/db_service.dart';
 import '../models/product.dart';
 import 'profile_view_screen.dart';
 import 'checkout_screen.dart';
+import 'customer_online_checkout_screen.dart';
 import 'RevenueOverviewScreen.dart'; // Đã thêm
 import 'product_management_screen.dart';
 import 'inventory_management_screen.dart';
 import 'employee.dart';
+import 'employee_confirm_orders_screen.dart';
 import 'customer_management_screen.dart';
-import 'order_list_screen.dart';
+import 'orders_screen.dart';
 import 'order_management_screen.dart';
 import 'product_performance_report_screen.dart';
 import 'scan_product_screen.dart';
@@ -453,6 +455,16 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (widget.role == 'employee') {
       items.insertAll(0, [
         ListTile(
+          leading: const Icon(Icons.receipt_long_outlined),
+          title: const Text('Lịch sử'),
+          onTap: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(
+              buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
+            );
+          },
+        ),
+        ListTile(
           leading: const Icon(Icons.inventory_2_outlined),
           title: const Text('Quản lý sản phẩm'),
           onTap: () {
@@ -675,6 +687,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await _persistCart();
     if (!mounted) return;
+    if (widget.role == 'customer') {
+      await Navigator.of(context).push(
+        buildSlidePageRoute(
+          CustomerOnlineCheckoutScreen(
+            cart: Map.from(_cart),
+            onCheckoutComplete: () async {
+              setState(() => _cart.clear());
+              await _persistCart();
+            },
+          ),
+        ),
+      );
+      if (!mounted) return;
+      final email = _currentUserEmail;
+      if (email != null) {
+        final saved = DBService.getCartForUser(email);
+        setState(() {
+          _cart
+            ..clear()
+            ..addAll(saved);
+        });
+      }
+      setState(() => _currentBottomTab = RoleBottomTab.home);
+      return;
+    }
+
     await Navigator.of(context).push(
       buildSlidePageRoute(
         CheckoutScreen(
@@ -728,6 +766,12 @@ class _HomeScreenState extends State<HomeScreen> {
           context,
         ).push(buildSlidePageRoute(OrderManagementScreen(role: widget.role)));
         break;
+      case RoleBottomTab.confirmOrders:
+        setState(() => _currentBottomTab = tab);
+        Navigator.of(
+          context,
+        ).push(buildSlidePageRoute(const EmployeeConfirmOrdersScreen()));
+        break;
       case RoleBottomTab.offers:
         setState(() => _currentBottomTab = tab);
         if (_scrollController.hasClients) {
@@ -749,15 +793,9 @@ class _HomeScreenState extends State<HomeScreen> {
         break;
       case RoleBottomTab.orders:
         setState(() => _currentBottomTab = tab);
-        final rawUserId = DBService.settings().get('current_user_id');
-        final currentUserId = rawUserId is int
-            ? rawUserId
-            : int.tryParse(rawUserId?.toString() ?? '');
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => OrderListScreen(customerId: currentUserId),
-          ),
-        );
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const OrdersScreen()));
         break;
       case RoleBottomTab.account:
         setState(() => _currentBottomTab = tab);

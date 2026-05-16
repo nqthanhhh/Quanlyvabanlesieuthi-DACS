@@ -6,6 +6,7 @@ import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 import 'checkout_screen.dart';
 import 'employee.dart';
+import 'employee_confirm_orders_screen.dart';
 import 'order_detail_screen.dart'; // Cần import màn hình chi tiết (Giả sử bạn đã có file này)
 import 'profile_view_screen.dart';
 import 'scan_product_screen.dart';
@@ -179,6 +180,11 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         );
         break;
       case RoleBottomTab.invoices:
+        break;
+      case RoleBottomTab.confirmOrders:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(const EmployeeConfirmOrdersScreen()),
+        );
         break;
       case RoleBottomTab.scan:
         _scanAndOpenCart();

@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS carts (
   cart_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_carts_user (user_id),
 
   CONSTRAINT fk_carts_users
     FOREIGN KEY (user_id)
@@ -91,6 +92,7 @@ CREATE TABLE IF NOT EXISTS cart_items (
   cart_id INT NOT NULL,
   product_id INT NOT NULL,
   quantity INT NOT NULL DEFAULT 1,
+  UNIQUE KEY uniq_cart_items_cart_product (cart_id, product_id),
 
   CONSTRAINT fk_cart_items_carts
     FOREIGN KEY (cart_id)
@@ -112,12 +114,18 @@ CREATE TABLE IF NOT EXISTS orders (
   shift_id INT,
   voucher_id INT, -- Thêm cột này vào đây
   order_type VARCHAR(30) NOT NULL,
+  delivery_method VARCHAR(30) DEFAULT 'pickup',
   total_amount DECIMAL(10,2) NOT NULL,
   discount_amount DECIMAL(10,2) DEFAULT 0,
   final_amount DECIMAL(10,2) NOT NULL,
+  payment_method VARCHAR(50) DEFAULT 'cash',
   status VARCHAR(50) NOT NULL DEFAULT 'pending',
-  payment_status VARCHAR(50) DEFAULT 'unpaid',
+  payment_status VARCHAR(50) DEFAULT 'pending',
+  order_status VARCHAR(50) NOT NULL DEFAULT 'waiting_confirm',
   shipping_address VARCHAR(255),
+  confirmed_by INT,
+  confirmed_at TIMESTAMP NULL DEFAULT NULL,
+  rejection_reason VARCHAR(255),
   note VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -130,6 +138,12 @@ CREATE TABLE IF NOT EXISTS orders (
 
   CONSTRAINT fk_orders_employee
     FOREIGN KEY (employee_id)
+    REFERENCES users(user_id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  CONSTRAINT fk_orders_confirmed_by
+    FOREIGN KEY (confirmed_by)
     REFERENCES users(user_id)
     ON UPDATE CASCADE
     ON DELETE SET NULL,

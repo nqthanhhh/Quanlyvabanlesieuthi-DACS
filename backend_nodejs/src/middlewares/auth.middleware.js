@@ -10,7 +10,11 @@ async function loadUser(userId) {
      LIMIT 1`,
     [userId]
   );
-  return users[0] || null;
+  const user = users[0] || null;
+  if (user) {
+    user.id = user.user_id;
+  }
+  return user;
 }
 
 async function requireAuth(req, res, next) {
@@ -37,6 +41,7 @@ async function requireAuth(req, res, next) {
 
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET || 'mini_market_secret');
+    req.user.id = req.user.id || req.user.user_id;
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });

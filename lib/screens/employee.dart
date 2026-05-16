@@ -5,6 +5,7 @@ import '../services/db_service.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 import 'employee_detail_screen.dart';
+import 'employee_confirm_orders_screen.dart';
 import 'add_edit_employee_screen.dart';
 import 'checkout_screen.dart';
 import 'order_management_screen.dart';
@@ -286,6 +287,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       case RoleBottomTab.invoices:
         Navigator.of(context).pushReplacement(
           buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
+        );
+        break;
+      case RoleBottomTab.confirmOrders:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(const EmployeeConfirmOrdersScreen()),
         );
         break;
       case RoleBottomTab.account:

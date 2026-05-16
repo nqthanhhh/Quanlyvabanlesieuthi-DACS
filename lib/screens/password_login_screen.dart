@@ -71,7 +71,7 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       try {
         await DBService.syncAllFromApi();
       } catch (syncError) {
-        debugPrint('Dang nhap thanh cong nhung dong bo API loi: $syncError');
+        debugPrint('Đăng nhập thành công nhưng đồng bộ API lỗi: $syncError');
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -89,9 +89,9 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       final message = e is ApiException
           ? e.message
           : ApiService.connectionErrorMessage(e);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 

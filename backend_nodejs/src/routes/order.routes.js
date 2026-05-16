@@ -1,5 +1,6 @@
 const express = require("express");
 const pool = require("../config/db");
+const { requireAuth, requireRoles } = require("../middlewares/auth.middleware");
 
 const router = express.Router();
 
@@ -51,23 +52,49 @@ async function ordersHasShiftId(connection) {
   return Number(rows[0]?.count || 0) > 0;
 }
 
+async function ordersColumns(connection) {
+  const [rows] = await connection.execute(
+    `SELECT COLUMN_NAME
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'orders'`,
+  );
+  return new Set(rows.map((row) => row.COLUMN_NAME));
+}
+
 function normalizeOrder(row) {
+  const orderStatus = row.order_status || row.status;
+  const paymentMethod = row.payment_method || row.latest_payment_method || "cash";
   return {
     ...row,
     id: String(row.order_id),
     orderDate: row.created_at,
     totalAmount: Number(row.final_amount),
     customerName: row.customer_name || "Khách lẻ",
+    status: orderStatus,
+    orderStatus,
     paymentStatus: row.payment_status || row.latest_payment_status,
-    paymentMethod: row.payment_method || "cash",
+    paymentMethod,
+    deliveryMethod: row.delivery_method,
     shippingAddress: row.shipping_address,
   };
+}
+
+function normalizeOrderStatusValue(status, orderType) {
+  if (!status) return orderType === "online" ? "pending" : "completed";
+  if (status === "waiting_confirm") return "pending";
+  if (status === "preparing") return "shipping";
+  if (status === "Hoàn thành" || status === "hoàn thành") {
+    return "completed";
+  }
+  if (status === "cancelled") return "rejected";
+  return status;
 }
 
 async function fetchOrder(orderId) {
   const [orders] = await pool.execute(
     `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
-            pay.method AS payment_method, pay.status AS latest_payment_status
+            pay.method AS latest_payment_method, pay.status AS latest_payment_status
      FROM orders o
      LEFT JOIN users cu ON cu.user_id = o.customer_id
      LEFT JOIN users eu ON eu.user_id = o.employee_id
@@ -88,7 +115,7 @@ async function fetchOrder(orderId) {
 
   return {
     ...normalizeOrder(orders[0]),
-    status: orders[0].status,
+    status: orders[0].order_status || orders[0].status,
     items: items.map((item) => ({
       ...item,
       productId: String(item.product_id),
@@ -99,11 +126,76 @@ async function fetchOrder(orderId) {
   };
 }
 
+function currentUserId(req) {
+  return Number(req.user?.id || req.user?.user_id || req.get("x-user-id"));
+}
+
+function calculateVoucherDiscount(voucher, total) {
+  let discountAmount = 0;
+  if (voucher.discount_type === "fixed") {
+    discountAmount = Number(voucher.discount_value);
+  } else if (voucher.discount_type === "percent") {
+    discountAmount = total * (Number(voucher.discount_value) / 100);
+    if (voucher.max_discount && discountAmount > Number(voucher.max_discount)) {
+      discountAmount = Number(voucher.max_discount);
+    }
+  }
+  return Math.min(discountAmount, total);
+}
+
+async function applyCheckoutVoucher(connection, userId, total, voucherId, voucherCode) {
+  if (!voucherId && !voucherCode) {
+    return { voucher: null, discountAmount: 0 };
+  }
+
+  const where = voucherId ? "voucher_id = ?" : "code = ?";
+  const value = voucherId || voucherCode;
+  const [vouchers] = await connection.execute(
+    `SELECT *
+     FROM vouchers
+     WHERE ${where}
+       AND status = 'active'
+     FOR UPDATE`,
+    [value],
+  );
+
+  if (vouchers.length === 0) {
+    throw new Error("Mã voucher không tồn tại");
+  }
+
+  const voucher = vouchers[0];
+  if (voucher.expiry_date && new Date(voucher.expiry_date) < new Date()) {
+    throw new Error("Voucher đã hết hạn");
+  }
+  if (voucher.usage_limit && voucher.used_count >= voucher.usage_limit) {
+    throw new Error("Voucher đã hết lượt dùng");
+  }
+  if (total < Number(voucher.min_order_amount || 0)) {
+    throw new Error(`Đơn hàng phải tối thiểu ${Number(voucher.min_order_amount).toLocaleString("vi-VN")} VND`);
+  }
+
+  const discountAmount = calculateVoucherDiscount(voucher, total);
+  await connection.execute(
+    "UPDATE vouchers SET used_count = used_count + 1 WHERE voucher_id = ?",
+    [voucher.voucher_id],
+  );
+  await connection.execute(
+    `INSERT INTO user_vouchers (user_id, voucher_id, used_count, last_used_at)
+     VALUES (?, ?, 1, NOW())
+     ON DUPLICATE KEY UPDATE
+       used_count = used_count + 1,
+       last_used_at = NOW()`,
+    [userId, voucher.voucher_id],
+  );
+
+  return { voucher, discountAmount };
+}
+
 router.get("/", async (req, res) => {
   try {
     const [rows] = await pool.execute(
       `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
-              pay.method AS payment_method, pay.status AS latest_payment_status
+              pay.method AS latest_payment_method, pay.status AS latest_payment_status
        FROM orders o
        LEFT JOIN users cu ON cu.user_id = o.customer_id
        LEFT JOIN users eu ON eu.user_id = o.employee_id
@@ -124,15 +216,24 @@ router.get("/", async (req, res) => {
 
 router.get("/online", async (req, res) => {
   try {
+    const connection = await pool.getConnection();
+    const columns = await ordersColumns(connection);
+    connection.release();
+    const statusWhere = columns.has("order_status")
+      ? `(
+           o.order_status IN ('pending', 'waiting_confirm', 'confirmed', 'shipping')
+           OR o.status IN ('pending', 'confirmed', 'preparing')
+         )`
+      : "o.status IN ('pending', 'confirmed', 'preparing')";
     const [rows] = await pool.execute(
       `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
-              pay.method AS payment_method, pay.status AS latest_payment_status
+              pay.method AS latest_payment_method, pay.status AS latest_payment_status
        FROM orders o
        LEFT JOIN users cu ON cu.user_id = o.customer_id
        LEFT JOIN users eu ON eu.user_id = o.employee_id
        ${paymentJoinSql}
-       WHERE o.order_type = 'online'
-         AND o.status IN ('pending', 'confirmed', 'preparing')
+       WHERE o.order_type IN ('online', 'store_pickup', 'delivery')
+         AND ${statusWhere}
        ORDER BY o.created_at ASC`,
     );
     res.json({ success: true, data: rows.map(normalizeOrder) });
@@ -144,6 +245,397 @@ router.get("/online", async (req, res) => {
         message: "Lỗi lấy đơn online",
         error: error.message,
       });
+  }
+});
+
+router.get(
+  "/pending",
+  requireAuth,
+  requireRoles("employee", "admin"),
+  async (req, res) => {
+    try {
+      const connection = await pool.getConnection();
+      const columns = await ordersColumns(connection);
+      connection.release();
+      const statusWhere = columns.has("order_status")
+        ? "COALESCE(o.order_status, o.status, 'pending') IN ('pending', 'waiting_confirm')"
+        : "COALESCE(o.status, 'pending') IN ('pending', 'waiting_confirm')";
+
+      const [rows] = await pool.execute(
+        `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
+                pay.method AS latest_payment_method, pay.status AS latest_payment_status
+         FROM orders o
+         LEFT JOIN users cu ON cu.user_id = o.customer_id
+         LEFT JOIN users eu ON eu.user_id = o.employee_id
+         ${paymentJoinSql}
+         WHERE o.order_type IN ('store_pickup', 'delivery', 'online')
+           AND ${statusWhere}
+         ORDER BY o.created_at ASC`,
+      );
+
+      const orders = [];
+      for (const row of rows) {
+        const order = await fetchOrder(row.order_id);
+        if (order) orders.push(order);
+      }
+
+      res.json({ success: true, data: orders });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Lỗi lấy đơn chờ xác nhận",
+        error: error.message,
+      });
+    }
+  },
+);
+
+router.put(
+  "/:id/confirm",
+  requireAuth,
+  requireRoles("employee", "admin"),
+  async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+      const employeeId = currentUserId(req);
+      await connection.beginTransaction();
+
+      const [orders] = await connection.execute(
+        `SELECT *
+         FROM orders
+         WHERE order_id = ?
+         FOR UPDATE`,
+        [req.params.id],
+      );
+      if (orders.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy đơn hàng",
+        });
+      }
+
+      const order = orders[0];
+      const currentStatus = normalizeOrderStatusValue(
+        order.order_status || order.status,
+        order.order_type,
+      );
+      if (currentStatus !== "pending") {
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: "Đơn hàng không còn ở trạng thái chờ xác nhận",
+        });
+      }
+
+      const nextStatus = "confirmed";
+      const columns = await ordersColumns(connection);
+
+      const setParts = ["status = ?"];
+      const params = [nextStatus];
+      if (columns.has("order_status")) {
+        setParts.push("order_status = ?");
+        params.push(nextStatus);
+      }
+      if (columns.has("confirmed_by")) {
+        setParts.push("confirmed_by = ?");
+        params.push(employeeId || null);
+      }
+      if (columns.has("confirmed_at")) {
+        setParts.push("confirmed_at = NOW()");
+      }
+      if (columns.has("rejection_reason")) {
+        setParts.push("rejection_reason = NULL");
+      }
+      if (columns.has("employee_id")) {
+        setParts.push("employee_id = COALESCE(employee_id, ?)");
+        params.push(employeeId || null);
+      }
+      params.push(req.params.id);
+
+      await connection.execute(
+        `UPDATE orders SET ${setParts.join(", ")} WHERE order_id = ?`,
+        params,
+      );
+      await connection.commit();
+
+      const confirmed = await fetchOrder(req.params.id);
+      res.json({
+        success: true,
+        message: "Đã xác nhận đơn hàng",
+        data: confirmed,
+      });
+    } catch (error) {
+      await connection.rollback();
+      res.status(500).json({
+        success: false,
+        message: "Lỗi xác nhận đơn hàng",
+        error: error.message,
+      });
+    } finally {
+      connection.release();
+    }
+  },
+);
+
+router.put(
+  "/:id/reject",
+  requireAuth,
+  requireRoles("employee", "admin"),
+  async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+      const employeeId = currentUserId(req);
+      const reason = String(
+        req.body.reason || req.body.rejection_reason || "",
+      ).trim();
+
+      await connection.beginTransaction();
+      const [orders] = await connection.execute(
+        `SELECT *
+         FROM orders
+         WHERE order_id = ?
+         FOR UPDATE`,
+        [req.params.id],
+      );
+      if (orders.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy đơn hàng",
+        });
+      }
+
+      const order = orders[0];
+      const currentStatus = normalizeOrderStatusValue(
+        order.order_status || order.status,
+        order.order_type,
+      );
+      if (currentStatus !== "pending") {
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: "Đơn hàng không còn ở trạng thái chờ xác nhận",
+        });
+      }
+
+      const columns = await ordersColumns(connection);
+      const setParts = ["status = ?"];
+      const params = ["rejected"];
+      if (columns.has("order_status")) {
+        setParts.push("order_status = ?");
+        params.push("rejected");
+      }
+      if (columns.has("confirmed_by")) {
+        setParts.push("confirmed_by = ?");
+        params.push(employeeId || null);
+      }
+      if (columns.has("confirmed_at")) {
+        setParts.push("confirmed_at = NOW()");
+      }
+      if (columns.has("employee_id")) {
+        setParts.push("employee_id = COALESCE(employee_id, ?)");
+        params.push(employeeId || null);
+      }
+      if (columns.has("rejection_reason")) {
+        setParts.push("rejection_reason = ?");
+        params.push(reason || null);
+      } else if (columns.has("note")) {
+        setParts.push("note = ?");
+        params.push(reason || null);
+      }
+      params.push(req.params.id);
+
+      await connection.execute(
+        `UPDATE orders SET ${setParts.join(", ")} WHERE order_id = ?`,
+        params,
+      );
+      await connection.commit();
+
+      const rejected = await fetchOrder(req.params.id);
+      res.json({
+        success: true,
+        message: "Đã từ chối đơn hàng",
+        data: rejected,
+      });
+    } catch (error) {
+      await connection.rollback();
+      res.status(500).json({
+        success: false,
+        message: "Lỗi từ chối đơn hàng",
+        error: error.message,
+      });
+    } finally {
+      connection.release();
+    }
+  },
+);
+
+router.post("/checkout", requireAuth, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const customerId = currentUserId(req);
+    const deliveryMethod = String(req.body.delivery_method || req.body.deliveryMethod || "pickup").trim();
+    const paymentMethod = String(req.body.payment_method || req.body.paymentMethod || "cash").trim();
+    const shippingAddress = String(req.body.shipping_address || req.body.shippingAddress || "").trim();
+    const note = req.body.note ? String(req.body.note).trim() : null;
+    const voucherId = Number(req.body.voucher_id || req.body.voucherId) || null;
+    const voucherCode = req.body.voucher_code || req.body.voucherCode
+      ? String(req.body.voucher_code || req.body.voucherCode).trim().toUpperCase()
+      : null;
+
+    if (!customerId) {
+      return res.status(401).json({ success: false, message: "Vui lòng đăng nhập" });
+    }
+    if (!["pickup", "delivery"].includes(deliveryMethod)) {
+      return res.status(400).json({ success: false, message: "Hình thức nhận hàng không hợp lệ" });
+    }
+    if (deliveryMethod === "delivery" && !shippingAddress) {
+      return res.status(400).json({ success: false, message: "Vui lòng nhập địa chỉ giao hàng" });
+    }
+    if (!["cash", "ewallet"].includes(paymentMethod)) {
+      return res.status(400).json({ success: false, message: "Phương thức thanh toán không hợp lệ" });
+    }
+
+    await connection.beginTransaction();
+
+    const [carts] = await connection.execute(
+      "SELECT cart_id FROM carts WHERE user_id = ? LIMIT 1 FOR UPDATE",
+      [customerId],
+    );
+    if (carts.length === 0) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: "Giỏ hàng đang trống" });
+    }
+
+    const cartId = carts[0].cart_id;
+    const [cartItems] = await connection.execute(
+      `SELECT ci.product_id, ci.quantity, p.product_name, p.price, p.stock
+       FROM cart_items ci
+       JOIN products p ON p.product_id = ci.product_id
+       WHERE ci.cart_id = ?
+       FOR UPDATE`,
+      [cartId],
+    );
+    if (cartItems.length === 0) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: "Giỏ hàng đang trống" });
+    }
+
+    let total = 0;
+    const normalizedItems = [];
+    for (const item of cartItems) {
+      const quantity = Number(item.quantity);
+      if (quantity <= 0) continue;
+      if (Number(item.stock) < quantity) {
+        throw new Error(`Không đủ tồn kho cho ${item.product_name}`);
+      }
+      const price = Number(item.price);
+      const subtotal = price * quantity;
+      total += subtotal;
+      normalizedItems.push({
+        productId: Number(item.product_id),
+        quantity,
+        price,
+        subtotal,
+      });
+    }
+
+    if (normalizedItems.length === 0) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: "Giỏ hàng đang trống" });
+    }
+
+    const { voucher, discountAmount } = await applyCheckoutVoucher(
+      connection,
+      customerId,
+      total,
+      voucherId,
+      voucherCode,
+    );
+    const finalAmount = total - discountAmount;
+    const paymentStatus = paymentMethod === "ewallet" ? "paid" : "pending";
+    const orderStatus = "pending";
+    const columns = await ordersColumns(connection);
+
+    const insertColumns = [];
+    const insertParams = [];
+    const addColumn = (column, value) => {
+      insertColumns.push(column);
+      insertParams.push(value);
+    };
+
+    addColumn("customer_id", customerId);
+    addColumn("employee_id", null);
+    if (columns.has("shift_id")) addColumn("shift_id", null);
+    addColumn("voucher_id", voucher ? voucher.voucher_id : null);
+    addColumn("order_type", deliveryMethod === "delivery" ? "delivery" : "store_pickup");
+    if (columns.has("delivery_method")) addColumn("delivery_method", deliveryMethod);
+    addColumn("total_amount", total);
+    addColumn("discount_amount", discountAmount);
+    addColumn("final_amount", finalAmount);
+    if (columns.has("payment_method")) addColumn("payment_method", paymentMethod);
+    addColumn("status", orderStatus);
+    addColumn("payment_status", paymentStatus);
+    if (columns.has("order_status")) addColumn("order_status", orderStatus);
+    addColumn("shipping_address", deliveryMethod === "delivery" ? shippingAddress : null);
+    addColumn("note", note);
+
+    const insertValues = insertColumns.map(() => "?").join(", ");
+    const [orderResult] = await connection.execute(
+      `INSERT INTO orders (${insertColumns.join(", ")}) VALUES (${insertValues})`,
+      insertParams,
+    );
+
+    for (const item of normalizedItems) {
+      await connection.execute(
+        `INSERT INTO order_items (order_id, product_id, quantity, price, subtotal)
+         VALUES (?, ?, ?, ?, ?)`,
+        [orderResult.insertId, item.productId, item.quantity, item.price, item.subtotal],
+      );
+      await connection.execute(
+        "UPDATE products SET stock = stock - ? WHERE product_id = ?",
+        [item.quantity, item.productId],
+      );
+    }
+
+    await connection.execute(
+      "INSERT INTO payments (order_id, method, amount, status, qr_content, paid_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        orderResult.insertId,
+        paymentMethod,
+        finalAmount,
+        paymentStatus,
+        paymentMethod === "ewallet" ? `FAKE_QR_ORDER_${orderResult.insertId}_${Math.round(finalAmount)}` : null,
+        paymentStatus === "paid" ? new Date() : null,
+      ],
+    );
+
+    await connection.execute("DELETE FROM cart_items WHERE cart_id = ?", [cartId]);
+
+    await connection.commit();
+    const order = await fetchOrder(orderResult.insertId);
+    res.status(201).json({
+      success: true,
+      message: "Đã tạo đơn hàng online",
+      data: {
+        ...order,
+        deliveryMethod,
+        voucherCode: voucher?.code || null,
+        discountAmount,
+        finalAmount,
+        fakeQrContent: paymentMethod === "ewallet" ? `FAKE_QR_ORDER_${orderResult.insertId}_${Math.round(finalAmount)}` : null,
+      },
+    });
+  } catch (error) {
+    await connection.rollback();
+    res.status(500).json({
+      success: false,
+      message: "Lỗi checkout đơn hàng online",
+      error: error.message,
+    });
+  } finally {
+    connection.release();
   }
 });
 
@@ -209,8 +701,11 @@ router.patch("/:id/status", async (req, res) => {
   try {
     const status = String(req.body.status || "").trim();
     const allowed = [
+      "waiting_confirm",
       "pending",
       "confirmed",
+      "rejected",
+      "shipping",
       "preparing",
       "completed",
       "cancelled",
@@ -221,9 +716,30 @@ router.patch("/:id/status", async (req, res) => {
         .json({ success: false, message: "Trạng thái đơn hàng không hợp lệ" });
     }
 
+    const orderStatus = normalizeOrderStatusValue(status, "online");
+    const employeeId = Number(req.get("x-user-id")) || null;
+    const connection = await pool.getConnection();
+    const columns = await ordersColumns(connection);
+    connection.release();
+
+    const setParts = ["status = ?"];
+    const params = [orderStatus];
+    if (columns.has("order_status")) {
+      setParts.push("order_status = ?");
+      params.push(orderStatus);
+    }
+    if (["confirmed", "rejected"].includes(orderStatus) && columns.has("confirmed_by")) {
+      setParts.push("confirmed_by = COALESCE(confirmed_by, ?)");
+      params.push(employeeId);
+    }
+    if (["confirmed", "rejected"].includes(orderStatus) && columns.has("confirmed_at")) {
+      setParts.push("confirmed_at = COALESCE(confirmed_at, NOW())");
+    }
+    params.push(req.params.id);
+
     const [result] = await pool.execute(
-      "UPDATE orders SET status = ? WHERE order_id = ?",
-      [status, req.params.id],
+      `UPDATE orders SET ${setParts.join(", ")} WHERE order_id = ?`,
+      params,
     );
     if (result.affectedRows === 0) {
       return res
@@ -255,8 +771,9 @@ router.post("/", async (req, res) => {
       customer_id,
       employee_id,
       order_type = "offline",
-      status = "completed",
-      payment_status = "paid",
+      status,
+      order_status,
+      payment_status,
       shipping_address,
       note,
       payment_method = "cash",
@@ -337,6 +854,18 @@ router.post("/", async (req, res) => {
     const activeShiftId = hasOrdersShiftId
       ? await getActiveShiftId(connection, employeeId)
       : null;
+    const columns = await ordersColumns(connection);
+    const requestUserId =
+      Number(user_id || customer_id || req.get("x-user-id")) || null;
+    const customerId = customer_id || (order_type === "online" ? requestUserId : null);
+    const normalizedOrderStatus = normalizeOrderStatusValue(
+      order_status || status,
+      order_type,
+    );
+    const normalizedPaymentStatus =
+      payment_status === "unpaid"
+        ? "pending"
+        : payment_status || (order_type === "online" ? "pending" : "paid");
 
     let total = 0;
     const normalizedItems = [];
@@ -364,40 +893,28 @@ router.post("/", async (req, res) => {
       normalizedItems.push({ productId, quantity, price, subtotal });
     }
 
-    const insertColumns = hasOrdersShiftId
-      ? "customer_id, employee_id, shift_id, voucher_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note"
-      : "customer_id, employee_id, voucher_id, order_type, total_amount, discount_amount, final_amount, status, payment_status, shipping_address, note";
-    const insertValues = hasOrdersShiftId
-      ? "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
-      : "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
-    const insertParams = hasOrdersShiftId
-      ? [
-          customer_id || null,
-          employeeId,
-          activeShiftId,
-          voucher_id || null,
-          order_type,
-          total,
-          finalDiscountAmount,
-          total - finalDiscountAmount,
-          status,
-          payment_status,
-          shipping_address || null,
-          note || null,
-        ]
-      : [
-          customer_id || null,
-          employeeId,
-          voucher_id || null,
-          order_type,
-          total,
-          finalDiscountAmount,
-          total - finalDiscountAmount,
-          status,
-          payment_status,
-          shipping_address || null,
-          note || null,
-        ];
+    const insertColumns = [];
+    const insertParams = [];
+    const addColumn = (column, value) => {
+      insertColumns.push(column);
+      insertParams.push(value);
+    };
+
+    addColumn("customer_id", customerId || null);
+    addColumn("employee_id", employeeId);
+    if (hasOrdersShiftId) addColumn("shift_id", activeShiftId);
+    addColumn("voucher_id", voucher_id || null);
+    addColumn("order_type", order_type);
+    addColumn("total_amount", total);
+    addColumn("discount_amount", finalDiscountAmount);
+    addColumn("final_amount", total - finalDiscountAmount);
+    if (columns.has("payment_method")) addColumn("payment_method", payment_method);
+    addColumn("status", normalizedOrderStatus);
+    addColumn("payment_status", normalizedPaymentStatus);
+    if (columns.has("order_status")) addColumn("order_status", normalizedOrderStatus);
+    addColumn("shipping_address", shipping_address || null);
+    addColumn("note", note || null);
+    const insertValues = insertColumns.map(() => "?").join(", ");
 
     const [orderResult] = await connection.execute(
       `INSERT INTO orders (${insertColumns}) VALUES (${insertValues})`,
@@ -423,8 +940,14 @@ router.post("/", async (req, res) => {
     }
 
     await connection.execute(
-      "INSERT INTO payments (order_id, method, amount, status, paid_at) VALUES (?, ?, ?, ?, NOW())",
-      [orderResult.insertId, payment_method, total, payment_status],
+      "INSERT INTO payments (order_id, method, amount, status, paid_at) VALUES (?, ?, ?, ?, ?)",
+      [
+        orderResult.insertId,
+        payment_method,
+        total - finalDiscountAmount,
+        normalizedPaymentStatus,
+        normalizedPaymentStatus === "paid" ? new Date() : null,
+      ],
     );
 
     await connection.commit();

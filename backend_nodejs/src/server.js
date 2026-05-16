@@ -22,13 +22,18 @@ const reportRoutes = require("./routes/report.routes");
 const reviewRoutes = require("./routes/review.routes");
 const workShiftRoutes = require("./routes/workShift.routes");
 const voucherRoutes = require("./routes/voucher.routes");
+const myOrderRoutes = require("./routes/myOrder.routes");
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
+app.use("/cart", cartRoutes);
+app.use("/api/cart", cartRoutes);
 app.use("/api/carts", cartRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/orders", orderRoutes);
+app.use("/my-orders", myOrderRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/uploads", uploadRoutes);
 app.use("/api/reports", reportRoutes);

@@ -46,10 +46,12 @@ class _EmployeeOnlineOrdersScreenState
 
   String? _nextStatus(String status) {
     switch (status) {
+      case 'waiting_confirm':
       case 'pending':
         return 'confirmed';
       case 'confirmed':
-        return 'preparing';
+        return 'shipping';
+      case 'shipping':
       case 'preparing':
         return 'completed';
       default:
@@ -59,10 +61,12 @@ class _EmployeeOnlineOrdersScreenState
 
   String _nextLabel(String status) {
     switch (status) {
+      case 'waiting_confirm':
       case 'pending':
         return 'Xác nhận';
       case 'confirmed':
         return 'Chuẩn bị hàng';
+      case 'shipping':
       case 'preparing':
         return 'Hoàn thành';
       default:

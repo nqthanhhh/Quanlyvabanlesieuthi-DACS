@@ -572,14 +572,14 @@ class DBService {
     final Map<String, int> cleanCart = Map.from(cart)
       ..removeWhere((key, value) => value <= 0);
     await carts().put(email, cleanCart);
-    final userId = settings().get('current_user_id') as int?;
+    final userId = currentUserId();
     if (userId != null) {
       await ApiService.saveCart(userId, cleanCart);
     }
   }
 
   static Future<Map<String, int>> loadCartForCurrentUser(String email) async {
-    final userId = settings().get('current_user_id') as int?;
+    final userId = currentUserId();
     final localCart = getCartForUser(email);
     if (userId == null) return localCart;
     try {

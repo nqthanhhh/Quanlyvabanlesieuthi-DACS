@@ -1,11 +1,12 @@
-// lib/screens/checkout_screen.dart
 import 'package:flutter/material.dart';
+
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 import 'employee.dart';
+import 'employee_confirm_orders_screen.dart';
 import 'order_management_screen.dart';
 import 'payment_screen.dart';
 import 'profile_view_screen.dart';
@@ -28,6 +29,10 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
+  static const Color _primary = Color(0xFF1B7F4D);
+  static const Color _surface = Color(0xFFF6F7F9);
+  static const Color _ink = Color(0xFF111827);
+
   late final Map<String, int> _editableCart;
   String? _currentUserEmail;
 
@@ -51,7 +56,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   double _calculateTotal(Map<String, Product> productsById) {
     double total = 0;
-    for (var entry in _editableCart.entries) {
+    for (final entry in _editableCart.entries) {
       final product = productsById[entry.key];
       if (product == null) continue;
       total += product.price * entry.value;
@@ -59,10 +64,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return total;
   }
 
+  String _formatCurrency(double amount) {
+    return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} VND';
+  }
+
   void _navigateToPaymentScreen() {
     if (_editableCart.isEmpty) return;
 
-    final List<Product> allProducts = DBService.getAllProducts();
+    final allProducts = DBService.getAllProducts();
     final productsById = _productById(allProducts);
     _editableCart.removeWhere((id, quantity) {
       return quantity <= 0 || !productsById.containsKey(id);
@@ -75,10 +84,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       Future.microtask(_persistEditableCart);
       return;
     }
-    final double total = _calculateTotal(productsById);
 
-    final Map<String, int> detailedCart = {};
-    for (var entry in _editableCart.entries) {
+    final total = _calculateTotal(productsById);
+    final detailedCart = <String, int>{};
+    for (final entry in _editableCart.entries) {
       final product = productsById[entry.key];
       if (product == null) continue;
       detailedCart[product.name] = entry.value;
@@ -111,6 +120,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         Navigator.of(
           context,
         ).push(buildSlidePageRoute(OrderManagementScreen(role: widget.role)));
+        break;
+      case RoleBottomTab.confirmOrders:
+        Navigator.of(
+          context,
+        ).push(buildSlidePageRoute(const EmployeeConfirmOrdersScreen()));
         break;
       case RoleBottomTab.account:
         Navigator.of(
@@ -171,182 +185,259 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   void _decreaseQty(Product product) {
     final currentQty = _editableCart[product.id] ?? 0;
-    if (currentQty <= 1) {
-      setState(() {
-        _editableCart.remove(product.id);
-      });
-      Future.microtask(_persistEditableCart);
-      return;
-    }
     setState(() {
-      _editableCart[product.id] = currentQty - 1;
+      if (currentQty <= 1) {
+        _editableCart.remove(product.id);
+      } else {
+        _editableCart[product.id] = currentQty - 1;
+      }
     });
     Future.microtask(_persistEditableCart);
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<Product> allProducts = DBService.getAllProducts();
+    final allProducts = DBService.getAllProducts();
     final productsById = _productById(allProducts);
     final visibleEntries = _editableCart.entries
         .where((entry) => productsById.containsKey(entry.key))
         .toList();
-    final double total = _calculateTotal(productsById);
+    final total = _calculateTotal(productsById);
 
     return Scaffold(
+      backgroundColor: _surface,
       appBar: AppBar(
         title: const Text(
-          'Giỏ Hàng',
+          'Giỏ hàng thanh toán',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        backgroundColor: Colors.white,
-        elevation: 0.5,
+        backgroundColor: _surface,
+        foregroundColor: _ink,
+        elevation: 0,
       ),
       body: Column(
         children: [
+          if (visibleEntries.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: _checkoutHeader(visibleEntries.length),
+            ),
           Expanded(
             child: visibleEntries.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Giỏ hàng trống',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  )
+                ? _emptyState()
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(16),
                     itemCount: visibleEntries.length,
                     itemBuilder: (context, index) {
                       final entry = visibleEntries[index];
                       final product = productsById[entry.key]!;
                       final qty = entry.value;
-                      final lineTotal = product.price * qty;
-
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                product.name,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Text(
-                                    '${product.price.toStringAsFixed(0)} ₫',
-                                    style: const TextStyle(color: Colors.grey),
-                                  ),
-                                  const Spacer(),
-                                  IconButton(
-                                    onPressed: () => _decreaseQty(product),
-                                    icon: const Icon(
-                                      Icons.remove_circle_outline,
-                                    ),
-                                  ),
-                                  Text(
-                                    '$qty',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    onPressed: () => _increaseQty(product),
-                                    icon: const Icon(Icons.add_circle_outline),
-                                  ),
-                                ],
-                              ),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  '${lineTotal.toStringAsFixed(0)} ₫',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
+                      return _lineItem(product, qty);
                     },
                   ),
           ),
-          Container(
-            padding: const EdgeInsets.all(16.0),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, -5),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Tổng cộng:',
-                          style: TextStyle(fontSize: 18),
-                        ),
-                        Text(
-                          '${total.toStringAsFixed(0)} ₫',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: visibleEntries.isEmpty
-                          ? null
-                          : _navigateToPaymentScreen,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange.shade400,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Xác nhận đơn hàng',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          _summaryBar(total, visibleEntries.isEmpty),
         ],
       ),
       bottomNavigationBar: RoleBottomNavigationBar(
         role: widget.role,
         currentTab: RoleBottomTab.cart,
         onTabSelected: _handleBottomTab,
+      ),
+    );
+  }
+
+  Widget _checkoutHeader(int lineCount) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1B7F4D), Color(0xFF2563EB)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: _primary.withValues(alpha: 0.22),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.point_of_sale, color: Colors.white, size: 32),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Đơn tại quầy',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '$lineCount dòng sản phẩm trong giỏ POS',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _lineItem(Product product, int qty) {
+    final lineTotal = product.price * qty;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              product.name,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                color: _ink,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${_formatCurrency(product.price)} / ${product.unit}',
+              style: const TextStyle(color: Colors.black54),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _qtyButton(Icons.remove, () => _decreaseQty(product)),
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    '$qty',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                _qtyButton(Icons.add, () => _increaseQty(product)),
+                const Spacer(),
+                Text(
+                  _formatCurrency(lineTotal),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: _ink,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _qtyButton(IconData icon, VoidCallback onPressed) {
+    return SizedBox(
+      width: 34,
+      height: 34,
+      child: IconButton.filledTonal(
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        style: IconButton.styleFrom(
+          backgroundColor: const Color(0xFFF3F4F6),
+          foregroundColor: _ink,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryBar(double total, bool empty) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Tổng cộng:', style: TextStyle(fontSize: 18)),
+                Text(
+                  _formatCurrency(total),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: _primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 50,
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: empty ? null : _navigateToPaymentScreen,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'Tiếp tục thanh toán',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyState() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.shopping_cart_outlined, size: 54, color: Colors.black26),
+          SizedBox(height: 12),
+          Text(
+            'Giỏ hàng trống',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+        ],
       ),
     );
   }

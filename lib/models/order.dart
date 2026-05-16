@@ -77,13 +77,15 @@ class Order extends HiveObject {
       customerName:
           (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ')
               .toString(),
-      status: (json['status'] ?? '').toString(),
+      status:
+          (json['order_status'] ?? json['orderStatus'] ?? json['status'] ?? '')
+              .toString(),
       items: rawItems
           .whereType<Map>()
           .map((e) => OrderLine.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
       customerId: TypeConverters.toNullableInt(
-        json['customer_id'] ?? json['customerId'],
+        json['customer_id'] ?? json['customerId'] ?? json['user_id'],
       ),
       shippingAddress: TypeConverters.toNullableString(
         json['shipping_address'] ?? json['shippingAddress'],
@@ -106,6 +108,7 @@ class Order extends HiveObject {
       'employee_id': employeeId,
       'order_type': 'offline',
       'status': status,
+      'order_status': status,
       'payment_status': paymentStatus ?? 'paid',
       'shipping_address': shippingAddress,
       'payment_method': paymentMethod ?? 'cash',

@@ -78,7 +78,8 @@ exports.getAvailableVouchers = async (req, res) => {
   try {
     const [vouchers] = await pool.execute(
       `SELECT voucher_id, code, description, discount_type, discount_value,
-              min_order_amount, max_discount, expiry_date
+              min_order_amount, max_discount, usage_limit, used_count,
+              expiry_date, status, created_at
        FROM vouchers
        WHERE status = 'active'
        AND (expiry_date IS NULL OR expiry_date >= CURDATE())
@@ -120,8 +121,19 @@ exports.getUserVouchers = async (req, res) => {
   const { userId } = req.params;
 
   try {
+    if (
+      req.user &&
+      req.user.role_name !== "admin" &&
+      Number(req.user.user_id) !== Number(userId)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Khong co quyen xem voucher cua tai khoan nay",
+      });
+    }
+
     const [userVouchers] = await pool.execute(
-      `SELECT v.*, uv.used_count, uv.last_used_at
+      `SELECT v.*, uv.used_count AS user_used_count, uv.last_used_at
        FROM user_vouchers uv
        JOIN vouchers v ON uv.voucher_id = v.voucher_id
        WHERE uv.user_id = ?
@@ -130,6 +142,72 @@ exports.getUserVouchers = async (req, res) => {
     );
 
     res.json({ success: true, data: userVouchers });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 5. CLAIM VOUCHER - Khach hang luu voucher vao tai khoan
+exports.claimVoucher = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user && req.user.user_id;
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Vui long dang nhap de lay ma voucher",
+    });
+  }
+
+  try {
+    const [vouchers] = await pool.execute(
+      `SELECT voucher_id, code, status, expiry_date, usage_limit, used_count
+       FROM vouchers
+       WHERE voucher_id = ?`,
+      [id],
+    );
+
+    if (vouchers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Voucher khong ton tai",
+      });
+    }
+
+    const voucher = vouchers[0];
+    if (voucher.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message: "Voucher khong con hoat dong",
+      });
+    }
+
+    if (voucher.expiry_date && new Date(voucher.expiry_date) < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "Voucher da het han",
+      });
+    }
+
+    if (voucher.usage_limit && voucher.used_count >= voucher.usage_limit) {
+      return res.status(400).json({
+        success: false,
+        message: "Voucher da het luot dung",
+      });
+    }
+
+    await pool.execute(
+      `INSERT INTO user_vouchers (user_id, voucher_id, used_count, last_used_at)
+       VALUES (?, ?, 0, NULL)
+       ON DUPLICATE KEY UPDATE user_id = user_id`,
+      [userId, id],
+    );
+
+    res.json({
+      success: true,
+      message: "Da luu voucher vao tai khoan",
+      data: { voucher_id: Number(id), code: voucher.code },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -299,6 +377,7 @@ exports.getVoucherUsage = async (req, res) => {
        JOIN users u ON uv.user_id = u.user_id
        LEFT JOIN orders o ON o.customer_id = u.user_id AND o.voucher_id = ?
        WHERE uv.voucher_id = ?
+       AND uv.used_count > 0
        ORDER BY uv.last_used_at DESC`,
       [id, id],
     );

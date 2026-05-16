@@ -16,6 +16,8 @@ router.get("/code/:code", voucherController.getVoucherByCode);
 // Lấy danh sách vouchers của user
 router.get("/user/:userId", requireAuth, voucherController.getUserVouchers);
 
+router.post("/:id/claim", requireAuth, voucherController.claimVoucher);
+
 // ===== ADMIN ROUTES =====
 
 // Tạo voucher mới (Admin only)

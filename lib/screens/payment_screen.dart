@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../models/order_line.dart';
 import '../models/product.dart';
+import '../models/voucher.dart';
 import '../services/db_service.dart';
 import '../services/voucher_service.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
@@ -12,9 +13,10 @@ import '../widgets/slide_page_route.dart';
 import 'checkout_screen.dart';
 import 'employee.dart';
 import 'employee_confirm_orders_screen.dart';
+import 'customer_vouchers_screen.dart';
 import 'order_management_screen.dart';
 import 'order_success_screen.dart';
-import 'profile_view_screen.dart';
+import 'profile_route.dart';
 import 'scan_product_screen.dart';
 
 class PaymentScreen extends StatefulWidget {
@@ -49,8 +51,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String? _voucherMessage;
   int? _appliedVoucherId;
   double _discountAmount = 0;
+  bool _isLoadingSavedVouchers = true;
+  List<Voucher> _savedVouchers = [];
   bool _isProcessing = false;
   bool _isApplyingVoucher = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedVouchers();
+  }
 
   @override
   void dispose() {
@@ -62,6 +72,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   String _formatCurrency(double amount) {
     return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} VND';
+  }
+
+  Future<void> _loadSavedVouchers() async {
+    final userId = DBService.currentUserId();
+    if (userId == null) {
+      if (!mounted) return;
+      setState(() {
+        _savedVouchers = [];
+        _isLoadingSavedVouchers = false;
+      });
+      return;
+    }
+
+    final token = (DBService.settings().get('auth_token') ?? '').toString();
+    final vouchers = await VoucherService.getUserVouchers(userId, token);
+    if (!mounted) return;
+    setState(() {
+      _savedVouchers = vouchers;
+      _isLoadingSavedVouchers = false;
+    });
   }
 
   Future<void> _applyVoucher(String voucherCode) async {
@@ -87,6 +117,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _appliedVoucherId = NumberParser.toInt(data['id']);
           _discountAmount = NumberParser.toDouble(data['discountAmount']);
           _voucherMessage = 'Đã áp dụng mã ${data['code']}';
+          _voucherController.text = data['code'].toString();
         });
         _showSnack(_voucherMessage!, success: true);
       } else {
@@ -291,7 +322,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       case RoleBottomTab.account:
         Navigator.of(
           context,
-        ).push(buildSlidePageRoute(ProfileViewScreen(role: widget.role)));
+        ).push(buildSlidePageRoute(buildProfileScreenForRole(widget.role)));
         break;
       case RoleBottomTab.employees:
         Navigator.of(context).push(
@@ -299,6 +330,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
         );
         break;
       case RoleBottomTab.offers:
+        await Navigator.of(
+          context,
+        ).push(buildSlidePageRoute(const CustomerVouchersScreen()));
+        if (!mounted) return;
+        setState(() => _isLoadingSavedVouchers = true);
+        await _loadSavedVouchers();
+        break;
       case RoleBottomTab.orders:
         break;
     }
@@ -505,6 +543,96 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
+  String _voucherDiscountText(Voucher voucher) {
+    if (voucher.discountType == 'percent') {
+      final max = voucher.maxDiscount == null
+          ? ''
+          : ' tối đa ${_formatCurrency(voucher.maxDiscount!)}';
+      return 'Giảm ${voucher.discountValue.toStringAsFixed(0)}%$max';
+    }
+    return 'Giảm ${_formatCurrency(voucher.discountValue)}';
+  }
+
+  Widget _savedVoucherList() {
+    if (_isLoadingSavedVouchers) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+
+    if (_savedVouchers.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: Text(
+          'Bạn chưa lưu voucher nào. Vào tab Ưu đãi để lấy mã.',
+          style: TextStyle(color: Colors.black54),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'Voucher đã lưu',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        ..._savedVouchers.map(_savedVoucherTile),
+      ],
+    );
+  }
+
+  Widget _savedVoucherTile(Voucher voucher) {
+    final canUse = voucher.isValid(widget.totalAmount);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: canUse ? Colors.blue.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: canUse ? Colors.blue.shade100 : Colors.grey.shade300,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.local_offer_outlined,
+            color: canUse ? _accent : Colors.black38,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  voucher.code,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  voucher.minOrderAmount > widget.totalAmount
+                      ? 'Cần đơn từ ${_formatCurrency(voucher.minOrderAmount)}'
+                      : _voucherDiscountText(voucher),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: canUse ? () => _applyVoucher(voucher.code) : null,
+            child: const Text('Dùng'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _voucherCard() {
     return _sectionCard(
       title: 'Mã ưu đãi',
@@ -572,6 +700,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
             ),
           ],
+          _savedVoucherList(),
         ],
       ),
     );

@@ -4,9 +4,10 @@ import 'dart:io';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../services/db_service.dart';
 import '../models/product.dart';
-import 'profile_view_screen.dart';
+import 'profile_route.dart';
 import 'checkout_screen.dart';
 import 'customer_online_checkout_screen.dart';
+import 'customer_vouchers_screen.dart';
 import 'RevenueOverviewScreen.dart'; // Đã thêm
 import 'product_management_screen.dart';
 import 'inventory_management_screen.dart';
@@ -497,7 +498,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildProfileSection() {
     return GestureDetector(
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ProfileViewScreen(role: widget.role)),
+        MaterialPageRoute(
+          builder: (_) => buildProfileScreenForRole(widget.role),
+        ),
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
@@ -774,16 +777,9 @@ class _HomeScreenState extends State<HomeScreen> {
         break;
       case RoleBottomTab.offers:
         setState(() => _currentBottomTab = tab);
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-          );
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đang hiển thị ưu đãi hôm nay')),
-        );
+        Navigator.of(
+          context,
+        ).push(buildSlidePageRoute(const CustomerVouchersScreen()));
         break;
       case RoleBottomTab.cart:
         if (_currentBottomTab != RoleBottomTab.cart) {
@@ -801,7 +797,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
-        ).push(buildSlidePageRoute(ProfileViewScreen(role: widget.role)));
+        ).push(buildSlidePageRoute(buildProfileScreenForRole(widget.role)));
         break;
     }
   }

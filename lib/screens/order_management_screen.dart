@@ -8,7 +8,7 @@ import 'checkout_screen.dart';
 import 'employee.dart';
 import 'employee_confirm_orders_screen.dart';
 import 'order_detail_screen.dart'; // Cần import màn hình chi tiết (Giả sử bạn đã có file này)
-import 'profile_view_screen.dart';
+import 'profile_route.dart';
 import 'scan_product_screen.dart';
 
 class OrderManagementScreen extends StatefulWidget {
@@ -176,7 +176,7 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         break;
       case RoleBottomTab.account:
         Navigator.of(context).pushReplacement(
-          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
+          buildSlidePageRoute(buildProfileScreenForRole(widget.role)),
         );
         break;
       case RoleBottomTab.invoices:

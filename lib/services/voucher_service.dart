@@ -160,6 +160,42 @@ class VoucherService {
     }
   }
 
+  // 5. CLAIM VOUCHER - LÆ°u voucher vÃ o tÃ i khoáº£n khÃ¡ch hÃ ng
+  static Future<Map<String, dynamic>> claimVoucher({
+    required int voucherId,
+    required String token,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/$voucherId/claim'),
+            headers: _getAuthHeaders(token),
+          )
+          .timeout(
+            timeoutDuration,
+            onTimeout: () {
+              throw Exception('Request timeout');
+            },
+          );
+
+      final json = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': json['message'] ?? 'ÄÃ£ lÆ°u voucher vÃ o tÃ i khoáº£n',
+          'data': json['data'],
+        };
+      }
+
+      return {
+        'success': false,
+        'message': json['message'] ?? 'KhÃ´ng thá»ƒ láº¥y mÃ£ voucher',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Lá»—i káº¿t ná»‘i: $e'};
+    }
+  }
+
   // ===== ADMIN FUNCTIONS =====
 
   // 5. CREATE VOUCHER - Tạo voucher mới

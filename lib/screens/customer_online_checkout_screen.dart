@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/product.dart';
+import '../models/voucher.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../services/voucher_service.dart';
 import '../widgets/slide_page_route.dart';
 import 'orders_screen.dart';
 
@@ -37,16 +39,19 @@ class _CustomerOnlineCheckoutScreenState
   String _deliveryMethod = 'pickup';
   String _paymentMethod = 'cash';
   bool _isApplyingVoucher = false;
+  bool _isLoadingSavedVouchers = true;
   bool _isCheckingOut = false;
   String? _voucherCode;
   String? _voucherMessage;
   double _discountAmount = 0;
+  List<Voucher> _savedVouchers = [];
 
   @override
   void initState() {
     super.initState();
     _cart = Map<String, int>.from(widget.cart)
       ..removeWhere((key, value) => value <= 0);
+    _loadSavedVouchers();
   }
 
   @override
@@ -87,6 +92,26 @@ class _CustomerOnlineCheckoutScreenState
     final raw = DBService.settings().get('current_user_id');
     if (raw is int) return raw;
     return int.tryParse(raw?.toString() ?? '');
+  }
+
+  Future<void> _loadSavedVouchers() async {
+    final userId = _currentUserId();
+    if (userId == null) {
+      if (!mounted) return;
+      setState(() {
+        _savedVouchers = [];
+        _isLoadingSavedVouchers = false;
+      });
+      return;
+    }
+
+    final token = (DBService.settings().get('auth_token') ?? '').toString();
+    final vouchers = await VoucherService.getUserVouchers(userId, token);
+    if (!mounted) return;
+    setState(() {
+      _savedVouchers = vouchers;
+      _isLoadingSavedVouchers = false;
+    });
   }
 
   void _clearVoucher() {
@@ -580,6 +605,103 @@ class _CustomerOnlineCheckoutScreenState
     );
   }
 
+  String _voucherDiscountText(Voucher voucher) {
+    if (voucher.discountType == 'percent') {
+      final max = voucher.maxDiscount == null
+          ? ''
+          : ' tối đa ${_formatCurrency(voucher.maxDiscount!)}';
+      return 'Giảm ${voucher.discountValue.toStringAsFixed(0)}%$max';
+    }
+    return 'Giảm ${_formatCurrency(voucher.discountValue)}';
+  }
+
+  Widget _savedVoucherList(double subtotal) {
+    if (_isLoadingSavedVouchers) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+
+    if (_savedVouchers.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: Text(
+          'Bạn chưa lưu voucher nào. Vào tab Ưu đãi để lấy mã.',
+          style: TextStyle(color: Colors.black54),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'Voucher đã lưu',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        ..._savedVouchers.map(
+          (voucher) => _savedVoucherTile(voucher, subtotal),
+        ),
+      ],
+    );
+  }
+
+  Widget _savedVoucherTile(Voucher voucher, double subtotal) {
+    final canUse = voucher.isValid(subtotal);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: canUse ? Colors.blue.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: canUse ? Colors.blue.shade100 : Colors.grey.shade300,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.local_offer_outlined,
+            color: canUse ? _accent : Colors.black38,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  voucher.code,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  voucher.minOrderAmount > subtotal
+                      ? 'Cần đơn từ ${_formatCurrency(voucher.minOrderAmount)}'
+                      : _voucherDiscountText(voucher),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: canUse
+                ? () {
+                    _voucherController.text = voucher.code;
+                    _applyVoucher(subtotal);
+                  }
+                : null,
+            child: const Text('Dùng'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _voucherInput(double subtotal) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -642,6 +764,7 @@ class _CustomerOnlineCheckoutScreenState
             ),
           ),
         ],
+        _savedVoucherList(subtotal),
       ],
     );
   }

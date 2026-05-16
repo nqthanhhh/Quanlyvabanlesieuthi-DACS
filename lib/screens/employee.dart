@@ -9,7 +9,7 @@ import 'employee_confirm_orders_screen.dart';
 import 'add_edit_employee_screen.dart';
 import 'checkout_screen.dart';
 import 'order_management_screen.dart';
-import 'profile_view_screen.dart';
+import 'profile_route.dart';
 import 'scan_product_screen.dart';
 
 // Employee view model used only for presentation
@@ -296,7 +296,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         break;
       case RoleBottomTab.account:
         Navigator.of(context).pushReplacement(
-          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
+          buildSlidePageRoute(buildProfileScreenForRole(widget.role)),
         );
         break;
       case RoleBottomTab.cart:

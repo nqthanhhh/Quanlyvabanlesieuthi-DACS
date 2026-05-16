@@ -9,7 +9,7 @@ import 'employee.dart';
 import 'employee_confirm_orders_screen.dart';
 import 'order_management_screen.dart';
 import 'payment_screen.dart';
-import 'profile_view_screen.dart';
+import 'profile_route.dart';
 import 'scan_product_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -129,7 +129,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       case RoleBottomTab.account:
         Navigator.of(
           context,
-        ).push(buildSlidePageRoute(ProfileViewScreen(role: widget.role)));
+        ).push(buildSlidePageRoute(buildProfileScreenForRole(widget.role)));
         break;
       case RoleBottomTab.employees:
         Navigator.of(context).push(

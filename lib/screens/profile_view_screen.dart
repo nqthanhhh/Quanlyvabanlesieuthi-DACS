@@ -11,6 +11,7 @@ import 'employee_confirm_orders_screen.dart';
 import 'order_management_screen.dart';
 import 'profile_edit_screen.dart';
 import 'scan_product_screen.dart';
+import '../widgets/employee_shift_card.dart';
 
 class ProfileViewScreen extends StatefulWidget {
   final String role;
@@ -168,7 +169,7 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
         ],
       ),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,6 +207,15 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
                 ),
               ),
               const SizedBox(height: 20),
+              if (widget.role == 'employee' && user.userId != null) ...[
+                EmployeeShiftCard(
+                  employeeId: user.userId!,
+                  employeeName:
+                      user.fullName.isNotEmpty ? user.fullName : user.email,
+                  canManageShift: true,
+                ),
+                const SizedBox(height: 16),
+              ],
               const Divider(),
               const SizedBox(height: 12),
               _infoRow('Email', user.email),

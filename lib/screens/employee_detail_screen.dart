@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/user.dart';
+import '../repositories/work_shift_repository.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../widgets/employee_shift_card.dart';
 import 'add_edit_employee_screen.dart';
 
 class EmployeeDetailScreen extends StatefulWidget {
@@ -17,7 +19,6 @@ class EmployeeDetailScreen extends StatefulWidget {
 class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   late User user;
   bool _isLoadingSummary = true;
-  bool _isShiftUpdating = false;
   String? _summaryError;
   Map<String, dynamic>? _summary;
 
@@ -43,7 +44,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     });
 
     try {
-      final data = await ApiService.fetchEmployeeSummary(user.userId!);
+      final data = await WorkShiftRepository.fetchEmployeeSummary(user.userId!);
       if (!mounted) return;
       final userMap = data['user'];
       setState(() {
@@ -51,6 +52,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
           user = User.fromJson(Map<String, dynamic>.from(userMap));
         }
         _summary = data;
+        _summaryError = null;
         _isLoadingSummary = false;
       });
     } catch (e) {
@@ -60,9 +62,6 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         _summary = _emptySummary();
         _isLoadingSummary = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không tải được dữ liệu ca làm')),
-      );
     }
   }
 
@@ -144,46 +143,14 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     return currentUserId != null && user.userId == currentUserId;
   }
 
-  bool get _hasCurrentShift => _summary?['current_shift'] is Map;
-
-  Future<void> _startShift() async {
-    if (user.userId == null || _isShiftUpdating) return;
-    setState(() => _isShiftUpdating = true);
-    try {
-      await ApiService.startWorkShift(user.userId!);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Đã bắt đầu ca làm')));
-      await _loadSummary();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e is ApiException ? e.message : e.toString())),
-      );
-    } finally {
-      if (mounted) setState(() => _isShiftUpdating = false);
+  bool get _canManageShift {
+    if (user.userId == null || user.status.toLowerCase() == 'inactive') {
+      return false;
     }
-  }
-
-  Future<void> _endShift() async {
-    if (user.userId == null || _isShiftUpdating) return;
-    setState(() => _isShiftUpdating = true);
-    try {
-      await ApiService.endWorkShift(user.userId!);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Đã kết thúc ca làm')));
-      await _loadSummary();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e is ApiException ? e.message : e.toString())),
-      );
-    } finally {
-      if (mounted) setState(() => _isShiftUpdating = false);
-    }
+    if (_isViewingOwnEmployeeAccount) return true;
+    final role = DBService.settings().get('current_role')?.toString() ?? '';
+    return role.toLowerCase() == 'admin' &&
+        user.role.toLowerCase() == 'employee';
   }
 
   String _displayName() =>
@@ -205,13 +172,6 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     final dt = DateTime.tryParse(value.toString());
     if (dt == null) return value.toString();
     return '${_formatDate(dt.toIso8601String())} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _formatTime(dynamic value) {
-    if (value == null || value.toString().isEmpty) return 'Chưa có';
-    final raw = value.toString();
-    if (raw.length >= 5) return raw.substring(0, 5);
-    return raw;
   }
 
   num _numValue(String key) {
@@ -371,118 +331,20 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
           _summaryNotice(),
           const SizedBox(height: 14),
         ],
-        _buildShiftCard(),
+        if (user.userId != null)
+          EmployeeShiftCard(
+            key: ValueKey('shift_${user.userId}_${_summary?.hashCode}'),
+            employeeId: user.userId!,
+            employeeName: _displayName(),
+            canManageShift: _canManageShift,
+            initialSummary: _summary,
+            onShiftChanged: _loadSummary,
+          ),
         const SizedBox(height: 14),
         _buildPerformanceGrid(),
         const SizedBox(height: 14),
         _buildPaymentHistory(),
       ],
-    );
-  }
-
-  Widget _buildShiftCard() {
-    final currentShift = _summary?['current_shift'];
-    final latestShift = _summary?['latest_shift'];
-    final working = _summary?['work_status'] == 'working';
-    final shiftForDisplay = currentShift is Map
-        ? Map<String, dynamic>.from(currentShift)
-        : latestShift is Map
-        ? Map<String, dynamic>.from(latestShift)
-        : null;
-    final hasShiftData = shiftForDisplay != null;
-    final statusText = working
-        ? 'Đang làm'
-        : hasShiftData
-        ? 'Chưa làm'
-        : 'Chưa có dữ liệu';
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.schedule, color: Colors.blue.shade700),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Ca làm hiện tại',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                _statusPill(statusText, working ? Colors.green : Colors.orange),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                _miniInfo(
-                  working ? 'Ngày làm' : 'Ngày gần nhất',
-                  _formatDate(
-                    shiftForDisplay?['shift_date'] ??
-                        _summary?['last_work_date'],
-                  ),
-                  Icons.event_available_outlined,
-                ),
-                _miniInfo(
-                  'Giờ bắt đầu',
-                  _formatTime(
-                    shiftForDisplay?['start_time'] ?? _summary?['start_time'],
-                  ),
-                  Icons.login_outlined,
-                ),
-                _miniInfo(
-                  'Giờ kết thúc',
-                  working
-                      ? 'Chưa kết thúc'
-                      : _formatTime(
-                          shiftForDisplay?['end_time'] ?? _summary?['end_time'],
-                        ),
-                  Icons.logout_outlined,
-                ),
-              ],
-            ),
-            if (_isViewingOwnEmployeeAccount) ...[
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: ElevatedButton.icon(
-                  onPressed: _isShiftUpdating
-                      ? null
-                      : (_hasCurrentShift ? _endShift : _startShift),
-                  icon: _isShiftUpdating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          _hasCurrentShift
-                              ? Icons.stop_circle
-                              : Icons.play_circle,
-                        ),
-                  label: Text(_hasCurrentShift ? 'Kết thúc ca' : 'Bắt đầu ca'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _hasCurrentShift
-                        ? Colors.red.shade600
-                        : Colors.green.shade600,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 
@@ -692,7 +554,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -702,43 +564,6 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
           fontSize: 12,
           fontWeight: FontWeight.w800,
         ),
-      ),
-    );
-  }
-
-  Widget _miniInfo(String label, String value, IconData icon) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 140),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: Colors.blueGrey),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
-                ),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

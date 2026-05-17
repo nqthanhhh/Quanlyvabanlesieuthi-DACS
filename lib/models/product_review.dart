@@ -3,6 +3,8 @@ import '../utils/type_converters.dart';
 /// Đánh giá sản phẩm — map từ API `/api/reviews/products/:id`.
 class ProductReview {
   final int? id;
+  final String productId;
+  final int? customerId;
   final String customerName;
   final int rating;
   final String comment;
@@ -10,6 +12,8 @@ class ProductReview {
 
   const ProductReview({
     this.id,
+    required this.productId,
+    this.customerId,
     required this.customerName,
     required this.rating,
     required this.comment,
@@ -19,11 +23,16 @@ class ProductReview {
   factory ProductReview.fromJson(Map<String, dynamic> json) {
     return ProductReview(
       id: TypeConverters.toNullableInt(json['review_id'] ?? json['id']),
-      customerName: (json['full_name'] ??
-              json['customer_name'] ??
-              json['customerName'] ??
-              'Khách hàng')
-          .toString(),
+      productId: (json['product_id'] ?? json['productId'] ?? '').toString(),
+      customerId: TypeConverters.toNullableInt(
+        json['user_id'] ?? json['customer_id'] ?? json['customerId'],
+      ),
+      customerName:
+          (json['full_name'] ??
+                  json['customer_name'] ??
+                  json['customerName'] ??
+                  'Khách hàng')
+              .toString(),
       rating: TypeConverters.toInt(json['rating'], defaultValue: 5).clamp(1, 5),
       comment: (json['comment'] ?? '').toString(),
       createdAt: json['created_at'] == null
@@ -32,28 +41,15 @@ class ProductReview {
     );
   }
 
-  /// Dữ liệu mẫu khi API chưa có review hoặc lỗi mạng.
-  static List<ProductReview> mockForProduct(String productId) {
-    final seed = productId.hashCode.abs() % 3;
-    if (seed == 0) return const [];
-
-    return [
-      ProductReview(
-        id: 1,
-        customerName: 'Nguyễn Văn A',
-        rating: 5,
-        comment: 'Sản phẩm tươi, đóng gói cẩn thận.',
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      ),
-      ProductReview(
-        id: 2,
-        customerName: 'Trần Thị B',
-        rating: 4,
-        comment: 'Giá hợp lý, giao hàng nhanh.',
-        createdAt: DateTime.now().subtract(const Duration(days: 5)),
-      ),
-    ];
-  }
+  Map<String, dynamic> toJson() => {
+    if (id != null) 'review_id': id,
+    'product_id': int.tryParse(productId) ?? productId,
+    if (customerId != null) 'customer_id': customerId,
+    'customer_name': customerName,
+    'rating': rating,
+    'comment': comment,
+    if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
+  };
 
   static double averageRating(List<ProductReview> reviews) {
     if (reviews.isEmpty) return 0;

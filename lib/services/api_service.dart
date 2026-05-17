@@ -6,10 +6,15 @@ import 'package:http/http.dart' as http;
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/product_review.dart';
+import '../models/work_shift.dart';
 import '../models/user.dart';
 import '../models/inventory_item.dart';
 import '../utils/constants.dart';
 import '../utils/type_converters.dart';
+
+// Ca làm / tổng hợp nhân viên có thể chậm hơn API thông thường.
+Duration get _shiftTimeout =>
+    const Duration(seconds: AppConstants.shiftTimeoutSeconds);
 
 class ApiException implements Exception {
   final String message;
@@ -207,8 +212,26 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchEmployeeSummary(int userId) async {
     final response = await http
         .get(_uri('/api/users/$userId/employee-summary'))
-        .timeout(_timeout);
+        .timeout(_shiftTimeout);
     return _dataMap(_decode(response));
+  }
+
+  static Future<List<WorkShift>> fetchEmployeeShiftsForMonth({
+    required int employeeId,
+    required int year,
+    required int month,
+  }) async {
+    final response = await http
+        .get(
+          _uri(
+            '/api/work-shifts/employee/$employeeId?year=$year&month=$month',
+          ),
+        )
+        .timeout(_shiftTimeout);
+    final body = _decode(response);
+    return _dataList(body)
+        .map((e) => WorkShift.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
   }
 
   static Future<Map<String, dynamic>> startWorkShift(int employeeId) async {
@@ -218,7 +241,7 @@ class ApiService {
           headers: _headers,
           body: jsonEncode({'employee_id': employeeId}),
         )
-        .timeout(_timeout);
+        .timeout(_shiftTimeout);
     return _dataMap(_decode(response));
   }
 
@@ -229,7 +252,7 @@ class ApiService {
           headers: _headers,
           body: jsonEncode({'employee_id': employeeId}),
         )
-        .timeout(_timeout);
+        .timeout(_shiftTimeout);
     return _dataMap(_decode(response));
   }
 
@@ -487,42 +510,51 @@ class ApiService {
   static Future<List<ProductReview>> fetchProductReviews(
     String productId,
   ) async {
-    try {
-      final response = await http
-          .get(_uri('/api/reviews/products/$productId'))
-          .timeout(_timeout);
-      final body = _decode(response);
-      final reviews = _dataList(body)
-          .map(
-            (e) => ProductReview.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
-      if (reviews.isNotEmpty) return reviews;
-      return ProductReview.mockForProduct(productId);
-    } catch (_) {
-      return ProductReview.mockForProduct(productId);
-    }
+    final response = await http
+        .get(_uri('/api/reviews/products/$productId'))
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(body)
+        .map((e) => ProductReview.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
   }
 
   static Future<Map<String, dynamic>> createReview({
-    required String orderId,
+    String? orderId,
     required String productId,
     required int rating,
     String? comment,
+    int? customerId,
   }) async {
+    final payload = <String, dynamic>{
+      'product_id': int.tryParse(productId) ?? productId,
+      'rating': rating,
+      'comment': comment,
+    };
+    if (orderId != null && orderId.trim().isNotEmpty) {
+      payload['order_id'] = int.tryParse(orderId) ?? orderId;
+    }
+
     final response = await http
         .post(
           _uri('/api/reviews'),
-          headers: _userHeaders,
-          body: jsonEncode({
-            'order_id': int.tryParse(orderId) ?? orderId,
-            'product_id': int.tryParse(productId) ?? productId,
-            'rating': rating,
-            'comment': comment,
-          }),
+          headers: customerId == null
+              ? _userHeaders
+              : _userHeadersFor(customerId),
+          body: jsonEncode(payload),
         )
         .timeout(_timeout);
     return _dataMap(_decode(response));
+  }
+
+  static Future<double> getAverageRating(String productId) async {
+    final reviews = await fetchProductReviews(productId);
+    return ProductReview.averageRating(reviews);
+  }
+
+  static Future<int> getTotalReviews(String productId) async {
+    final reviews = await fetchProductReviews(productId);
+    return reviews.length;
   }
 
   static Future<List<Map<String, dynamic>>> fetchInventoryLogs() async {

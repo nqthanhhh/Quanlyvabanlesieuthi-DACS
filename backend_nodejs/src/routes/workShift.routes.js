@@ -3,14 +3,36 @@ const pool = require('../config/db');
 
 const router = express.Router();
 
+function formatDateOnly(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return String(value).slice(0, 10);
+}
+
+function formatTimeOnly(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const hour = String(value.getHours()).padStart(2, '0');
+    const minute = String(value.getMinutes()).padStart(2, '0');
+    const second = String(value.getSeconds()).padStart(2, '0');
+    return `${hour}:${minute}:${second}`;
+  }
+  return String(value).slice(0, 8);
+}
+
 function toShift(row) {
   if (!row) return null;
   return {
     shift_id: row.shift_id,
     employee_id: row.employee_id,
-    shift_date: row.shift_date,
-    start_time: row.start_time,
-    end_time: row.end_time,
+    shift_date: formatDateOnly(row.shift_date),
+    start_time: formatTimeOnly(row.start_time),
+    end_time: formatTimeOnly(row.end_time),
     status: row.status || (row.end_time ? 'closed' : 'active'),
     note: row.note,
   };
@@ -21,7 +43,9 @@ async function findEmployee(employeeId) {
     `SELECT u.user_id, u.full_name, u.email, r.role_name
      FROM users u
      JOIN roles r ON r.role_id = u.role_id
-     WHERE u.user_id = ? AND u.role_id = 2 AND u.status = 'active'
+     WHERE u.user_id = ?
+       AND r.role_name = 'employee'
+       AND u.status = 'active'
      LIMIT 1`,
     [employeeId]
   );
@@ -31,7 +55,7 @@ async function findEmployee(employeeId) {
 async function findActiveShift(connection, employeeId) {
   const hasStatus = await workShiftHasStatus(connection);
   const activeWhere = hasStatus
-    ? "end_time IS NULL AND status IN ('active', 'working')"
+    ? "end_time IS NULL AND status IN ('active', 'working', 'open')"
     : 'end_time IS NULL';
   const [rows] = await connection.execute(
     `SELECT *
@@ -55,6 +79,42 @@ async function workShiftHasStatus(connection) {
   );
   return Number(rows[0]?.count || 0) > 0;
 }
+
+router.get('/employee/:employeeId', async (req, res) => {
+  try {
+    const employeeId = Number(req.params.employeeId);
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: 'employeeId không hợp lệ' });
+    }
+
+    const now = new Date();
+    const year = Number(req.query.year) || now.getFullYear();
+    const month = Number(req.query.month) || now.getMonth() + 1;
+
+    const [rows] = await pool.execute(
+      `SELECT *
+       FROM work_shifts
+       WHERE employee_id = ?
+         AND YEAR(shift_date) = ?
+         AND MONTH(shift_date) = ?
+       ORDER BY shift_date DESC, start_time DESC, shift_id DESC`,
+      [employeeId, year, month]
+    );
+
+    res.json({
+      success: true,
+      data: rows.map(toShift),
+      meta: { year, month, total: rows.length },
+    });
+  } catch (error) {
+    console.error('work-shifts list failed:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi lấy lịch ca làm',
+      error: error.message,
+    });
+  }
+});
 
 router.post('/start', async (req, res) => {
   const connection = await pool.getConnection();
@@ -84,7 +144,7 @@ router.post('/start', async (req, res) => {
     const [result] = hasStatus
       ? await connection.execute(
           `INSERT INTO work_shifts (employee_id, shift_date, start_time, end_time, status)
-           VALUES (?, CURDATE(), CURTIME(), NULL, 'active')`,
+           VALUES (?, CURDATE(), CURTIME(), NULL, 'working')`,
           [employeeId]
         )
       : await connection.execute(
@@ -130,7 +190,7 @@ router.post('/end', async (req, res) => {
     if (hasStatus) {
       await connection.execute(
         `UPDATE work_shifts
-         SET end_time = CURTIME(), status = 'closed'
+         SET end_time = CURTIME(), status = 'completed'
          WHERE shift_id = ?`,
         [activeShift.shift_id]
       );

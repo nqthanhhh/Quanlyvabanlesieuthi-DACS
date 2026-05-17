@@ -7,6 +7,7 @@ class AppConstants {
 
   // API timeout
   static const int apiTimeoutSeconds = 5;
+  static const int shiftTimeoutSeconds = 15;
   static const int checkoutTimeoutSeconds = 12;
 
   /// Điện thoại thật: đặt IP máy tính chạy backend (cùng Wi‑Fi), ví dụ http://192.168.1.10:3000
@@ -22,6 +23,7 @@ class AppConstants {
   static const String productImagesBox = 'product_images';
   static const String inventoryProductsBox = 'inventory_products';
   static const String inventoryHistoryBox = 'inventory_history_box';
+  static const String workShiftSummariesBox = 'work_shift_summaries';
 
   // Cache schema
   static const int cacheSchemaVersion = 3;

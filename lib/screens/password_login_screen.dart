@@ -67,6 +67,11 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       final settings2 = DBService.settings();
       await settings2.put('current_user_id', user['user_id']);
       await settings2.put('current_user_email', user['email']);
+      await settings2.put(
+        'current_user_name',
+        (user['full_name'] ?? user['fullName'] ?? user['email'] ?? '')
+            .toString(),
+      );
       await settings2.put('current_role', role);
       try {
         await DBService.syncAllFromApi();

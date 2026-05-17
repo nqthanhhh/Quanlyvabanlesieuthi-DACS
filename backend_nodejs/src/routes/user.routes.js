@@ -37,14 +37,36 @@ function toNumber(value) {
   return Number(value || 0);
 }
 
+function formatDateOnly(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return String(value).slice(0, 10);
+}
+
+function formatTimeOnly(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const hour = String(value.getHours()).padStart(2, '0');
+    const minute = String(value.getMinutes()).padStart(2, '0');
+    const second = String(value.getSeconds()).padStart(2, '0');
+    return `${hour}:${minute}:${second}`;
+  }
+  return String(value).slice(0, 8);
+}
+
 function toShift(row) {
   if (!row) return null;
   return {
     shift_id: row.shift_id,
     employee_id: row.employee_id,
-    shift_date: row.shift_date,
-    start_time: row.start_time,
-    end_time: row.end_time,
+    shift_date: formatDateOnly(row.shift_date),
+    start_time: formatTimeOnly(row.start_time),
+    end_time: formatTimeOnly(row.end_time),
     status: row.status || (row.end_time ? 'closed' : 'active'),
     note: row.note,
   };
@@ -156,7 +178,7 @@ router.get('/:id/employee-summary', async (req, res) => {
     const hasShiftStatus = await columnExists('work_shifts', 'status');
     const hasOrdersShiftId = await columnExists('orders', 'shift_id');
     const currentShiftWhere = hasShiftStatus
-      ? "end_time IS NULL AND status IN ('active', 'working')"
+      ? "end_time IS NULL AND status IN ('active', 'working', 'open')"
       : 'end_time IS NULL';
 
     let currentShift = null;
@@ -268,9 +290,9 @@ router.get('/:id/employee-summary', async (req, res) => {
         latest_shift: toShift(latestShift),
         summary_scope: summaryScope,
         work_status: currentShift ? 'working' : 'off',
-        last_work_date: latestShift ? latestShift.shift_date : null,
-        start_time: statsShift ? statsShift.start_time : null,
-        end_time: currentShift ? null : (statsShift ? statsShift.end_time : null),
+        last_work_date: latestShift ? formatDateOnly(latestShift.shift_date) : null,
+        start_time: statsShift ? formatTimeOnly(statsShift.start_time) : null,
+        end_time: currentShift ? null : (statsShift ? formatTimeOnly(statsShift.end_time) : null),
         total_orders: totalOrders,
         paid_orders_count: totalOrders,
         total_revenue: totalRevenue,

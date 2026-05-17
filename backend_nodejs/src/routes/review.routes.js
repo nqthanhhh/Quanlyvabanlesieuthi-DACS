@@ -7,7 +7,18 @@ const router = express.Router();
 router.get('/products/:productId', async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT r.*, u.full_name
+      `SELECT
+         r.review_id,
+         r.user_id AS customer_id,
+         r.user_id,
+         r.product_id,
+         r.order_id,
+         r.order_item_id,
+         r.rating,
+         r.comment,
+         r.created_at,
+         u.full_name,
+         u.full_name AS customer_name
        FROM reviews r
        JOIN users u ON u.user_id = r.user_id
        WHERE r.product_id = ?
@@ -26,13 +37,56 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Chỉ khách hàng được đánh giá sản phẩm' });
     }
 
-    const orderId = Number(req.body.order_id || req.body.orderId);
+    const rawOrderId = req.body.order_id ?? req.body.orderId;
+    const orderId = rawOrderId == null || rawOrderId === '' ? null : Number(rawOrderId);
     const productId = Number(req.body.product_id || req.body.productId);
     const rating = Number(req.body.rating);
-    const comment = req.body.comment || null;
+    const comment = (req.body.comment || '').toString().trim();
 
-    if (!orderId || !productId || rating < 1 || rating > 5) {
-      return res.status(400).json({ success: false, message: 'Vui lòng nhập order_id, product_id, rating 1-5' });
+    if (!productId || rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập product_id và rating 1-5' });
+    }
+    if (!comment) {
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập nội dung đánh giá' });
+    }
+
+    const [products] = await pool.execute(
+      `SELECT product_id
+       FROM products
+       WHERE product_id = ? AND status <> 'deleted'
+       LIMIT 1`,
+      [productId]
+    );
+    if (products.length === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy sản phẩm' });
+    }
+
+    if (!orderId) {
+      const [result] = await pool.execute(
+        `INSERT INTO reviews (user_id, product_id, rating, comment)
+         VALUES (?, ?, ?, ?)`,
+        [req.user.user_id, productId, rating, comment]
+      );
+      const [rows] = await pool.execute(
+        `SELECT
+           r.review_id,
+           r.user_id AS customer_id,
+           r.user_id,
+           r.product_id,
+           r.order_id,
+           r.order_item_id,
+           r.rating,
+           r.comment,
+           r.created_at,
+           u.full_name,
+           u.full_name AS customer_name
+         FROM reviews r
+         JOIN users u ON u.user_id = r.user_id
+         WHERE r.review_id = ?
+         LIMIT 1`,
+        [result.insertId]
+      );
+      return res.status(201).json({ success: true, message: 'Đã gửi đánh giá', data: rows[0] });
     }
 
     const [items] = await pool.execute(
@@ -67,7 +121,25 @@ router.post('/', requireAuth, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?)`,
       [req.user.user_id, orderId, orderItemId, productId, rating, comment]
     );
-    const [rows] = await pool.execute('SELECT * FROM reviews WHERE review_id = ?', [result.insertId]);
+    const [rows] = await pool.execute(
+      `SELECT
+         r.review_id,
+         r.user_id AS customer_id,
+         r.user_id,
+         r.product_id,
+         r.order_id,
+         r.order_item_id,
+         r.rating,
+         r.comment,
+         r.created_at,
+         u.full_name,
+         u.full_name AS customer_name
+       FROM reviews r
+       JOIN users u ON u.user_id = r.user_id
+       WHERE r.review_id = ?
+       LIMIT 1`,
+      [result.insertId]
+    );
     res.status(201).json({ success: true, message: 'Đã gửi đánh giá', data: rows[0] });
   } catch (error) {
     const status = error.code === 'ER_DUP_ENTRY' ? 409 : 500;

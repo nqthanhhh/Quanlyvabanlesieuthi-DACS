@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../models/order_line.dart';
 import '../services/api_service.dart';
+import '../services/db_service.dart';
 
 class ProductReviewScreen extends StatefulWidget {
   final Order order;
@@ -30,15 +31,22 @@ class _ProductReviewScreenState extends State<ProductReviewScreen> {
   }
 
   Future<void> _submit() async {
+    final comment = _commentController.text.trim();
+    if (comment.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập nội dung đánh giá')),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
     try {
       await ApiService.createReview(
         orderId: widget.order.id,
         productId: widget.item.productId,
         rating: _rating,
-        comment: _commentController.text.trim().isEmpty
-            ? null
-            : _commentController.text.trim(),
+        comment: comment,
+        customerId: DBService.currentUserId(),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(

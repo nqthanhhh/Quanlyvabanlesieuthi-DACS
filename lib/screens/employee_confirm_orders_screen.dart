@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import 'order_detail_screen.dart';
 
 class EmployeeConfirmOrdersScreen extends StatefulWidget {
   const EmployeeConfirmOrdersScreen({super.key});
@@ -96,43 +97,10 @@ class _EmployeeConfirmOrdersScreenState
   }
 
   Future<String?> _rejectReasonDialog() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String?>(
+    return showDialog<String?>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Từ chối đơn hàng'),
-        content: TextField(
-          controller: controller,
-          minLines: 3,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Lý do từ chối (không bắt buộc)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(null),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _danger,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: const Text('Từ chối'),
-          ),
-        ],
-      ),
+      builder: (_) => const _RejectReasonDialog(dangerColor: _danger),
     );
-    controller.dispose();
-    return result;
   }
 
   Future<void> _confirmOrder(Map<String, dynamic> order) async {
@@ -220,6 +188,24 @@ class _EmployeeConfirmOrdersScreenState
     }
   }
 
+  Future<void> _openOrderDetail(Map<String, dynamic> order) async {
+    final orderId = (order['order_id'] ?? order['id']).toString();
+    if (orderId.isEmpty) return;
+
+    try {
+      final detail = await ApiService.fetchOrderDetail(orderId);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => OrderDetailScreen(order: detail)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException ? e.message : e.toString())),
+      );
+    }
+  }
+
   String _formatCurrency(dynamic value) {
     final amount = double.tryParse(value?.toString() ?? '0') ?? 0;
     return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} VND';
@@ -243,6 +229,65 @@ class _EmployeeConfirmOrdersScreenState
     }
   }
 
+  String _normalizedStatus(Map<String, dynamic> order) {
+    final raw = (order['order_status'] ?? order['status'] ?? '').toString();
+    switch (raw) {
+      case 'waiting_confirm':
+      case 'pending':
+        return 'pending';
+      case 'preparing':
+        return 'shipping';
+      case 'cancelled':
+        return 'rejected';
+      default:
+        return raw.isEmpty ? 'pending' : raw;
+    }
+  }
+
+  List<Map<String, dynamic>> _ordersForTab(int tabIndex) {
+    return _orders.where((order) {
+      final status = _normalizedStatus(order);
+      if (tabIndex == 0) return status == 'pending';
+      if (tabIndex == 1) {
+        return status == 'confirmed' ||
+            status == 'shipping' ||
+            status == 'completed';
+      }
+      return status == 'rejected';
+    }).toList();
+  }
+
+  String _statusText(String status) {
+    switch (status) {
+      case 'pending':
+        return 'Chờ xác nhận';
+      case 'confirmed':
+        return 'Đã xác nhận';
+      case 'shipping':
+        return 'Đang giao';
+      case 'completed':
+        return 'Thành công';
+      case 'rejected':
+        return 'Đã từ chối';
+      default:
+        return status;
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'confirmed':
+      case 'completed':
+        return _success;
+      case 'shipping':
+        return _primary;
+      case 'rejected':
+        return _danger;
+      default:
+        return const Color(0xFFF59E0B);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -259,41 +304,70 @@ class _EmployeeConfirmOrdersScreenState
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadOrders,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? ListView(
-                padding: const EdgeInsets.all(24),
-                children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _loadOrders,
-                    child: const Text('Thử lại'),
-                  ),
+      body: DefaultTabController(
+        length: 3,
+        child: Column(
+          children: [
+            const Material(
+              color: Colors.white,
+              child: TabBar(
+                labelColor: _primary,
+                unselectedLabelColor: Colors.black54,
+                indicatorColor: _primary,
+                tabs: [
+                  Tab(text: 'Chờ xác nhận'),
+                  Tab(text: 'Đã xác nhận'),
+                  Tab(text: 'Đã từ chối'),
                 ],
-              )
-            : _orders.isEmpty
-            ? ListView(
-                children: const [
-                  SizedBox(height: 160),
-                  Icon(
-                    Icons.assignment_turned_in_outlined,
-                    size: 54,
-                    color: Colors.black26,
-                  ),
-                  SizedBox(height: 12),
-                  Center(child: Text('Không có đơn chờ xử lý')),
-                ],
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _orders.length,
-                itemBuilder: (context, index) => _orderCard(_orders[index]),
               ),
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [_ordersTab(0), _ordersTab(1), _ordersTab(2)],
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _ordersTab(int tabIndex) {
+    final tabOrders = _ordersForTab(tabIndex);
+    return RefreshIndicator(
+      onRefresh: _loadOrders,
+      child: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: _loadOrders,
+                  child: const Text('Thử lại'),
+                ),
+              ],
+            )
+          : tabOrders.isEmpty
+          ? ListView(
+              children: const [
+                SizedBox(height: 160),
+                Icon(
+                  Icons.assignment_turned_in_outlined,
+                  size: 54,
+                  color: Colors.black26,
+                ),
+                SizedBox(height: 12),
+                Center(child: Text('Không có đơn hàng')),
+              ],
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: tabOrders.length,
+              itemBuilder: (context, index) => _orderCard(tabOrders[index]),
+            ),
     );
   }
 
@@ -305,6 +379,8 @@ class _EmployeeConfirmOrdersScreenState
         .toList();
     final orderType = _label(order['order_type'], fallback: 'online');
     final isBusy = _busyOrderId == orderId;
+    final status = _normalizedStatus(order);
+    final rejectionReason = (order['rejection_reason'] ?? '').toString().trim();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -329,7 +405,7 @@ class _EmployeeConfirmOrdersScreenState
                     ),
                   ),
                 ),
-                _statusPill('Đang chờ', const Color(0xFFF59E0B)),
+                _statusPill(_statusText(status), _statusColor(status)),
               ],
             ),
             const SizedBox(height: 10),
@@ -377,55 +453,76 @@ class _EmployeeConfirmOrdersScreenState
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: isBusy ? null : () => _rejectOrder(order),
-                    icon: isBusy && _busyAction == 'reject'
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.close_rounded),
-                    label: const Text('Từ chối'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _danger,
-                      side: const BorderSide(color: _danger),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: isBusy ? null : () => _confirmOrder(order),
-                    icon: isBusy && _busyAction == 'confirm'
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Icon(Icons.check_rounded),
-                    label: const Text('Xác nhận'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _success,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _openOrderDetail(order),
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: const Text('Chi tiết'),
+              ),
             ),
+            if (status == 'rejected' && rejectionReason.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Lý do từ chối: $rejectionReason',
+                style: const TextStyle(
+                  color: _danger,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            if (status == 'pending') ...[
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: isBusy ? null : () => _rejectOrder(order),
+                      icon: isBusy && _busyAction == 'reject'
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.close_rounded),
+                      label: const Text('Từ chối'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _danger,
+                        side: const BorderSide(color: _danger),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: isBusy ? null : () => _confirmOrder(order),
+                      icon: isBusy && _busyAction == 'confirm'
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.check_rounded),
+                      label: const Text('Xác nhận'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _success,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -492,6 +589,59 @@ class _EmployeeConfirmOrdersScreenState
           ),
         ],
       ),
+    );
+  }
+}
+
+class _RejectReasonDialog extends StatefulWidget {
+  final Color dangerColor;
+
+  const _RejectReasonDialog({required this.dangerColor});
+
+  @override
+  State<_RejectReasonDialog> createState() => _RejectReasonDialogState();
+}
+
+class _RejectReasonDialogState extends State<_RejectReasonDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Từ chối đơn hàng'),
+      content: TextField(
+        controller: _controller,
+        minLines: 3,
+        maxLines: 4,
+        decoration: const InputDecoration(
+          labelText: 'Lý do từ chối (không bắt buộc)',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Hủy'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: widget.dangerColor,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: const Text('Từ chối'),
+        ),
+      ],
     );
   }
 }

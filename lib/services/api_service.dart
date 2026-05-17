@@ -439,6 +439,19 @@ class ApiService {
     return _dataMap(_decode(response));
   }
 
+  static Future<Map<String, dynamic>> markOrderReceived({
+    required int userId,
+    required String orderId,
+  }) async {
+    final response = await http
+        .put(
+          _uri('/orders/$orderId/received'),
+          headers: _userHeadersFor(userId),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
   static Future<Order> fetchOrderDetail(String orderId) async {
     final response = await http
         .get(_uri('/api/orders/$orderId'), headers: _userHeaders)

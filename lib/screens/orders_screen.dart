@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import 'order_detail_screen.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -16,6 +17,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   bool _isLoading = true;
   String? _error;
+  String? _busyOrderId;
   List<Map<String, dynamic>> _orders = [];
 
   @override
@@ -52,6 +54,47 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _error = e is ApiException ? e.message : e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _markReceived(Map<String, dynamic> order) async {
+    final userId = _currentUserId();
+    final orderId = (order['order_id'] ?? order['id']).toString();
+    if (userId == null || orderId.isEmpty) return;
+
+    setState(() => _busyOrderId = orderId);
+    try {
+      await ApiService.markOrderReceived(userId: userId, orderId: orderId);
+      await _loadOrders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đã xác nhận nhận hàng')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException ? e.message : e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _busyOrderId = null);
+    }
+  }
+
+  Future<void> _openOrderDetail(Map<String, dynamic> order) async {
+    final orderId = (order['order_id'] ?? order['id']).toString();
+    if (orderId.isEmpty) return;
+
+    try {
+      final detail = await ApiService.fetchOrderDetail(orderId);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => OrderDetailScreen(order: detail)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException ? e.message : e.toString())),
+      );
     }
   }
 
@@ -92,6 +135,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return 'pending';
       case 'confirmed':
         return 'confirmed';
+      case 'shipping':
+      case 'completed':
+        return raw;
       case 'rejected':
       case 'cancelled':
         return 'rejected';
@@ -103,18 +149,30 @@ class _OrdersScreenState extends State<OrdersScreen> {
   String _statusText(String status) {
     switch (status) {
       case 'pending':
-        return 'Đang chờ';
+        return 'Chờ xác nhận';
       case 'confirmed':
         return 'Đã xác nhận';
       case 'rejected':
-        return 'Bị từ chối';
+        return 'Đã từ chối';
       case 'shipping':
         return 'Đang giao';
       case 'completed':
-        return 'Hoàn thành';
+        return 'Thành công';
       default:
         return status;
     }
+  }
+
+  bool _isHistoryOrder(Map<String, dynamic> order) {
+    final status = _displayStatus(order);
+    return status == 'completed' || status == 'rejected';
+  }
+
+  List<Map<String, dynamic>> _ordersForTab(int tabIndex) {
+    return _orders.where((order) {
+      final isHistory = _isHistoryOrder(order);
+      return tabIndex == 0 ? !isHistory : isHistory;
+    }).toList();
   }
 
   Color _statusColor(String status) {
@@ -160,41 +218,67 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadOrders,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? ListView(
-                padding: const EdgeInsets.all(24),
-                children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _loadOrders,
-                    child: const Text('Thử lại'),
-                  ),
+      body: DefaultTabController(
+        length: 2,
+        child: Column(
+          children: [
+            const Material(
+              color: Colors.white,
+              child: TabBar(
+                labelColor: _primary,
+                unselectedLabelColor: Colors.black54,
+                indicatorColor: _primary,
+                tabs: [
+                  Tab(text: 'Đơn hàng của tôi'),
+                  Tab(text: 'Lịch sử'),
                 ],
-              )
-            : _orders.isEmpty
-            ? ListView(
-                children: const [
-                  SizedBox(height: 150),
-                  Icon(
-                    Icons.receipt_long_outlined,
-                    size: 58,
-                    color: Colors.black26,
-                  ),
-                  SizedBox(height: 12),
-                  Center(child: Text('Bạn chưa có đơn hàng nào')),
-                ],
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _orders.length,
-                itemBuilder: (context, index) => _orderCard(_orders[index]),
               ),
+            ),
+            Expanded(
+              child: TabBarView(children: [_ordersTab(0), _ordersTab(1)]),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _ordersTab(int tabIndex) {
+    final tabOrders = _ordersForTab(tabIndex);
+    return RefreshIndicator(
+      onRefresh: _loadOrders,
+      child: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: _loadOrders,
+                  child: const Text('Thử lại'),
+                ),
+              ],
+            )
+          : tabOrders.isEmpty
+          ? ListView(
+              children: const [
+                SizedBox(height: 150),
+                Icon(
+                  Icons.receipt_long_outlined,
+                  size: 58,
+                  color: Colors.black26,
+                ),
+                SizedBox(height: 12),
+                Center(child: Text('Không có đơn hàng')),
+              ],
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: tabOrders.length,
+              itemBuilder: (context, index) => _orderCard(tabOrders[index]),
+            ),
     );
   }
 
@@ -205,6 +289,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final orderType = (order['order_type'] ?? '').toString();
     final address = (order['shipping_address'] ?? '').toString().trim();
     final rejectionReason = (order['rejection_reason'] ?? '').toString().trim();
+    final orderId = (order['order_id'] ?? order['id']).toString();
+    final canMarkReceived = status == 'shipping' && orderType == 'delivery';
+    final isBusy = _busyOrderId == orderId;
     final items = ((order['items'] as List?) ?? const [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
@@ -295,6 +382,42 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _openOrderDetail(order),
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: const Text('Chi tiết'),
+              ),
+            ),
+            if (canMarkReceived) ...[
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: isBusy ? null : () => _markReceived(order),
+                  icon: isBusy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.check_circle_outline),
+                  label: const Text('Đã nhận được hàng'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

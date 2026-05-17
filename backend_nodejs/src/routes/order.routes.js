@@ -234,7 +234,7 @@ router.get("/online", async (req, res) => {
        ${paymentJoinSql}
        WHERE o.order_type IN ('online', 'store_pickup', 'delivery')
          AND ${statusWhere}
-       ORDER BY o.created_at ASC`,
+       ORDER BY o.created_at DESC, o.order_id DESC`,
     );
     res.json({ success: true, data: rows.map(normalizeOrder) });
   } catch (error) {
@@ -258,8 +258,8 @@ router.get(
       const columns = await ordersColumns(connection);
       connection.release();
       const statusWhere = columns.has("order_status")
-        ? "COALESCE(o.order_status, o.status, 'pending') IN ('pending', 'waiting_confirm')"
-        : "COALESCE(o.status, 'pending') IN ('pending', 'waiting_confirm')";
+        ? "COALESCE(o.order_status, o.status, 'pending') IN ('pending', 'waiting_confirm', 'confirmed', 'shipping', 'completed', 'rejected', 'cancelled')"
+        : "COALESCE(o.status, 'pending') IN ('pending', 'waiting_confirm', 'confirmed', 'shipping', 'completed', 'rejected', 'cancelled')";
 
       const [rows] = await pool.execute(
         `SELECT o.*, cu.full_name AS customer_name, eu.full_name AS employee_name,
@@ -270,7 +270,7 @@ router.get(
          ${paymentJoinSql}
          WHERE o.order_type IN ('store_pickup', 'delivery', 'online')
            AND ${statusWhere}
-         ORDER BY o.created_at ASC`,
+         ORDER BY o.created_at DESC, o.order_id DESC`,
       );
 
       const orders = [];
@@ -328,7 +328,9 @@ router.put(
         });
       }
 
-      const nextStatus = "confirmed";
+      const isDeliveryOrder =
+        order.delivery_method === "delivery" || order.order_type === "delivery";
+      const nextStatus = isDeliveryOrder ? "shipping" : "completed";
       const columns = await ordersColumns(connection);
 
       const setParts = ["status = ?"];
@@ -470,6 +472,91 @@ router.put(
     }
   },
 );
+
+router.put("/:id/received", requireAuth, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const customerId = currentUserId(req);
+    await connection.beginTransaction();
+
+    const [orders] = await connection.execute(
+      `SELECT *
+       FROM orders
+       WHERE order_id = ?
+       FOR UPDATE`,
+      [req.params.id],
+    );
+    if (orders.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đơn hàng",
+      });
+    }
+
+    const order = orders[0];
+    if (Number(order.customer_id) !== Number(customerId)) {
+      await connection.rollback();
+      return res.status(403).json({
+        success: false,
+        message: "Bạn chỉ được xác nhận đơn hàng của mình",
+      });
+    }
+
+    const currentStatus = normalizeOrderStatusValue(
+      order.order_status || order.status,
+      order.order_type,
+    );
+    if (currentStatus !== "shipping") {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: "Chỉ đơn đang giao mới có thể xác nhận đã nhận hàng",
+      });
+    }
+
+    const isDeliveryOrder =
+      order.delivery_method === "delivery" || order.order_type === "delivery";
+    if (!isDeliveryOrder) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: "Chỉ đơn giao tận nhà mới cần xác nhận đã nhận hàng",
+      });
+    }
+
+    const columns = await ordersColumns(connection);
+    const setParts = ["status = ?"];
+    const params = ["completed"];
+    if (columns.has("order_status")) {
+      setParts.push("order_status = ?");
+      params.push("completed");
+    }
+    params.push(req.params.id);
+
+    await connection.execute(
+      `UPDATE orders SET ${setParts.join(", ")} WHERE order_id = ?`,
+      params,
+    );
+    await connection.commit();
+
+    const completed = await fetchOrder(req.params.id);
+    res.json({
+      success: true,
+      message: "Đã xác nhận nhận hàng",
+      data: completed,
+    });
+  } catch (error) {
+    await connection.rollback();
+    res.status(500).json({
+      success: false,
+      message: "Lỗi xác nhận nhận hàng",
+      error: error.message,
+    });
+  } finally {
+    connection.release();
+  }
+});
 
 router.post("/checkout", requireAuth, async (req, res) => {
   const connection = await pool.getConnection();

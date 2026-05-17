@@ -234,9 +234,18 @@ class DBService {
 
   static Future<void> syncOrdersFromApi() async {
     final remoteOrders = await ApiService.fetchOrders();
+    final detailedOrders = await Future.wait(
+      remoteOrders.map((order) async {
+        try {
+          return await ApiService.fetchOrderDetail(order.id);
+        } catch (_) {
+          return order;
+        }
+      }),
+    );
     final box = orders();
     await box.clear();
-    for (final order in remoteOrders) {
+    for (final order in detailedOrders) {
       await box.put(order.id, order);
     }
   }

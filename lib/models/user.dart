@@ -47,6 +47,9 @@ class User extends HiveObject {
   @HiveField(12)
   DateTime? createdAt;
 
+  @HiveField(14)
+  String? membershipCode;
+
   User({
     this.userId,
     required this.email,
@@ -62,6 +65,7 @@ class User extends HiveObject {
     this.status = 'active',
     this.points = 0,
     this.createdAt,
+    this.membershipCode,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -75,6 +79,9 @@ class User extends HiveObject {
       address: (json['address'] ?? '').toString(),
       status: (json['status'] ?? 'active').toString(),
       points: TypeConverters.toNullableInt(json['points']) ?? 0,
+      membershipCode: TypeConverters.toNullableString(
+        json['membership_code'] ?? json['membershipCode'],
+      ),
       createdAt: json['created_at'] == null
           ? null
           : DateTime.tryParse(json['created_at'].toString()),

@@ -46,6 +46,12 @@ class Order extends HiveObject {
   @HiveField(12)
   double discountAmount; // Số tiền giảm
 
+  @HiveField(13)
+  String orderType;
+
+  @HiveField(14)
+  String? deliveryMethod;
+
   Order({
     required this.id,
     required this.orderDate,
@@ -60,6 +66,8 @@ class Order extends HiveObject {
     this.note,
     this.voucherId,
     this.discountAmount = 0,
+    this.orderType = 'offline',
+    this.deliveryMethod,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -72,7 +80,11 @@ class Order extends HiveObject {
           ) ??
           DateTime.now(),
       totalAmount: TypeConverters.toDouble(
-        json['total_amount'] ?? json['totalAmount'],
+        json['final_amount'] ??
+            json['total_after_discount'] ??
+            json['discounted_total'] ??
+            json['totalAmount'] ??
+            json['total_amount'],
       ),
       customerName:
           (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ')
@@ -99,6 +111,11 @@ class Order extends HiveObject {
       note: TypeConverters.toNullableString(json['note']),
       voucherId: TypeConverters.toNullableInt(json['voucher_id']),
       discountAmount: TypeConverters.toDouble(json['discount_amount'] ?? 0),
+      orderType: (json['order_type'] ?? json['orderType'] ?? 'offline')
+          .toString(),
+      deliveryMethod: TypeConverters.toNullableString(
+        json['delivery_method'] ?? json['deliveryMethod'],
+      ),
     );
   }
 
@@ -106,7 +123,8 @@ class Order extends HiveObject {
     return {
       'customer_id': customerId,
       'employee_id': employeeId,
-      'order_type': 'offline',
+      'order_type': orderType,
+      'delivery_method': deliveryMethod,
       'status': status,
       'order_status': status,
       'payment_status': paymentStatus ?? 'paid',

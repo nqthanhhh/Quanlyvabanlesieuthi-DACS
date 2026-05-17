@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/order.dart';
 import '../services/api_service.dart';
+import '../services/db_service.dart';
 
 class EmployeeOnlineOrdersScreen extends StatefulWidget {
   const EmployeeOnlineOrdersScreen({super.key});
@@ -76,7 +77,8 @@ class _EmployeeOnlineOrdersScreenState
 
   Future<void> _updateStatus(Order order, String status) async {
     try {
-      await ApiService.updateOrderStatus(order.id, status);
+      final updated = await ApiService.updateOrderStatus(order.id, status);
+      await DBService.orders().put(updated.id, updated);
       await _loadOrders();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

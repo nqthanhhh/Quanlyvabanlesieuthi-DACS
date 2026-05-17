@@ -25,9 +25,47 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
   String _searchQuery = '';
   // String _selectedStatus = 'Tất cả'; // Có thể dùng cho lọc trạng thái
 
+  @override
+  void initState() {
+    super.initState();
+    _syncLatestOrders();
+  }
+
+  Future<void> _syncLatestOrders() async {
+    try {
+      await DBService.syncOrdersFromApi();
+    } catch (_) {}
+  }
+
   // Hàm định dạng tiền tệ
   String _formatCurrency(double amount) {
     return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\\d))'), (Match m) => '${m[1]},')} ₫';
+  }
+
+  bool _isCompletedOrder(Order order) {
+    final status = order.status.toLowerCase();
+    return status == 'completed' ||
+        status == 'thành công' ||
+        status == 'hoàn thành' ||
+        status == 'hoÃ n thÃ nh';
+  }
+
+  bool _isOnlineOrder(Order order) {
+    final orderType = order.orderType.toLowerCase();
+    final deliveryMethod = (order.deliveryMethod ?? '').toLowerCase();
+    return orderType == 'online' ||
+        orderType == 'delivery' ||
+        deliveryMethod == 'delivery';
+  }
+
+  List<Order> _filterOrdersForHistoryTab(List<Order> orders, int tabIndex) {
+    final completed = orders.where(_isCompletedOrder);
+    final filtered = completed.where((order) {
+      final isOnline = _isOnlineOrder(order);
+      return tabIndex == 0 ? !isOnline : isOnline;
+    }).toList();
+    filtered.sort((a, b) => b.orderDate.compareTo(a.orderDate));
+    return filtered;
   }
 
   // Widget hiển thị một đơn hàng
@@ -245,40 +283,36 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
               ),
             ),
           ),
-
-          // Danh sách đơn hàng thực tế (Kết nối Hive với ValueListenableBuilder)
           Expanded(
-            child: ValueListenableBuilder<Box<Order>>(
-              valueListenable: DBService.orders().listenable(),
-              builder: (context, box, _) {
-                // 💡 LẤY DANH SÁCH ĐƠN HÀNG VÀ SẮP XẾP MỚI NHẤT
-                final allOrders =
-                    DBService.getAllOrders(); // Sử dụng hàm getAllOrders đã sắp xếp trong DBService
-
-                // 💡 LỌC THEO TÌM KIẾM
-                final filteredOrders = allOrders.where((order) {
-                  final query = _searchQuery.toLowerCase();
-                  return order.id.toLowerCase().contains(query) ||
-                      order.customerName.toLowerCase().contains(query);
-                }).toList();
-
-                if (filteredOrders.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'Không tìm thấy đơn hàng nào${_searchQuery.isNotEmpty ? ' khớp với tìm kiếm' : ''}.',
+            child: widget.role == 'employee'
+                ? DefaultTabController(
+                    length: 2,
+                    child: Column(
+                      children: [
+                        const Material(
+                          color: Colors.white,
+                          child: TabBar(
+                            labelColor: Colors.blue,
+                            unselectedLabelColor: Colors.black54,
+                            indicatorColor: Colors.blue,
+                            tabs: [
+                              Tab(text: 'Đơn tại cửa hàng'),
+                              Tab(text: 'Đơn online'),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: TabBarView(
+                            children: [
+                              _ordersList(tabIndex: 0),
+                              _ordersList(tabIndex: 1),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: filteredOrders.length,
-                  itemBuilder: (context, index) {
-                    return _buildOrderTile(context, filteredOrders[index]);
-                  },
-                );
-              },
-            ),
+                  )
+                : _ordersList(),
           ),
         ],
       ),
@@ -287,6 +321,35 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         currentTab: RoleBottomTab.invoices,
         onTabSelected: _handleBottomTab,
       ),
+    );
+  }
+
+  Widget _ordersList({int? tabIndex}) {
+    return ValueListenableBuilder<Box<Order>>(
+      valueListenable: DBService.orders().listenable(),
+      builder: (context, box, _) {
+        final allOrders = DBService.getAllOrders();
+        final sourceOrders = tabIndex == null
+            ? allOrders
+            : _filterOrdersForHistoryTab(allOrders, tabIndex);
+        final filteredOrders = sourceOrders.where((order) {
+          final query = _searchQuery.toLowerCase();
+          return order.id.toLowerCase().contains(query) ||
+              order.customerName.toLowerCase().contains(query);
+        }).toList();
+
+        if (filteredOrders.isEmpty) {
+          return const Center(child: Text('Không tìm thấy đơn hàng nào.'));
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16.0),
+          itemCount: filteredOrders.length,
+          itemBuilder: (context, index) {
+            return _buildOrderTile(context, filteredOrders[index]);
+          },
+        );
+      },
     );
   }
 }

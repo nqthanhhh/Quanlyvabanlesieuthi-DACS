@@ -26,6 +26,13 @@ class _OrderListScreenState extends State<OrderListScreen> {
     super.initState();
     // 💡 2. THÊM LISTENER CHO SCROLL CONTROLLER
     _scrollController.addListener(_scrollListener);
+    _syncLatestOrders();
+  }
+
+  Future<void> _syncLatestOrders() async {
+    try {
+      await DBService.syncOrdersFromApi();
+    } catch (_) {}
   }
 
   // 💡 3. HÀM XỬ LÝ SỰ KIỆN CUỘN

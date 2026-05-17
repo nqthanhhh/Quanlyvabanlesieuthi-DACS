@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
 import 'order_detail_screen.dart';
@@ -64,7 +65,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     setState(() => _busyOrderId = orderId);
     try {
-      await ApiService.markOrderReceived(userId: userId, orderId: orderId);
+      final updated = await ApiService.markOrderReceived(
+        userId: userId,
+        orderId: orderId,
+      );
+      await _cacheUpdatedOrder(updated);
       await _loadOrders();
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -78,6 +83,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } finally {
       if (mounted) setState(() => _busyOrderId = null);
     }
+  }
+
+  Future<void> _cacheUpdatedOrder(Map<String, dynamic> order) async {
+    if (order.isEmpty) return;
+    final updatedOrder = Order.fromJson(order);
+    await DBService.orders().put(updatedOrder.id, updatedOrder);
   }
 
   Future<void> _openOrderDetail(Map<String, dynamic> order) async {
@@ -101,6 +112,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
   String _formatCurrency(dynamic value) {
     final amount = double.tryParse(value?.toString() ?? '0') ?? 0;
     return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} VND';
+  }
+
+  dynamic _displayAmount(Map<String, dynamic> order) {
+    return order['final_amount'] ??
+        order['total_after_discount'] ??
+        order['discounted_total'] ??
+        order['totalAmount'] ??
+        order['total_amount'];
   }
 
   String _formatDate(dynamic value) {
@@ -304,121 +323,116 @@ class _OrdersScreenState extends State<OrdersScreen> {
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openOrderDetail(order),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Đơn #${order['order_id'] ?? order['id']}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  _statusPill(_statusText(status), statusColor),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  _metaChip(Icons.schedule, _formatDate(order['created_at'])),
+                  _metaChip(
+                    Icons.storefront_outlined,
+                    _orderTypeLabel(orderType),
+                  ),
+                  _metaChip(
+                    Icons.payments_outlined,
+                    _paymentLabel(paymentStatus),
+                  ),
+                  if (address.isNotEmpty)
+                    _metaChip(Icons.location_on_outlined, address),
+                ],
+              ),
+              if (status == 'rejected' && rejectionReason.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.red.withValues(alpha: 0.18),
+                    ),
+                  ),
                   child: Text(
-                    'Đơn #${order['order_id'] ?? order['id']}',
+                    'Lý do từ chối: $rejectionReason',
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+              const Divider(height: 26),
+              ...items.map(_itemRow),
+              const Divider(height: 26),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Tổng tiền',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    _formatCurrency(_displayAmount(order)),
                     style: const TextStyle(
                       fontSize: 18,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
+                      color: _primary,
+                    ),
+                  ),
+                ],
+              ),
+              if (canMarkReceived) ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: isBusy ? null : () => _markReceived(order),
+                    icon: isBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.check_circle_outline),
+                    label: const Text('Đã nhận được hàng'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
-                _statusPill(_statusText(status), statusColor),
               ],
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 10,
-              runSpacing: 8,
-              children: [
-                _metaChip(Icons.schedule, _formatDate(order['created_at'])),
-                _metaChip(
-                  Icons.storefront_outlined,
-                  _orderTypeLabel(orderType),
-                ),
-                _metaChip(
-                  Icons.payments_outlined,
-                  _paymentLabel(paymentStatus),
-                ),
-                if (address.isNotEmpty)
-                  _metaChip(Icons.location_on_outlined, address),
-              ],
-            ),
-            if (status == 'rejected' && rejectionReason.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red.withValues(alpha: 0.18)),
-                ),
-                child: Text(
-                  'Lý do từ chối: $rejectionReason',
-                  style: const TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
             ],
-            const Divider(height: 26),
-            ...items.map(_itemRow),
-            const Divider(height: 26),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Tổng tiền',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                Text(
-                  _formatCurrency(
-                    order['final_amount'] ?? order['totalAmount'],
-                  ),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: _primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _openOrderDetail(order),
-                icon: const Icon(Icons.receipt_long_outlined),
-                label: const Text('Chi tiết'),
-              ),
-            ),
-            if (canMarkReceived) ...[
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: isBusy ? null : () => _markReceived(order),
-                  icon: isBusy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.check_circle_outline),
-                  label: const Text('Đã nhận được hàng'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );

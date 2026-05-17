@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
 import 'order_detail_screen.dart';
@@ -121,7 +122,11 @@ class _EmployeeConfirmOrdersScreenState
       _busyAction = 'confirm';
     });
     try {
-      await ApiService.confirmOrder(employeeId: employeeId, orderId: orderId);
+      final updated = await ApiService.confirmOrder(
+        employeeId: employeeId,
+        orderId: orderId,
+      );
+      await _cacheUpdatedOrder(updated);
       await _loadOrders();
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -140,6 +145,12 @@ class _EmployeeConfirmOrdersScreenState
         });
       }
     }
+  }
+
+  Future<void> _cacheUpdatedOrder(Map<String, dynamic> order) async {
+    if (order.isEmpty) return;
+    final updatedOrder = Order.fromJson(order);
+    await DBService.orders().put(updatedOrder.id, updatedOrder);
   }
 
   Future<void> _rejectOrder(Map<String, dynamic> order) async {
@@ -249,12 +260,18 @@ class _EmployeeConfirmOrdersScreenState
       final status = _normalizedStatus(order);
       if (tabIndex == 0) return status == 'pending';
       if (tabIndex == 1) {
-        return status == 'confirmed' ||
-            status == 'shipping' ||
-            status == 'completed';
+        return status == 'confirmed' || status == 'shipping';
       }
       return status == 'rejected';
     }).toList();
+  }
+
+  dynamic _displayAmount(Map<String, dynamic> order) {
+    return order['final_amount'] ??
+        order['total_after_discount'] ??
+        order['discounted_total'] ??
+        order['totalAmount'] ??
+        order['total_amount'];
   }
 
   String _statusText(String status) {
@@ -389,141 +406,139 @@ class _EmployeeConfirmOrdersScreenState
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Đơn #$orderId',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                _statusPill(_statusText(status), _statusColor(status)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              runSpacing: 8,
-              spacing: 10,
-              children: [
-                _metaChip(Icons.person_outline, _label(order['customer_name'])),
-                _metaChip(
-                  Icons.storefront_outlined,
-                  _orderTypeLabel(orderType),
-                ),
-                _metaChip(
-                  Icons.payments_outlined,
-                  _label(order['payment_method']),
-                ),
-                _metaChip(
-                  Icons.location_on_outlined,
-                  _label(
-                    order['shipping_address'],
-                    fallback: 'Nhận tại cửa hàng',
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 26),
-            ...items.map(_itemRow),
-            const Divider(height: 26),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Tổng tiền',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                Text(
-                  _formatCurrency(
-                    order['final_amount'] ?? order['totalAmount'],
-                  ),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF1B7F4D),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _openOrderDetail(order),
-                icon: const Icon(Icons.receipt_long_outlined),
-                label: const Text('Chi tiết'),
-              ),
-            ),
-            if (status == 'rejected' && rejectionReason.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Lý do từ chối: $rejectionReason',
-                style: const TextStyle(
-                  color: _danger,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-            if (status == 'pending') ...[
-              const SizedBox(height: 14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openOrderDetail(order),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: isBusy ? null : () => _rejectOrder(order),
-                      icon: isBusy && _busyAction == 'reject'
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.close_rounded),
-                      label: const Text('Từ chối'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _danger,
-                        side: const BorderSide(color: _danger),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                    child: Text(
+                      'Đơn #$orderId',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: isBusy ? null : () => _confirmOrder(order),
-                      icon: isBusy && _busyAction == 'confirm'
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Icon(Icons.check_rounded),
-                      label: const Text('Xác nhận'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _success,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
+                  _statusPill(_statusText(status), _statusColor(status)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                runSpacing: 8,
+                spacing: 10,
+                children: [
+                  _metaChip(
+                    Icons.person_outline,
+                    _label(order['customer_name']),
+                  ),
+                  _metaChip(
+                    Icons.storefront_outlined,
+                    _orderTypeLabel(orderType),
+                  ),
+                  _metaChip(
+                    Icons.payments_outlined,
+                    _label(order['payment_method']),
+                  ),
+                  _metaChip(
+                    Icons.location_on_outlined,
+                    _label(
+                      order['shipping_address'],
+                      fallback: 'Nhận tại cửa hàng',
                     ),
                   ),
                 ],
               ),
+              const Divider(height: 26),
+              ...items.map(_itemRow),
+              const Divider(height: 26),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Tổng tiền',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    _formatCurrency(_displayAmount(order)),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF1B7F4D),
+                    ),
+                  ),
+                ],
+              ),
+              if (status == 'rejected' && rejectionReason.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Lý do từ chối: $rejectionReason',
+                  style: const TextStyle(
+                    color: _danger,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              if (status == 'pending') ...[
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: isBusy ? null : () => _rejectOrder(order),
+                        icon: isBusy && _busyAction == 'reject'
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.close_rounded),
+                        label: const Text('Từ chối'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _danger,
+                          side: const BorderSide(color: _danger),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: isBusy ? null : () => _confirmOrder(order),
+                        icon: isBusy && _busyAction == 'confirm'
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.check_rounded),
+                        label: const Text('Xác nhận'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _success,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

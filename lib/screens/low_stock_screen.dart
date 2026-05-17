@@ -3,11 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
+import '../utils/constants.dart';
 
 class LowStockScreen extends StatelessWidget {
   const LowStockScreen({super.key});
-
-  static const int _MIN_STOCK = 50;
 
   // Widget hiển thị từng sản phẩm
   Widget _buildProductTile(BuildContext context, InventoryItem product) {
@@ -22,7 +21,7 @@ class LowStockScreen extends StatelessWidget {
       statusColor = Colors.red;
       leadingIcon = Icons.block;
       leadingBg = Colors.red.shade50;
-    } else if (product.stockQuantity <= _MIN_STOCK) {
+    } else if (product.stockQuantity <= AppConstants.minStockThreshold) {
       status = 'Sắp hết';
       statusColor = Colors.orange;
       leadingIcon = Icons.warning_amber_rounded;
@@ -70,7 +69,7 @@ class LowStockScreen extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Mã: ${product.id}'),
+            Text('Mã vạch / mã nội bộ: ${product.id}'),
             Text(
               'Giá: ${product.price.toStringAsFixed(0)} đ / ${product.unit}',
             ),
@@ -112,7 +111,7 @@ class LowStockScreen extends StatelessWidget {
         builder: (context, box, _) {
           // Lọc ra các sản phẩm sắp hết hàng trong kho (InventoryItem)
           final List<InventoryItem> lowStockProducts = box.values
-              .where((p) => p.stockQuantity <= _MIN_STOCK)
+              .where((p) => p.stockQuantity <= AppConstants.minStockThreshold)
               .toList();
 
           // Sort so out-of-stock (0) appear first, then ascending by stock

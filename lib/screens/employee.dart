@@ -5,10 +5,12 @@ import '../services/db_service.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 import 'employee_detail_screen.dart';
+import 'employee_confirm_orders_screen.dart';
 import 'add_edit_employee_screen.dart';
 import 'checkout_screen.dart';
 import 'order_management_screen.dart';
-import 'profile_view_screen.dart';
+import 'profile_route.dart';
+import 'scan_product_screen.dart';
 
 // Employee view model used only for presentation
 class Employee {
@@ -43,9 +45,9 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   Future<void> _openCheckoutFromTab() async {
     final email = DBService.settings().get('current_user_email') as String?;
     if (email == null || email.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')),
+      );
       return;
     }
 
@@ -116,9 +118,16 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     });
 
     try {
-      // Assume DBService.init() already called in app start (main.dart).
+      await DBService.syncUsersFromApi();
       final usersBox = DBService.users();
-      final users = usersBox.values.cast<User>().toList();
+      final users = usersBox.values
+          .cast<User>()
+          .where(
+            (user) =>
+                user.role.toLowerCase() == 'admin' ||
+                user.role.toLowerCase() == 'employee',
+          )
+          .toList();
 
       _allUsers = users;
       _displayedUsers = List.from(_allUsers);
@@ -128,7 +137,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _error = 'Không thể tải danh sách nhân viên.';
+        _error = 'Không thể tải danh sách nhân viên: $e';
       });
     }
   }
@@ -138,14 +147,18 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     final role = _mapRole(user.role);
     final phone = user.phone.isNotEmpty ? user.phone : '-';
 
-    // Determine status:
-    // - if startDate is null or in the future -> 'Chưa làm' (not started yet)
-    // - otherwise (startDate <= now) -> 'Đang làm'
+    final isLocked = user.status.toLowerCase() == 'inactive';
     final now = DateTime.now();
-    final status = (user.startDate == null || user.startDate!.isAfter(now))
+    final workingStatus =
+        (user.startDate == null || user.startDate!.isAfter(now))
         ? 'Chưa làm'
         : 'Đang làm';
-    final statusColor = (status == 'Đang làm') ? Colors.green : Colors.orange;
+    final status = isLocked ? 'Đã khóa' : workingStatus;
+    final statusColor = isLocked
+        ? Colors.red
+        : (workingStatus == 'Đang làm')
+        ? Colors.green
+        : Colors.orange;
 
     return Employee(
       name: name,
@@ -202,6 +215,11 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               employee.phone,
               style: const TextStyle(color: Colors.black54, fontSize: 13),
             ),
+            if (user.status.toLowerCase() == 'inactive')
+              const Text(
+                'Tài khoản inactive',
+                style: TextStyle(color: Colors.red, fontSize: 12),
+              ),
           ],
         ),
         trailing: Container(
@@ -231,6 +249,36 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     );
   }
 
+  Future<void> _scanAndOpenCart() async {
+    final product = await Navigator.of(
+      context,
+    ).push(buildSlidePageRoute(const ScanProductScreen()));
+    if (product == null || !mounted) return;
+    try {
+      final cart = await DBService.addProductToCurrentCart(product);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        buildSlidePageRoute(
+          CheckoutScreen(
+            cart: cart,
+            role: widget.role,
+            onCheckoutComplete: () async {
+              final email = DBService.currentUserEmail();
+              if (email != null) {
+                await DBService.saveCartForUser(email, <String, int>{});
+              }
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
   void _handleBottomTab(RoleBottomTab tab) {
     switch (tab) {
       case RoleBottomTab.home:
@@ -241,15 +289,22 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
         );
         break;
+      case RoleBottomTab.confirmOrders:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(const EmployeeConfirmOrdersScreen()),
+        );
+        break;
       case RoleBottomTab.account:
         Navigator.of(context).pushReplacement(
-          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
+          buildSlidePageRoute(buildProfileScreenForRole(widget.role)),
         );
         break;
       case RoleBottomTab.cart:
         _openCheckoutFromTab();
         break;
       case RoleBottomTab.scan:
+        _scanAndOpenCart();
+        break;
       case RoleBottomTab.employees:
       case RoleBottomTab.offers:
       case RoleBottomTab.orders:
@@ -338,7 +393,22 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
-                  ? Center(child: Text(_error!))
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_error!, textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            ElevatedButton(
+                              onPressed: _loadEmployees,
+                              child: const Text('Thử lại'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
                   : TabBarView(
                       children: [
                         _buildRoleListView('admin'),

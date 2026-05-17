@@ -7,19 +7,40 @@ import '../models/order.dart';
 import '../models/order_line.dart';
 import '../models/inventory_history_entry.dart';
 import 'api_service.dart';
+import '../utils/type_converters.dart';
+import '../utils/constants.dart';
+
+/// Helper class for seed data structure
+class _SeedItem {
+  final String barcode;
+  final String name;
+  final double price;
+  final double importPrice;
+  final String unit;
+  final int stock;
+
+  const _SeedItem({
+    required this.barcode,
+    required this.name,
+    required this.price,
+    required this.importPrice,
+    required this.unit,
+    required this.stock,
+  });
+}
 
 class DBService {
-  static const int cacheSchemaVersion = 3;
-  static const bool forceUseLocalProductSeed = false;
-  static const String productsBox = 'products';
-  static const String usersBox = 'users';
-  static const String ordersBox = 'orders';
-  static const String settingsBox = 'settings';
-  static const String cartsBox = 'carts';
-  static const String productImagesBox = 'product_images';
-  static const String inventoryProductsBox = 'inventory_products';
-  static const String inventoryHistoryBox =
-      'inventory_history_box'; // <<< THÊM HẰNG SỐ BOX
+  static const int cacheSchemaVersion = AppConstants.cacheSchemaVersion;
+  static const bool forceUseLocalProductSeed =
+      AppConstants.forceUseLocalProductSeed;
+  static const String productsBox = AppConstants.productsBox;
+  static const String usersBox = AppConstants.usersBox;
+  static const String ordersBox = AppConstants.ordersBox;
+  static const String settingsBox = AppConstants.settingsBox;
+  static const String cartsBox = AppConstants.cartsBox;
+  static const String productImagesBox = AppConstants.productImagesBox;
+  static const String inventoryProductsBox = AppConstants.inventoryProductsBox;
+  static const String inventoryHistoryBox = AppConstants.inventoryHistoryBox;
 
   static Future<void> init() async {
     // 1. Initialize Hive & Register Adapters
@@ -189,11 +210,42 @@ class DBService {
     }
   }
 
+  static Future<User> updateCurrentUserProfile({
+    required User user,
+    required String fullName,
+    required String phone,
+    required String address,
+    String? password,
+  }) async {
+    if (user.userId == null) {
+      throw ApiException('Thiếu user_id để cập nhật thông tin cá nhân');
+    }
+    final saved = await ApiService.updateUserProfile(
+      userId: user.userId!,
+      fullName: fullName,
+      phone: phone,
+      address: address,
+      password: password,
+    );
+    await users().put(saved.email, saved);
+    await settings().put('current_user_email', saved.email);
+    return saved;
+  }
+
   static Future<void> syncOrdersFromApi() async {
     final remoteOrders = await ApiService.fetchOrders();
+    final detailedOrders = await Future.wait(
+      remoteOrders.map((order) async {
+        try {
+          return await ApiService.fetchOrderDetail(order.id);
+        } catch (_) {
+          return order;
+        }
+      }),
+    );
     final box = orders();
     await box.clear();
-    for (final order in remoteOrders) {
+    for (final order in detailedOrders) {
       await box.put(order.id, order);
     }
   }
@@ -211,7 +263,7 @@ class DBService {
           itemId: (log['inventory_item_id'] ?? log['product_id']).toString(),
           itemName: (log['item_name'] ?? log['product_name'] ?? '').toString(),
           unit: (log['unit'] ?? 'sp').toString(),
-          quantityChange: _toInt(log['quantity']),
+          quantityChange: TypeConverters.toInt(log['quantity']),
           beforeQuantity: 0,
           afterQuantity: 0,
           note: (log['note'] ?? '').toString(),
@@ -223,12 +275,6 @@ class DBService {
     }
   }
 
-  static int _toInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
   static Future<void> addInventoryHistoryEntry(
     InventoryHistoryEntry entry,
   ) async {
@@ -237,137 +283,147 @@ class DBService {
 
   // --- LOGIC SEEDING ---
 
+  // Master seed data structure to avoid duplication
+  static const List<_SeedItem> _masterSeedData = [
+    _SeedItem(
+      barcode: 'PROD001',
+      name: 'Chuối',
+      price: 25000.0,
+      importPrice: 15000.0,
+      unit: 'Kg',
+      stock: 100,
+    ),
+    _SeedItem(
+      barcode: 'PROD002',
+      name: 'Dâu tây',
+      price: 120000.0,
+      importPrice: 80000.0,
+      unit: 'Hộp',
+      stock: 50,
+    ),
+    _SeedItem(
+      barcode: 'PROD003',
+      name: 'Táo',
+      price: 60000.0,
+      importPrice: 40000.0,
+      unit: 'Kg',
+      stock: 80,
+    ),
+    _SeedItem(
+      barcode: 'PROD004',
+      name: 'Dứa (Thơm)',
+      price: 15000.0,
+      importPrice: 8000.0,
+      unit: 'Quả',
+      stock: 40,
+    ),
+    _SeedItem(
+      barcode: 'PROD005',
+      name: 'Dưa hấu',
+      price: 20000.0,
+      importPrice: 12000.0,
+      unit: 'Kg',
+      stock: 150,
+    ),
+    _SeedItem(
+      barcode: 'PROD006',
+      name: 'Xốt Thái sả tắc',
+      price: 35000.0,
+      importPrice: 25000.0,
+      unit: 'Chai',
+      stock: 60,
+    ),
+    _SeedItem(
+      barcode: 'PROD007',
+      name: 'Xốt BBQ',
+      price: 45000.0,
+      importPrice: 32000.0,
+      unit: 'Chai',
+      stock: 40,
+    ),
+    _SeedItem(
+      barcode: 'PROD008',
+      name: 'Muối ớt chanh Nha Trang',
+      price: 18000.0,
+      importPrice: 12000.0,
+      unit: 'Chai',
+      stock: 100,
+    ),
+    _SeedItem(
+      barcode: 'PROD009',
+      name: 'Xốt kim quất',
+      price: 35000.0,
+      importPrice: 25000.0,
+      unit: 'Chai',
+      stock: 50,
+    ),
+    _SeedItem(
+      barcode: 'PROD010',
+      name: 'Xốt trứng muối',
+      price: 55000.0,
+      importPrice: 40000.0,
+      unit: 'Chai',
+      stock: 30,
+    ),
+    _SeedItem(
+      barcode: 'PROD011',
+      name: 'Trà TH true TEA',
+      price: 10000.0,
+      importPrice: 7000.0,
+      unit: 'Chai',
+      stock: 200,
+    ),
+    _SeedItem(
+      barcode: 'PROD012',
+      name: 'Trà đào và hạt chia Fuze Tea',
+      price: 12000.0,
+      importPrice: 8500.0,
+      unit: 'Chai',
+      stock: 120,
+    ),
+    _SeedItem(
+      barcode: 'PROD013',
+      name: 'Trà xanh C2 hương chanh',
+      price: 8000.0,
+      importPrice: 5500.0,
+      unit: 'Chai',
+      stock: 300,
+    ),
+    _SeedItem(
+      barcode: 'PROD014',
+      name: 'Trà đá TRADA hương hoa nhài',
+      price: 10000.0,
+      importPrice: 6500.0,
+      unit: 'Lon',
+      stock: 100,
+    ),
+    _SeedItem(
+      barcode: 'PROD015',
+      name: 'Trà xanh Lipton vị chanh mật ong',
+      price: 12000.0,
+      importPrice: 8000.0,
+      unit: 'Chai',
+      stock: 150,
+    ),
+  ];
+
   static Future<void> seedProducts() async {
     final box = products();
     if (box.isEmpty) {
-      final List<Product> sampleProducts = [
-        Product(
-          id: 'PROD001',
-          name: 'Chuối',
-          price: 25000.0,
-          unit: 'Kg',
-          stockQuantity: 100,
-          barcode: 'PROD001',
-        ),
-        Product(
-          id: 'PROD002',
-          name: 'Dâu tây',
-          price: 120000.0,
-          unit: 'Hộp',
-          stockQuantity: 50,
-          barcode: 'PROD002',
-        ),
-        Product(
-          id: 'PROD003',
-          name: 'Táo',
-          price: 60000.0,
-          unit: 'Kg',
-          stockQuantity: 80,
-          barcode: 'PROD003',
-        ),
-        Product(
-          id: 'PROD004',
-          name: 'Dứa (Thơm)',
-          price: 15000.0,
-          unit: 'Quả',
-          stockQuantity: 40,
-          barcode: 'PROD004',
-        ),
-        Product(
-          id: 'PROD005',
-          name: 'Dưa hấu',
-          price: 20000.0,
-          unit: 'Kg',
-          stockQuantity: 150,
-          barcode: 'PROD005',
-        ),
-        Product(
-          id: 'PROD006',
-          name: 'Xốt Thái sả tắc',
-          price: 35000.0,
-          unit: 'Chai',
-          stockQuantity: 60,
-          barcode: 'PROD006',
-        ),
-        Product(
-          id: 'PROD007',
-          name: 'Xốt BBQ',
-          price: 45000.0,
-          unit: 'Chai',
-          stockQuantity: 40,
-          barcode: 'PROD007',
-        ),
-        Product(
-          id: 'PROD008',
-          name: 'Muối ớt chanh Nha Trang',
-          price: 18000.0,
-          unit: 'Chai',
-          stockQuantity: 100,
-          barcode: 'PROD008',
-        ),
-        Product(
-          id: 'PROD009',
-          name: 'Xốt kim quất',
-          price: 35000.0,
-          unit: 'Chai',
-          stockQuantity: 50,
-          barcode: 'PROD009',
-        ),
-        Product(
-          id: 'PROD010',
-          name: 'Xốt trứng muối',
-          price: 55000.0,
-          unit: 'Chai',
-          stockQuantity: 30,
-          barcode: 'PROD010',
-        ),
-        Product(
-          id: 'PROD011',
-          name: 'Trà TH true TEA',
-          price: 10000.0,
-          unit: 'Chai',
-          stockQuantity: 200,
-          barcode: 'PROD011',
-        ),
-        Product(
-          id: 'PROD012',
-          name: 'Trà đào và hạt chia Fuze Tea',
-          price: 12000.0,
-          unit: 'Chai',
-          stockQuantity: 120,
-          barcode: 'PROD012',
-        ),
-        Product(
-          id: 'PROD013',
-          name: 'Trà xanh C2 hương chanh',
-          price: 8000.0,
-          unit: 'Chai',
-          stockQuantity: 300,
-          barcode: 'PROD013',
-        ),
-        Product(
-          id: 'PROD014',
-          name: 'Trà đá TRADA hương hoa nhài',
-          price: 10000.0,
-          unit: 'Lon',
-          stockQuantity: 100,
-          barcode: 'PROD014',
-        ),
-        Product(
-          id: 'PROD015',
-          name: 'Trà xanh Lipton vị chanh mật ong',
-          price: 12000.0,
-          unit: 'Chai',
-          stockQuantity: 150,
-          barcode: 'PROD015',
-        ),
-      ];
-
-      for (final p in sampleProducts) {
-        await box.put(p.id, p);
+      for (final item in _masterSeedData) {
+        await box.put(
+          item.barcode,
+          Product(
+            id: item.barcode,
+            name: item.name,
+            price: item.price,
+            unit: item.unit,
+            stockQuantity: item.stock,
+            barcode: item.barcode,
+          ),
+        );
       }
-
-      print('--- ĐÃ TẠO ${sampleProducts.length} SẢN PHẨM MẪU ---');
+      print('--- ĐÃ TẠO ${_masterSeedData.length} SẢN PHẨM MẪU ---');
     }
   }
 
@@ -382,134 +438,20 @@ class DBService {
   static Future<void> seedInventory() async {
     final box = inventoryProducts();
     if (box.isEmpty) {
-      final List<InventoryItem> sample = [
-        InventoryItem(
-          id: 'PROD001',
-          name: 'Chuối',
-          price: 25000.0,
-          importPrice: 15000.0,
-          unit: 'Kg',
-          stockQuantity: 100,
-        ),
-        InventoryItem(
-          id: 'PROD002',
-          name: 'Dâu tây',
-          price: 120000.0,
-          importPrice: 80000.0,
-          unit: 'Hộp',
-          stockQuantity: 50,
-        ),
-        InventoryItem(
-          id: 'PROD003',
-          name: 'Táo',
-          price: 60000.0,
-          importPrice: 40000.0,
-          unit: 'Kg',
-          stockQuantity: 80,
-        ),
-        InventoryItem(
-          id: 'PROD004',
-          name: 'Dứa (Thơm)',
-          price: 15000.0,
-          importPrice: 8000.0,
-          unit: 'Quả',
-          stockQuantity: 40,
-        ),
-        InventoryItem(
-          id: 'PROD005',
-          name: 'Dưa hấu',
-          price: 20000.0,
-          importPrice: 12000.0,
-          unit: 'Kg',
-          stockQuantity: 150,
-        ),
-        InventoryItem(
-          id: 'PROD006',
-          name: 'Xốt Thái sả tắc',
-          price: 35000.0,
-          importPrice: 25000.0,
-          unit: 'Chai',
-          stockQuantity: 60,
-        ),
-        InventoryItem(
-          id: 'PROD007',
-          name: 'Xốt BBQ',
-          price: 45000.0,
-          importPrice: 32000.0,
-          unit: 'Chai',
-          stockQuantity: 40,
-        ),
-        InventoryItem(
-          id: 'PROD008',
-          name: 'Muối ớt chanh Nha Trang',
-          price: 18000.0,
-          importPrice: 12000.0,
-          unit: 'Chai',
-          stockQuantity: 100,
-        ),
-        InventoryItem(
-          id: 'PROD009',
-          name: 'Xốt kim quất',
-          price: 35000.0,
-          importPrice: 25000.0,
-          unit: 'Chai',
-          stockQuantity: 50,
-        ),
-        InventoryItem(
-          id: 'PROD010',
-          name: 'Xốt trứng muối',
-          price: 55000.0,
-          importPrice: 40000.0,
-          unit: 'Chai',
-          stockQuantity: 30,
-        ),
-        InventoryItem(
-          id: 'PROD011',
-          name: 'Trà TH true TEA',
-          price: 10000.0,
-          importPrice: 7000.0,
-          unit: 'Chai',
-          stockQuantity: 200,
-        ),
-        InventoryItem(
-          id: 'PROD012',
-          name: 'Trà đào và hạt chia Fuze Tea',
-          price: 12000.0,
-          importPrice: 8500.0,
-          unit: 'Chai',
-          stockQuantity: 120,
-        ),
-        InventoryItem(
-          id: 'PROD013',
-          name: 'Trà xanh C2 hương chanh',
-          price: 8000.0,
-          importPrice: 5500.0,
-          unit: 'Chai',
-          stockQuantity: 300,
-        ),
-        InventoryItem(
-          id: 'PROD014',
-          name: 'Trà đá TRADA hương hoa nhài',
-          price: 10000.0,
-          importPrice: 6500.0,
-          unit: 'Lon',
-          stockQuantity: 100,
-        ),
-        InventoryItem(
-          id: 'PROD015',
-          name: 'Trà xanh Lipton vị chanh mật ong',
-          price: 12000.0,
-          importPrice: 8000.0,
-          unit: 'Chai',
-          stockQuantity: 100,
-        ),
-      ];
-
-      for (final it in sample) {
-        await box.put(it.id, it);
+      for (final item in _masterSeedData) {
+        await box.put(
+          item.barcode,
+          InventoryItem(
+            id: item.barcode,
+            name: item.name,
+            price: item.price,
+            importPrice: item.importPrice,
+            unit: item.unit,
+            stockQuantity: item.stock,
+          ),
+        );
       }
-
-      print('--- ĐÃ TẠO ${sample.length} MẶT HÀNG KHO MẪU ---');
+      print('--- ĐÃ TẠO ${_masterSeedData.length} MẶT HÀNG KHO MẪU ---');
     }
   }
 
@@ -551,7 +493,50 @@ class DBService {
     }
 
     final employeeId = settings().get('current_user_id') as int?;
-    final saved = await ApiService.createOrder(order, employeeId: employeeId);
+    final saved = await ApiService.createOrder(
+      order,
+      customerId: order.customerId,
+      employeeId: employeeId,
+    );
+    await orders().put(saved.id, saved);
+    // Đồng bộ tồn kho chạy nền để UI thanh toán phản hồi nhanh hơn.
+    unawaited(
+      syncProductsFromApi().catchError((e) {
+        print('Đồng bộ sản phẩm sau thanh toán thất bại: $e');
+      }),
+    );
+  }
+
+  static Future<void> saveOrderWithVoucher(
+    Order order, {
+    int? voucherId,
+    double discountAmount = 0,
+    int? userId,
+  }) async {
+    if (forceUseLocalProductSeed) {
+      await orders().put(order.id, order);
+      return;
+    }
+
+    final rawCurrentUserId = settings().get('current_user_id');
+    final employeeId = rawCurrentUserId is int
+        ? rawCurrentUserId
+        : int.tryParse(rawCurrentUserId?.toString() ?? '');
+
+    // Lấy user_id: customer_id -> userId -> employeeId
+    // (Đảm bảo truyền xuống backend luôn là int để backend insert user_vouchers đúng)
+    final userIdToUse = order.customerId ?? userId ?? employeeId;
+
+    // Gọi API với thêm voucher info
+    final saved = await ApiService.createOrderWithVoucher(
+      order,
+      customerId: order.customerId,
+      employeeId: employeeId,
+      voucherId: voucherId,
+      discountAmount: discountAmount,
+      userId: userIdToUse,
+    );
+
     await orders().put(saved.id, saved);
     // Đồng bộ tồn kho chạy nền để UI thanh toán phản hồi nhanh hơn.
     unawaited(
@@ -596,22 +581,81 @@ class DBService {
     final Map<String, int> cleanCart = Map.from(cart)
       ..removeWhere((key, value) => value <= 0);
     await carts().put(email, cleanCart);
-    final userId = settings().get('current_user_id') as int?;
+    final userId = currentUserId();
     if (userId != null) {
       await ApiService.saveCart(userId, cleanCart);
     }
   }
 
   static Future<Map<String, int>> loadCartForCurrentUser(String email) async {
-    final userId = settings().get('current_user_id') as int?;
-    if (userId == null) return getCartForUser(email);
+    final userId = currentUserId();
+    final localCart = getCartForUser(email);
+    if (userId == null) return localCart;
     try {
       final remoteCart = await ApiService.fetchCart(userId);
+      if (remoteCart.isEmpty && localCart.isNotEmpty) {
+        await ApiService.saveCart(userId, localCart);
+        return localCart;
+      }
       await carts().put(email, remoteCart);
       return remoteCart;
     } catch (_) {
-      return getCartForUser(email);
+      return localCart;
     }
+  }
+
+  static String? currentUserEmail() {
+    final value = settings().get('current_user_email');
+    return value is String && value.isNotEmpty ? value : null;
+  }
+
+  static int? currentUserId() {
+    final value = settings().get('current_user_id');
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static Future<Product> findSaleProductByCode(String code) async {
+    final normalized = code.trim();
+    if (normalized.isEmpty) {
+      throw ApiException('Vui lòng nhập mã vạch / mã nội bộ');
+    }
+
+    final result = await ApiService.scanProductCode(normalized);
+    final type = (result['type'] ?? '').toString();
+    final productMap = result['product'];
+    if (type != 'product' || productMap is! Map) {
+      throw ApiException('Không tìm thấy sản phẩm bán hàng');
+    }
+
+    final product = Product.fromJson(Map<String, dynamic>.from(productMap));
+    await products().put(product.id, product);
+    if (product.imageUrl != null && product.imageUrl!.isNotEmpty) {
+      await productImages().put(product.id, product.imageUrl!);
+    }
+    return product;
+  }
+
+  static Future<Map<String, int>> addProductToCurrentCart(
+    Product product,
+  ) async {
+    if (product.stockQuantity <= 0) {
+      throw ApiException('Sản phẩm đã hết hàng');
+    }
+
+    final email = currentUserEmail();
+    if (email == null) {
+      throw ApiException('Không tìm thấy người dùng hiện tại');
+    }
+
+    final cart = await loadCartForCurrentUser(email);
+    final currentQty = cart[product.id] ?? 0;
+    if (currentQty + 1 > product.stockQuantity) {
+      throw ApiException('Không thể thêm quá số lượng tồn kho');
+    }
+    cart[product.id] = currentQty + 1;
+    await saveCartForUser(email, cart);
+    return cart;
   }
 
   static Future<Product> createProduct(
@@ -701,6 +745,7 @@ class DBService {
     required double importPrice,
     required String unit,
     required int quantity,
+    int? categoryId,
     String? imagePath,
   }) async {
     final item = InventoryItem(
@@ -710,6 +755,7 @@ class DBService {
       unit: unit,
       id: barcode,
       stockQuantity: 0,
+      categoryId: categoryId,
     );
 
     final saved = await ApiService.createInventoryItem(item);
@@ -729,6 +775,34 @@ class DBService {
 
   static Future<double?> fetchLatestImportPrice(String barcode) {
     return ApiService.fetchInventoryImportPrice(barcode);
+  }
+
+  static Future<String> generateInternalProductCode({String? prefix}) {
+    return ApiService.generateProductCode(prefix: prefix);
+  }
+
+  static Future<InventoryItem?> findInventoryItemByCode(String code) async {
+    try {
+      final result = await ApiService.scanProductCode(code);
+      final itemMap = result['inventory_item'];
+      if (itemMap is Map) {
+        return InventoryItem.fromJson(Map<String, dynamic>.from(itemMap));
+      }
+      final productMap = result['product'];
+      if (productMap is Map) {
+        final product = Product.fromJson(Map<String, dynamic>.from(productMap));
+        return InventoryItem(
+          id: product.barcode ?? product.id,
+          name: product.name,
+          price: product.price,
+          unit: product.unit,
+          stockQuantity: product.stockQuantity,
+        );
+      }
+    } on ApiException {
+      return null;
+    }
+    return null;
   }
 
   static Future<Product> releaseInventoryToShelf({

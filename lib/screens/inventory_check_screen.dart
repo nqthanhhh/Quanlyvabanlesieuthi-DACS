@@ -189,7 +189,7 @@ class _InventoryCheckScreenState extends State<InventoryCheckScreen> {
               TextFormField(
                 controller: _productSearchController,
                 decoration: InputDecoration(
-                  hintText: 'Nhập tên hoặc mã sản phẩm...',
+                  hintText: 'Nhập tên hoặc mã vạch / mã nội bộ...',
                   fillColor: Colors.grey.shade100,
                   filled: true,
                   border: OutlineInputBorder(

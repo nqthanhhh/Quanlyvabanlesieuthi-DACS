@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   inventory_item_id INT AUTO_INCREMENT PRIMARY KEY,
   barcode VARCHAR(50) NOT NULL UNIQUE,
   item_name VARCHAR(150) NOT NULL,
+  category_id INT NULL, -- <== THÊM DÒNG NÀY VÀO ĐÂY
   image_url VARCHAR(255),
   price DECIMAL(10,2) NOT NULL,
   import_price DECIMAL(10,2) NULL,
@@ -77,6 +78,7 @@ CREATE TABLE IF NOT EXISTS carts (
   cart_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_carts_user (user_id),
 
   CONSTRAINT fk_carts_users
     FOREIGN KEY (user_id)
@@ -90,6 +92,7 @@ CREATE TABLE IF NOT EXISTS cart_items (
   cart_id INT NOT NULL,
   product_id INT NOT NULL,
   quantity INT NOT NULL DEFAULT 1,
+  UNIQUE KEY uniq_cart_items_cart_product (cart_id, product_id),
 
   CONSTRAINT fk_cart_items_carts
     FOREIGN KEY (cart_id)
@@ -108,14 +111,24 @@ CREATE TABLE IF NOT EXISTS orders (
   order_id INT AUTO_INCREMENT PRIMARY KEY,
   customer_id INT,
   employee_id INT,
+  shift_id INT,
+  voucher_id INT, -- Thêm cột này vào đây
   order_type VARCHAR(30) NOT NULL,
+  delivery_method VARCHAR(30) DEFAULT 'pickup',
   total_amount DECIMAL(10,2) NOT NULL,
   discount_amount DECIMAL(10,2) DEFAULT 0,
   final_amount DECIMAL(10,2) NOT NULL,
+  payment_method VARCHAR(50) DEFAULT 'cash',
   status VARCHAR(50) NOT NULL DEFAULT 'pending',
-  payment_status VARCHAR(50) DEFAULT 'unpaid',
+  payment_status VARCHAR(50) DEFAULT 'pending',
+  order_status VARCHAR(50) NOT NULL DEFAULT 'waiting_confirm',
   shipping_address VARCHAR(255),
+  confirmed_by INT,
+  confirmed_at TIMESTAMP NULL DEFAULT NULL,
+  rejection_reason VARCHAR(255),
+  note VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   CONSTRAINT fk_orders_customer
     FOREIGN KEY (customer_id)
@@ -126,6 +139,19 @@ CREATE TABLE IF NOT EXISTS orders (
   CONSTRAINT fk_orders_employee
     FOREIGN KEY (employee_id)
     REFERENCES users(user_id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  CONSTRAINT fk_orders_confirmed_by
+    FOREIGN KEY (confirmed_by)
+    REFERENCES users(user_id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  -- Thêm khóa ngoại voucher vào đây
+  CONSTRAINT fk_orders_vouchers
+    FOREIGN KEY (voucher_id)
+    REFERENCES vouchers(voucher_id)
     ON UPDATE CASCADE
     ON DELETE SET NULL
 ) ENGINE=InnoDB;
@@ -242,10 +268,14 @@ CREATE TABLE IF NOT EXISTS order_discounts (
 CREATE TABLE IF NOT EXISTS reviews (
   review_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
+  order_id INT,
+  order_item_id INT,
   product_id INT NOT NULL,
   rating INT NOT NULL,
   comment TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_review_order_item (order_item_id),
+  KEY idx_reviews_order_item_id (order_item_id),
 
   CONSTRAINT fk_reviews_users
     FOREIGN KEY (user_id)
@@ -256,6 +286,18 @@ CREATE TABLE IF NOT EXISTS reviews (
   CONSTRAINT fk_reviews_products
     FOREIGN KEY (product_id)
     REFERENCES products(product_id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_reviews_orders
+    FOREIGN KEY (order_id)
+    REFERENCES orders(order_id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  CONSTRAINT fk_reviews_order_items
+    FOREIGN KEY (order_item_id)
+    REFERENCES order_items(order_item_id)
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
@@ -288,6 +330,7 @@ CREATE TABLE IF NOT EXISTS work_shifts (
   shift_date DATE NOT NULL,
   start_time TIME,
   end_time TIME,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
   note VARCHAR(255),
 
   CONSTRAINT fk_work_shifts_employee
@@ -306,6 +349,45 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+-- VOUCHER TABLES
+CREATE TABLE IF NOT EXISTS vouchers (
+  voucher_id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  description TEXT,
+  discount_type ENUM('fixed', 'percent') NOT NULL,
+  discount_value DECIMAL(10,2) NOT NULL,
+  min_order_amount DECIMAL(10,2) DEFAULT 0,
+  max_discount DECIMAL(10,2) DEFAULT NULL,
+  usage_limit INT DEFAULT NULL,
+  used_count INT DEFAULT 0,
+  expiry_date DATE DEFAULT NULL,
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_vouchers (
+  user_voucher_id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  voucher_id INT NOT NULL,
+  used_count INT DEFAULT 0,
+  last_used_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_user_voucher (user_id, voucher_id),
+
+  CONSTRAINT fk_user_vouchers_users
+    FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+
+  CONSTRAINT fk_user_vouchers_vouchers
+    FOREIGN KEY (voucher_id)
+    REFERENCES vouchers(voucher_id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 INSERT IGNORE INTO roles(role_name)
 VALUES
 ('customer'),
@@ -314,9 +396,9 @@ VALUES
 
 INSERT IGNORE INTO users(full_name, email, phone, password, address, role_id, status)
 VALUES
-('Admin', 'admin@gmail.com', '0900000001', 'admin123', 'Tai khoan quan tri', (SELECT role_id FROM roles WHERE role_name = 'admin'), 'active'),
-('Nhan vien', 'employee@gmail.com', '0900000002', 'employee123', 'Tai khoan nhan vien', (SELECT role_id FROM roles WHERE role_name = 'employee'), 'active');
-
+('Admin', 'a@gmail.com', '0900000001', '123', 'Tai khoan quan tri', (SELECT role_id FROM roles WHERE role_name = 'admin'), 'active'),
+('Nhan vien', 'b@gmail.com', '0900000002', '123', 'Tai khoan nhan vien', (SELECT role_id FROM roles WHERE role_name = 'employee'), 'active'),
+('Khach hang', 'c@gmail.com', '0900000003', '123', 'Tai khoan khach hang', (SELECT role_id FROM roles WHERE role_name = 'customer'), 'active');
 INSERT IGNORE INTO categories(category_name)
 VALUES
 ('Đồ uống'),
@@ -372,3 +454,7 @@ VALUES
 ('PROD013', 'Trà xanh C2 hương chanh', 'url_c2.jpg', 8000, 5500, 'Chai', 300, 'available'),
 ('PROD014', 'Trà đá TRADA hương hoa nhài', 'url_trada.jpg', 10000, 6500, 'Lon', 100, 'available'),
 ('PROD015', 'Trà xanh Lipton vị chanh mật ong', 'url_lipton.jpg', 12000, 8000, 'Chai', 150, 'available');
+UPDATE inventory_items ii
+JOIN products p ON p.barcode = ii.barcode
+SET ii.category_id = p.category_id
+WHERE ii.category_id IS NULL;

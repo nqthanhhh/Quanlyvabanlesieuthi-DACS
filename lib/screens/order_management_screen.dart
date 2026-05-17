@@ -6,8 +6,10 @@ import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 import 'checkout_screen.dart';
 import 'employee.dart';
+import 'employee_confirm_orders_screen.dart';
 import 'order_detail_screen.dart'; // Cần import màn hình chi tiết (Giả sử bạn đã có file này)
-import 'profile_view_screen.dart';
+import 'profile_route.dart';
+import 'scan_product_screen.dart';
 
 class OrderManagementScreen extends StatefulWidget {
   final String role;
@@ -25,10 +27,7 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
 
   // Hàm định dạng tiền tệ
   String _formatCurrency(double amount) {
-    return '${amount.round().toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\\d))'),
-          (Match m) => '${m[1]},',
-    )} ₫';
+    return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\\d))'), (Match m) => '${m[1]},')} ₫';
   }
 
   // Widget hiển thị một đơn hàng
@@ -67,10 +66,15 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                 Text(
                   'Tổng tiền: ${_formatCurrency(order.totalAmount)}',
                   style: TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.blue.shade700),
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade700,
+                  ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
@@ -88,9 +92,9 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         // 💡 XỬ LÝ KHI NHẤN VÀO ĐƠN HÀNG
         onTap: () {
           // Chuyển hướng sang màn hình chi tiết và truyền toàn bộ đối tượng Order
-          Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => OrderDetailScreen(order: order),
-          ));
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => OrderDetailScreen(order: order)),
+          );
         },
       ),
     );
@@ -99,9 +103,9 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
   Future<void> _openCheckoutFromTab() async {
     final email = DBService.settings().get('current_user_email') as String?;
     if (email == null || email.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không tìm thấy người dùng hiện tại')),
+      );
       return;
     }
 
@@ -127,6 +131,36 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
     );
   }
 
+  Future<void> _scanAndOpenCart() async {
+    final product = await Navigator.of(
+      context,
+    ).push(buildSlidePageRoute(const ScanProductScreen()));
+    if (product == null || !mounted) return;
+    try {
+      final cart = await DBService.addProductToCurrentCart(product);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        buildSlidePageRoute(
+          CheckoutScreen(
+            cart: cart,
+            role: widget.role,
+            onCheckoutComplete: () async {
+              final email = DBService.currentUserEmail();
+              if (email != null) {
+                await DBService.saveCartForUser(email, <String, int>{});
+              }
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
   void _handleBottomTab(RoleBottomTab tab) {
     switch (tab) {
       case RoleBottomTab.home:
@@ -142,11 +176,19 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         break;
       case RoleBottomTab.account:
         Navigator.of(context).pushReplacement(
-          buildSlidePageRoute(ProfileViewScreen(role: widget.role)),
+          buildSlidePageRoute(buildProfileScreenForRole(widget.role)),
         );
         break;
       case RoleBottomTab.invoices:
+        break;
+      case RoleBottomTab.confirmOrders:
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(const EmployeeConfirmOrdersScreen()),
+        );
+        break;
       case RoleBottomTab.scan:
+        _scanAndOpenCart();
+        break;
       case RoleBottomTab.offers:
       case RoleBottomTab.orders:
         break;
@@ -157,7 +199,10 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Quản lý Đơn hàng', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Quản lý Đơn hàng',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.blue.shade600,
         foregroundColor: Colors.white,
       ),
@@ -165,7 +210,10 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         children: [
           // Thanh tìm kiếm
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: Container(
               height: 45,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -204,7 +252,8 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
               valueListenable: DBService.orders().listenable(),
               builder: (context, box, _) {
                 // 💡 LẤY DANH SÁCH ĐƠN HÀNG VÀ SẮP XẾP MỚI NHẤT
-                final allOrders = DBService.getAllOrders(); // Sử dụng hàm getAllOrders đã sắp xếp trong DBService
+                final allOrders =
+                    DBService.getAllOrders(); // Sử dụng hàm getAllOrders đã sắp xếp trong DBService
 
                 // 💡 LỌC THEO TÌM KIẾM
                 final filteredOrders = allOrders.where((order) {
@@ -215,7 +264,9 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
 
                 if (filteredOrders.isEmpty) {
                   return Center(
-                    child: Text('Không tìm thấy đơn hàng nào${_searchQuery.isNotEmpty ? ' khớp với tìm kiếm' : ''}.'),
+                    child: Text(
+                      'Không tìm thấy đơn hàng nào${_searchQuery.isNotEmpty ? ' khớp với tìm kiếm' : ''}.',
+                    ),
                   );
                 }
 

@@ -17,10 +17,10 @@ class OrderLineAdapter extends TypeAdapter<OrderLine> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return OrderLine(
-      productId: fields[0].toString(),
-      productName: fields[1].toString(),
-      quantity: (fields[2] as num).toInt(),
-      pricePerUnit: (fields[3] as num).toDouble(),
+      productId: fields[0] as String,
+      productName: fields[1] as String,
+      quantity: fields[2] as int,
+      pricePerUnit: fields[3] as double,
     );
   }
 

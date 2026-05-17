@@ -69,6 +69,28 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
     }
   }
 
+  Future<void> _generateInternalCode() async {
+    setState(() => _processing = true);
+    try {
+      final code = await DBService.generateInternalProductCode();
+      _idController.text = code;
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Đã tạo mã nội bộ $code')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Không tạo được mã: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _processing = true);
@@ -166,14 +188,26 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
             children: [
               TextFormField(
                 controller: _idController,
-                readOnly: false,
+                readOnly: _isEditing,
                 decoration: const InputDecoration(
-                  labelText: 'Mã hàng (ID)',
+                  labelText: 'Mã vạch / Mã nội bộ',
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Nhập mã hàng' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Nhập mã vạch / mã nội bộ'
+                    : null,
               ),
+              if (!_isEditing) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _processing ? null : _generateInternalCode,
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('Tạo mã nội bộ'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               TextFormField(
                 controller: _nameController,

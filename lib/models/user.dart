@@ -1,9 +1,11 @@
 import 'package:hive/hive.dart';
+import '../utils/type_converters.dart';
 
 part 'user.g.dart';
 
 @HiveType(typeId: 1)
 class User extends HiveObject {
+  @HiveField(13)
   int? userId;
 
   @HiveField(0)
@@ -36,6 +38,18 @@ class User extends HiveObject {
   @HiveField(9)
   String? avatarPath; // local file path or asset
 
+  @HiveField(10)
+  String status;
+
+  @HiveField(11)
+  int points;
+
+  @HiveField(12)
+  DateTime? createdAt;
+
+  @HiveField(14)
+  String? membershipCode;
+
   User({
     this.userId,
     required this.email,
@@ -48,24 +62,29 @@ class User extends HiveObject {
     this.gender = '',
     this.startDate,
     this.avatarPath,
+    this.status = 'active',
+    this.points = 0,
+    this.createdAt,
+    this.membershipCode,
   });
-
-  static int? _toNullableInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
-  }
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      userId: _toNullableInt(json['user_id'] ?? json['id']),
+      userId: TypeConverters.toNullableInt(json['user_id'] ?? json['id']),
       email: (json['email'] ?? '').toString(),
       password: (json['password'] ?? '').toString(),
       role: (json['role_name'] ?? json['role'] ?? '').toString(),
       fullName: (json['full_name'] ?? json['fullName'] ?? '').toString(),
       phone: (json['phone'] ?? '').toString(),
       address: (json['address'] ?? '').toString(),
+      status: (json['status'] ?? 'active').toString(),
+      points: TypeConverters.toNullableInt(json['points']) ?? 0,
+      membershipCode: TypeConverters.toNullableString(
+        json['membership_code'] ?? json['membershipCode'],
+      ),
+      createdAt: json['created_at'] == null
+          ? null
+          : DateTime.tryParse(json['created_at'].toString()),
     );
   }
 
@@ -78,6 +97,7 @@ class User extends HiveObject {
       'password': password,
       'address': address.isEmpty ? null : address,
       'role': role,
+      'status': status,
     };
   }
 }

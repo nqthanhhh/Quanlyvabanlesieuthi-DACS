@@ -5,8 +5,16 @@ import 'package:http/http.dart' as http;
 
 import '../models/order.dart';
 import '../models/product.dart';
+import '../models/product_review.dart';
+import '../models/work_shift.dart';
 import '../models/user.dart';
 import '../models/inventory_item.dart';
+import '../utils/constants.dart';
+import '../utils/type_converters.dart';
+
+// Ca làm / tổng hợp nhân viên có thể chậm hơn API thông thường.
+Duration get _shiftTimeout =>
+    const Duration(seconds: AppConstants.shiftTimeoutSeconds);
 
 class ApiException implements Exception {
   final String message;
@@ -18,21 +26,56 @@ class ApiException implements Exception {
 
 class ApiService {
   static const Duration _timeout = Duration(seconds: 5);
+  static int? _currentUserId;
 
   static String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) return configured;
+
+    final override = AppConstants.apiBaseUrlOverride;
+    if (override != null && override.isNotEmpty) return override;
+
     if (kIsWeb) return 'http://localhost:3000';
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:3000';
-    }
+
+    try {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        // Chỉ máy ảo Android: 10.0.2.2 = localhost của máy host
+        return 'http://10.0.2.2:3000';
+      }
+    } catch (_) {}
+
     return 'http://localhost:3000';
+  }
+
+  static String connectionErrorMessage(Object error) {
+    final msg = error.toString().toLowerCase();
+    if (msg.contains('timeout') ||
+        msg.contains('timed out') ||
+        msg.contains('socketexception') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('connection refused') ||
+        msg.contains('clientexception')) {
+      return 'Không kết nối được backend ($baseUrl). '
+          'Kiểm tra backend đang chạy (npm start) và địa chỉ API: '
+          'máy ảo dùng 10.0.2.2, điện thoại thật cần IP máy tính trong constants.dart.';
+    }
+    return 'Email hoặc mật khẩu không đúng';
   }
 
   static Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
   static Map<String, String> get _headers => {
     'Content-Type': 'application/json',
+  };
+
+  static Map<String, String> get _userHeaders => {
+    ..._headers,
+    if (_currentUserId != null) 'x-user-id': _currentUserId.toString(),
+  };
+
+  static Map<String, String> _userHeadersFor(int userId) => {
+    ..._headers,
+    'x-user-id': userId.toString(),
   };
 
   static Map<String, String> _adminHeaders(int adminUserId) => {
@@ -82,7 +125,11 @@ class ApiService {
         )
         .timeout(_timeout);
     final body = _decode(response);
-    return Map<String, dynamic>.from((body as Map)['user'] as Map);
+    final user = Map<String, dynamic>.from((body as Map)['user'] as Map);
+    _currentUserId = TypeConverters.toNullableInt(
+      user['user_id'] ?? user['userId'],
+    );
+    return user;
   }
 
   static Future<void> register({
@@ -138,6 +185,75 @@ class ApiService {
         .timeout(_timeout);
     final body = _decode(response);
     return User.fromJson(_dataMap(body));
+  }
+
+  static Future<User> updateUserProfile({
+    required int userId,
+    required String fullName,
+    required String phone,
+    required String address,
+    String? password,
+  }) async {
+    final response = await http
+        .put(
+          _uri('/api/users/$userId/profile'),
+          headers: _headers,
+          body: jsonEncode({
+            'full_name': fullName,
+            'phone': phone.isEmpty ? null : phone,
+            'address': address.isEmpty ? null : address,
+            if (password != null && password.isNotEmpty) 'password': password,
+          }),
+        )
+        .timeout(_timeout);
+    return User.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<Map<String, dynamic>> fetchEmployeeSummary(int userId) async {
+    final response = await http
+        .get(_uri('/api/users/$userId/employee-summary'))
+        .timeout(_shiftTimeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<List<WorkShift>> fetchEmployeeShiftsForMonth({
+    required int employeeId,
+    required int year,
+    required int month,
+  }) async {
+    final response = await http
+        .get(
+          _uri(
+            '/api/work-shifts/employee/$employeeId?year=$year&month=$month',
+          ),
+        )
+        .timeout(_shiftTimeout);
+    final body = _decode(response);
+    return _dataList(body)
+        .map((e) => WorkShift.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  static Future<Map<String, dynamic>> startWorkShift(int employeeId) async {
+    final response = await http
+        .post(
+          _uri('/api/work-shifts/start'),
+          headers: _headers,
+          body: jsonEncode({'employee_id': employeeId}),
+        )
+        .timeout(_shiftTimeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> endWorkShift(int employeeId) async {
+    final response = await http
+        .post(
+          _uri('/api/work-shifts/end'),
+          headers: _headers,
+          body: jsonEncode({'employee_id': employeeId}),
+        )
+        .timeout(_shiftTimeout);
+    return _dataMap(_decode(response));
   }
 
   static Future<void> deleteUser(int userId) async {
@@ -203,6 +319,31 @@ class ApiService {
     _decode(response);
   }
 
+  static Future<Map<String, dynamic>> scanProductCode(String code) async {
+    final response = await http
+        .get(_uri('/api/products/scan/${Uri.encodeComponent(code)}'))
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<String> generateProductCode({
+    int? categoryId,
+    String? prefix,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/products/generate-code'),
+          headers: _headers,
+          body: jsonEncode({
+            if (categoryId != null) 'category_id': categoryId,
+            if (prefix != null && prefix.isNotEmpty) 'prefix': prefix,
+          }),
+        )
+        .timeout(_timeout);
+    final body = _dataMap(_decode(response));
+    return (body['code'] ?? '').toString();
+  }
+
   static Future<String> uploadProductImage(String filePath) async {
     final request = http.MultipartRequest(
       'POST',
@@ -222,6 +363,113 @@ class ApiService {
     ).map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
   }
 
+  static Future<List<Order>> fetchOnlineOrders() async {
+    final response = await http
+        .get(_uri('/api/orders/online'), headers: _userHeaders)
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(
+      body,
+    ).map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  static Future<List<Order>> fetchPurchaseHistory({int? customerId}) async {
+    final path = customerId == null
+        ? '/api/orders/history'
+        : '/api/orders/history/$customerId';
+    final response = await http
+        .get(_uri(path), headers: _userHeaders)
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(
+      body,
+    ).map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchMyOrders(int userId) async {
+    final response = await http
+        .get(_uri('/my-orders'), headers: _userHeadersFor(userId))
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(
+      body,
+    ).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchPendingOrders(
+    int employeeId,
+  ) async {
+    final response = await http
+        .get(_uri('/orders/pending'), headers: _userHeadersFor(employeeId))
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(
+      body,
+    ).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  static Future<Map<String, dynamic>> confirmOrder({
+    required int employeeId,
+    required String orderId,
+  }) async {
+    final response = await http
+        .put(
+          _uri('/orders/$orderId/confirm'),
+          headers: _userHeadersFor(employeeId),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> rejectOrder({
+    required int employeeId,
+    required String orderId,
+    String? reason,
+  }) async {
+    final response = await http
+        .put(
+          _uri('/orders/$orderId/reject'),
+          headers: _userHeadersFor(employeeId),
+          body: jsonEncode({
+            if (reason != null && reason.trim().isNotEmpty)
+              'reason': reason.trim(),
+          }),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> markOrderReceived({
+    required int userId,
+    required String orderId,
+  }) async {
+    final response = await http
+        .put(
+          _uri('/orders/$orderId/received'),
+          headers: _userHeadersFor(userId),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Order> fetchOrderDetail(String orderId) async {
+    final response = await http
+        .get(_uri('/api/orders/$orderId'), headers: _userHeaders)
+        .timeout(_timeout);
+    return Order.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<Order> updateOrderStatus(String orderId, String status) async {
+    final response = await http
+        .patch(
+          _uri('/api/orders/$orderId/status'),
+          headers: _userHeaders,
+          body: jsonEncode({'status': status}),
+        )
+        .timeout(_timeout);
+    return Order.fromJson(_dataMap(_decode(response)));
+  }
+
   static Future<Order> createOrder(
     Order order, {
     int? customerId,
@@ -237,6 +485,89 @@ class ApiService {
         )
         .timeout(_timeout);
     return Order.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<Order> createOrderWithVoucher(
+    Order order, {
+    int? customerId,
+    int? employeeId,
+    int? voucherId,
+    double discountAmount = 0,
+    int? userId,
+  }) async {
+    final orderData = order.toJson(
+      customerId: customerId,
+      employeeId: employeeId,
+    );
+    // Thêm voucher info vào payload
+    if (voucherId != null) {
+      orderData['voucher_id'] = voucherId;
+    }
+    if (discountAmount > 0) {
+      orderData['discount_amount'] = discountAmount;
+    }
+    if (userId != null) {
+      orderData['user_id'] = userId;
+    }
+
+    final response = await http
+        .post(
+          _uri('/api/orders'),
+          headers: _headers,
+          body: jsonEncode(orderData),
+        )
+        .timeout(_timeout);
+    return Order.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<List<ProductReview>> fetchProductReviews(
+    String productId,
+  ) async {
+    final response = await http
+        .get(_uri('/api/reviews/products/$productId'))
+        .timeout(_timeout);
+    final body = _decode(response);
+    return _dataList(body)
+        .map((e) => ProductReview.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  static Future<Map<String, dynamic>> createReview({
+    String? orderId,
+    required String productId,
+    required int rating,
+    String? comment,
+    int? customerId,
+  }) async {
+    final payload = <String, dynamic>{
+      'product_id': int.tryParse(productId) ?? productId,
+      'rating': rating,
+      'comment': comment,
+    };
+    if (orderId != null && orderId.trim().isNotEmpty) {
+      payload['order_id'] = int.tryParse(orderId) ?? orderId;
+    }
+
+    final response = await http
+        .post(
+          _uri('/api/reviews'),
+          headers: customerId == null
+              ? _userHeaders
+              : _userHeadersFor(customerId),
+          body: jsonEncode(payload),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<double> getAverageRating(String productId) async {
+    final reviews = await fetchProductReviews(productId);
+    return ProductReview.averageRating(reviews);
+  }
+
+  static Future<int> getTotalReviews(String productId) async {
+    final reviews = await fetchProductReviews(productId);
+    return reviews.length;
   }
 
   static Future<List<Map<String, dynamic>>> fetchInventoryLogs() async {
@@ -361,7 +692,7 @@ class ApiService {
 
   static Future<Map<String, int>> fetchCart(int userId) async {
     final response = await http
-        .get(_uri('/api/carts/$userId'))
+        .get(_uri('/api/carts'), headers: _userHeadersFor(userId))
         .timeout(_timeout);
     final body = _dataMap(_decode(response));
     final items = (body['items'] as List?) ?? const [];
@@ -372,24 +703,109 @@ class ApiService {
   }
 
   static Future<void> saveCart(int userId, Map<String, int> cart) async {
+    final items = <Map<String, int>>[];
+    for (final entry in cart.entries) {
+      final productId = int.tryParse(entry.key);
+      if (productId != null && entry.value > 0) {
+        items.add({'product_id': productId, 'quantity': entry.value});
+      }
+    }
     final response = await http
         .put(
-          _uri('/api/carts/$userId'),
-          headers: _headers,
-          body: jsonEncode({
-            'items': cart.entries
-                .where((entry) => entry.value > 0)
-                .map(
-                  (entry) => {
-                    'product_id': int.parse(entry.key),
-                    'quantity': entry.value,
-                  },
-                )
-                .toList(),
-          }),
+          _uri('/api/carts/update'),
+          headers: _userHeadersFor(userId),
+          body: jsonEncode({'items': items}),
         )
         .timeout(_timeout);
     _decode(response);
+  }
+
+  static Future<Map<String, int>> addCartItem(
+    int userId,
+    String productId,
+    int quantity,
+  ) async {
+    final response = await http
+        .post(
+          _uri('/api/carts/add'),
+          headers: _userHeadersFor(userId),
+          body: jsonEncode({
+            'product_id': int.tryParse(productId) ?? productId,
+            'quantity': quantity,
+          }),
+        )
+        .timeout(_timeout);
+    final body = _dataMap(_decode(response));
+    final items = (body['items'] as List?) ?? const [];
+    return {
+      for (final item in items)
+        (item as Map)['product_id'].toString(): (item['quantity'] ?? 0) as int,
+    };
+  }
+
+  static Future<Map<String, int>> removeCartItem(
+    int userId,
+    String productId,
+  ) async {
+    final request = http.Request('DELETE', _uri('/api/carts/remove'))
+      ..headers.addAll(_userHeadersFor(userId))
+      ..body = jsonEncode({'product_id': int.tryParse(productId) ?? productId});
+    final streamed = await request.send().timeout(_timeout);
+    final response = await http.Response.fromStream(streamed);
+    final body = _dataMap(_decode(response));
+    final items = (body['items'] as List?) ?? const [];
+    return {
+      for (final item in items)
+        (item as Map)['product_id'].toString(): (item['quantity'] ?? 0) as int,
+    };
+  }
+
+  static Future<Map<String, dynamic>> validateVoucher({
+    required String code,
+    required double orderTotal,
+    required int userId,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/vouchers/validate'),
+          headers: _userHeadersFor(userId),
+          body: jsonEncode({
+            'code': code.trim().toUpperCase(),
+            'orderTotal': orderTotal,
+            'userId': userId,
+          }),
+        )
+        .timeout(_timeout);
+    final body = _decode(response);
+    if (body is Map && body['voucher'] is Map) {
+      return Map<String, dynamic>.from(body['voucher'] as Map);
+    }
+    return _dataMap(body);
+  }
+
+  static Future<Order> checkoutOnlineOrder({
+    required int userId,
+    required String deliveryMethod,
+    required String paymentMethod,
+    String? shippingAddress,
+    String? voucherCode,
+    String? note,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/orders/checkout'),
+          headers: _userHeadersFor(userId),
+          body: jsonEncode({
+            'delivery_method': deliveryMethod,
+            'payment_method': paymentMethod,
+            if (shippingAddress != null) 'shipping_address': shippingAddress,
+            if (voucherCode != null && voucherCode.trim().isNotEmpty)
+              'voucher_code': voucherCode.trim().toUpperCase(),
+            if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+          }),
+        )
+        .timeout(_timeout);
+    return Order.fromJson(_dataMap(_decode(response)));
   }
 
   static Future<Map<String, dynamic>> fetchRevenueReport(

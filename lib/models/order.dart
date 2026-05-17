@@ -1,13 +1,12 @@
 // lib/models/order.dart
 import 'package:hive/hive.dart';
 import 'order_line.dart'; // Import OrderLine
+import '../utils/type_converters.dart';
 
 part 'order.g.dart'; // File tự động tạo bởi build_runner
 
 @HiveType(typeId: 2) // Chọn typeId chưa dùng (2)
 class Order extends HiveObject {
-  int? customerId;
-
   @HiveField(0)
   String id;
 
@@ -26,48 +25,81 @@ class Order extends HiveObject {
   @HiveField(5)
   List<OrderLine> items; // Danh sách sản phẩm trong đơn hàng
 
+  @HiveField(6)
+  int? customerId;
+
+  @HiveField(7)
+  String? shippingAddress;
+
+  @HiveField(8)
+  String? paymentMethod;
+
+  @HiveField(9)
+  String? paymentStatus;
+
+  @HiveField(10)
+  String? note;
+
+  @HiveField(11)
+  int? voucherId; // Mã voucher được áp dụng
+
+  @HiveField(12)
+  double discountAmount; // Số tiền giảm
+
   Order({
-    this.customerId,
     required this.id,
     required this.orderDate,
     required this.totalAmount,
     required this.customerName,
     required this.status,
     required this.items,
+    this.customerId,
+    this.shippingAddress,
+    this.paymentMethod,
+    this.paymentStatus,
+    this.note,
+    this.voucherId,
+    this.discountAmount = 0,
   });
-
-  static double _toDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
 
   factory Order.fromJson(Map<String, dynamic> json) {
     final rawItems = (json['items'] as List?) ?? const [];
     return Order(
-      customerId: _toNullableInt(json['customer_id'] ?? json['customerId']),
       id: (json['order_id'] ?? json['id']).toString(),
       orderDate:
           DateTime.tryParse(
             (json['created_at'] ?? json['orderDate'] ?? '').toString(),
           ) ??
           DateTime.now(),
-      totalAmount: _toDouble(json['totalAmount'] ?? json['final_amount']),
+      totalAmount: TypeConverters.toDouble(
+        json['total_amount'] ?? json['totalAmount'],
+      ),
       customerName:
           (json['customer_name'] ?? json['customerName'] ?? 'Khách lẻ')
               .toString(),
-      status: (json['status'] ?? '').toString(),
+      status:
+          (json['order_status'] ?? json['orderStatus'] ?? json['status'] ?? '')
+              .toString(),
       items: rawItems
           .whereType<Map>()
           .map((e) => OrderLine.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
+      customerId: TypeConverters.toNullableInt(
+        json['customer_id'] ?? json['customerId'] ?? json['user_id'],
+      ),
+      shippingAddress: TypeConverters.toNullableString(
+        json['shipping_address'] ?? json['shippingAddress'],
+      ),
+      paymentMethod: TypeConverters.toNullableString(
+        json['payment_method'] ?? json['paymentMethod'] ?? json['method'],
+      ),
+      paymentStatus: TypeConverters.toNullableString(
+        json['payment_status'] ?? json['paymentStatus'],
+      ),
+      note: TypeConverters.toNullableString(json['note']),
+      voucherId: TypeConverters.toNullableInt(json['voucher_id']),
+      discountAmount: TypeConverters.toDouble(json['discount_amount'] ?? 0),
     );
-  }
-
-  static int? _toNullableInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
   }
 
   Map<String, dynamic> toJson({int? customerId, int? employeeId}) {
@@ -76,7 +108,13 @@ class Order extends HiveObject {
       'employee_id': employeeId,
       'order_type': 'offline',
       'status': status,
-      'payment_status': 'paid',
+      'order_status': status,
+      'payment_status': paymentStatus ?? 'paid',
+      'shipping_address': shippingAddress,
+      'payment_method': paymentMethod ?? 'cash',
+      'note': note,
+      'voucher_id': voucherId,
+      'discount_amount': discountAmount,
       'items': items.map((e) => e.toJson()).toList(),
     };
   }

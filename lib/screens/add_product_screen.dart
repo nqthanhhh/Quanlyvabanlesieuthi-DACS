@@ -31,7 +31,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
   late TextEditingController _unitController;
   late TextEditingController _stockQuantityController;
   bool _isProcessing = false;
-  int? _selectedTakeAmount;
   String? _selectedInventoryId;
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryId;
@@ -73,53 +72,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
       if (!mounted) return;
       setState(() {
         _categories = categories;
-        _selectedCategoryId ??= categories.isNotEmpty
-            ? categories.first['category_id'] as int
-            : null;
+        // Không tự động chọn categories.first (có thể lệch sang Gia vị ID=3).
+        // Khi release từ kho lên kệ, buộc người dùng/logic phải chọn đúng danh mục.
+        if (_selectedCategoryId != null) {
+          // giữ nguyên
+        }
       });
     } catch (_) {
       if (mounted) setState(() => _categories = []);
-    }
-  }
-
-  Future<void> _createCategoryQuick() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Thêm danh mục'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: 'Tên danh mục'),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Lưu'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty) return;
-    try {
-      final created = await ApiService.createCategory(name);
-      await _loadCategories();
-      if (mounted) {
-        setState(() => _selectedCategoryId = created['category_id'] as int);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e is ApiException ? e.message : 'Lỗi thêm danh mục'),
-          ),
-        );
-      }
     }
   }
 
@@ -135,7 +95,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   Future<void> _chooseQuantityFromInventory(InventoryItem item) async {
-    final _qController = TextEditingController(
+    final qController = TextEditingController(
       text: '${item.stockQuantity > 0 ? 1 : 0}',
     );
     final formKey = GlobalKey<FormState>();
@@ -144,6 +104,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Lấy từ kho: ${item.name}'),
+
         content: Form(
           key: formKey,
           child: Column(
@@ -152,7 +113,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Text('Tồn kho hiện có: ${item.stockQuantity} ${item.unit}'),
               const SizedBox(height: 8),
               TextFormField(
-                controller: _qController,
+                controller: qController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: 'Số lượng lấy',
@@ -178,7 +139,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ElevatedButton(
             onPressed: () {
               if (formKey.currentState!.validate()) {
-                final n = int.parse(_qController.text.trim());
+                final n = int.parse(qController.text.trim());
                 Navigator.of(context).pop(n);
               }
             },
@@ -192,14 +153,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // If editing, fill fields for manual edit behavior. If adding new,
       // immediately attempt to add product from inventory with chosen qty.
       if (_isEditing) {
+        // Gán text vào controller TRƯỚC setState để tránh lỗi TextFormField
+        _idController.text = item.id;
+        _nameController.text = item.name;
+        _priceController.text = item.price.toString();
+        _unitController.text = item.unit;
+        _stockQuantityController.text = result.toString();
+
         setState(() {
           _selectedInventoryId = item.id;
-          _selectedTakeAmount = result;
-          _idController.text = item.id;
-          _nameController.text = item.name;
-          _priceController.text = item.price.toString();
-          _unitController.text = item.unit;
-          _stockQuantityController.text = result.toString();
         });
       } else {
         await _addProductFromInventory(item, result);
@@ -213,14 +175,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
   ) async {
     setState(() => _isProcessing = true);
     try {
-      if (_selectedCategoryId == null) {
-        throw Exception('Vui lòng thêm hoặc chọn danh mục.');
+      final int? categoryId = item.categoryId;
+      if (categoryId == null) {
+        throw Exception(
+          'Hàng trong kho chưa có danh mục (categoryId). Vui lòng kiểm tra lại khi nhập kho.',
+        );
       }
 
       await DBService.releaseInventoryToShelf(
         item: item,
         quantity: takeAmount,
-        categoryId: _selectedCategoryId!,
+        categoryId: categoryId,
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -234,7 +199,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
       setState(() {
         _idController.clear();
         _selectedInventoryId = null;
-        _selectedTakeAmount = null;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -366,14 +330,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Mã sản phẩm
+              // Mã vạch / mã nội bộ
               TextFormField(
                 controller: _idController,
                 onChanged: (v) => setState(() {}),
-                readOnly: _isEditing, // KHÔNG cho phép sửa ID khi chỉnh sửa
+                readOnly: _isEditing,
                 decoration: InputDecoration(
-                  labelText: 'Mã Sản phẩm (ID)',
-                  hintText: 'VD: TAO_DO, COKE...',
+                  labelText: 'Mã vạch / Mã nội bộ',
+                  hintText: 'VD: PROD007, SP000001, 893...',
                   border: const OutlineInputBorder(),
                   filled: _isEditing,
                   fillColor: _isEditing ? Colors.grey.shade100 : Colors.white,
@@ -383,45 +347,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập Mã Sản phẩm.';
+                    return 'Vui lòng nhập mã vạch / mã nội bộ.';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 8),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedCategoryId,
-                      decoration: const InputDecoration(
-                        labelText: 'Danh mục',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _categories
-                          .map(
-                            (category) => DropdownMenuItem<int>(
-                              value: category['category_id'] as int,
-                              child: Text(category['category_name'].toString()),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() => _selectedCategoryId = value);
-                      },
-                      validator: (value) =>
-                          value == null ? 'Vui lòng chọn danh mục' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _createCategoryQuick,
-                    icon: const Icon(Icons.add),
-                    tooltip: 'Thêm danh mục',
-                  ),
-                ],
-              ),
+              // Danh mục lấy theo inventory_items.category_id khi release từ kho.
+              // Vì inventory_items đang có thể NULL, release sẽ bị chặn để tránh nhầm category.
               const SizedBox(height: 8),
 
               // Gợi ý sản phẩm từ kho (tìm kiếm theo id/name dựa trên nội dung ô ID)
@@ -435,7 +369,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   final raw = _idController.text;
                   final query = raw.replaceAll(' ', '').toLowerCase();
 
-                  bool _matches(String text) {
+                  bool matches(String text) {
                     final t = text.replaceAll(' ', '').toLowerCase();
                     if (query.isEmpty) return true;
                     // Prefix-only match: require the normalized text to start with the query
@@ -443,7 +377,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   }
 
                   final List<InventoryItem> items = invBox.values
-                      .where((it) => _matches(it.id) || _matches(it.name))
+                      .where((it) => matches(it.id) || matches(it.name))
                       .toList();
 
                   if (items.isEmpty) return const SizedBox.shrink();
@@ -518,7 +452,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                   : leading,
                               title: Text(it.name),
                               subtitle: Text(
-                                'Mã: ${it.id} • Tồn: ${it.stockQuantity} ${it.unit}',
+                                'Mã vạch / mã nội bộ: ${it.id} • Tồn: ${it.stockQuantity} ${it.unit}',
                               ),
                               trailing: ElevatedButton(
                                 onPressed: _isProcessing
@@ -546,7 +480,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: Text(
-                    'Nhập Mã sản phẩm, chọn một mục trong "Gợi ý từ kho" rồi chọn số lượng. Sản phẩm sẽ được thêm tự động.',
+                    'Nhập mã vạch / mã nội bộ, chọn một mục trong "Gợi ý từ kho" rồi chọn số lượng. Sản phẩm sẽ được thêm tự động.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey[700]),
                   ),

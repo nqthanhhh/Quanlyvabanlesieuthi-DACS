@@ -5,6 +5,7 @@ enum RoleBottomTab {
   employees,
   scan,
   invoices,
+  confirmOrders,
   offers,
   cart,
   orders,
@@ -96,10 +97,10 @@ class RoleBottomNavigationBar extends StatelessWidget {
                 const SizedBox(width: 90),
                 Expanded(
                   child: _employeeNavItem(
-                    tab: RoleBottomTab.invoices,
-                    icon: Icons.receipt_long_outlined,
-                    activeIcon: Icons.receipt_long,
-                    label: 'Lịch sử',
+                    tab: RoleBottomTab.confirmOrders,
+                    icon: Icons.assignment_turned_in_outlined,
+                    activeIcon: Icons.assignment_turned_in,
+                    label: 'Xác nhận đơn',
                   ),
                 ),
                 Expanded(

@@ -1,5 +1,6 @@
 // lib/models/order_line.dart
 import 'package:hive/hive.dart';
+import '../utils/type_converters.dart';
 
 part 'order_line.g.dart';
 
@@ -24,24 +25,13 @@ class OrderLine extends HiveObject {
     required this.pricePerUnit,
   });
 
-  static double _toDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  static int _toInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
   factory OrderLine.fromJson(Map<String, dynamic> json) {
     return OrderLine(
       productId: (json['product_id'] ?? json['productId']).toString(),
       productName: (json['product_name'] ?? json['productName'] ?? '')
           .toString(),
-      quantity: _toInt(json['quantity']),
-      pricePerUnit: _toDouble(
+      quantity: TypeConverters.toInt(json['quantity']),
+      pricePerUnit: TypeConverters.toDouble(
         json['unitPrice'] ?? json['pricePerUnit'] ?? json['price'],
       ),
     );

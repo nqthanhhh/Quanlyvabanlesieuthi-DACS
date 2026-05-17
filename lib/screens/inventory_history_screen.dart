@@ -76,7 +76,7 @@ class InventoryHistoryScreen extends StatelessWidget {
               final qtyText = signedQty > 0 ? '+$signedQty' : '$signedQty';
 
               final subtitleLines = <String>[
-                'Mã: ${e.itemId}',
+                'Mã vạch / Mã nội bộ: ${e.itemId}',
                 'Tồn: ${e.beforeQuantity} → ${e.afterQuantity} ($qtyText ${e.unit})',
                 _formatDateTime(e.createdAt),
               ];

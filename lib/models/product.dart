@@ -1,5 +1,6 @@
 // lib/models/product.dart
 import 'package:hive/hive.dart';
+import '../utils/type_converters.dart';
 
 part 'product.g.dart';
 
@@ -28,6 +29,11 @@ class Product extends HiveObject {
   int? categoryId;
   String? categoryName;
   int minStock;
+  String? description;
+  /// Đặc tính nổi bật — lưu cục bộ; backend hiện chỉ có `description`.
+  String? highlights;
+  /// `active` | `inactive` | `deleted`
+  String? status;
 
   Product({
     required this.id,
@@ -41,41 +47,37 @@ class Product extends HiveObject {
     this.categoryId,
     this.categoryName,
     this.minStock = 10,
+    this.description,
+    this.highlights,
+    this.status = 'active',
   });
 
-  static int _toInt(dynamic value, {int defaultValue = 0}) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? defaultValue;
-  }
+  bool get isActive => (status ?? 'active').toLowerCase() == 'active';
 
-  static double _toDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  static int? _toNullableInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
-  }
+  String get sku => barcode ?? id;
 
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
       id: (json['product_id'] ?? json['id']).toString(),
       name: (json['product_name'] ?? json['name'] ?? '').toString(),
-      price: _toDouble(json['price']),
+      price: TypeConverters.toDouble(json['price']),
       unit: (json['unit'] ?? 'sp').toString(),
-      stockQuantity: _toInt(json['stock'] ?? json['stockQuantity']),
+      stockQuantity: TypeConverters.toInt(
+        json['stock'] ?? json['stockQuantity'],
+      ),
       createdAt: json['created_at'] == null
           ? null
           : DateTime.tryParse(json['created_at'].toString()),
       imageUrl: (json['image_url'] ?? json['imageUrl'])?.toString(),
       barcode: json['barcode']?.toString(),
-      categoryId: _toNullableInt(json['category_id'] ?? json['categoryId']),
+      categoryId: TypeConverters.toNullableInt(
+        json['category_id'] ?? json['categoryId'],
+      ),
       categoryName: (json['category_name'] ?? json['categoryName'])?.toString(),
-      minStock: _toInt(json['min_stock'], defaultValue: 10),
+      minStock: TypeConverters.toInt(json['min_stock'], defaultValue: 10),
+      description: json['description']?.toString(),
+      highlights: json['highlights']?.toString(),
+      status: (json['status'] ?? 'active').toString(),
     );
   }
 
@@ -84,12 +86,14 @@ class Product extends HiveObject {
       'product_id': int.tryParse(id),
       'product_name': name,
       'barcode': barcode,
+      'description': description,
       'price': price,
       'unit': unit,
       'stock': stockQuantity,
       'min_stock': minStock,
       'category_id': categoryId,
       'image_url': imageUrl,
+      'status': status ?? 'active',
     };
   }
 }

@@ -57,6 +57,25 @@ class WorkShiftRepository {
     return WorkShiftDisplay.fromSummary(summary);
   }
 
+  static Future<List<WorkShift>> getAllShifts({
+    String status = 'all',
+    String dateFilter = 'all',
+  }) {
+    return ApiService.fetchWorkShifts(status: status, dateFilter: dateFilter);
+  }
+
+  static Future<List<WorkShift>> getShiftsByEmployeeId(
+    int employeeId, {
+    String status = 'all',
+    String dateFilter = 'all',
+  }) {
+    return ApiService.fetchWorkShifts(
+      employeeId: employeeId,
+      status: status,
+      dateFilter: dateFilter,
+    );
+  }
+
   static Future<WorkShift?> getCurrentShiftByEmployeeId(int employeeId) async {
     final summary = await fetchEmployeeSummary(employeeId);
     return WorkShiftDisplay.fromSummary(summary).currentShift;

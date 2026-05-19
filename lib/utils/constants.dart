@@ -10,9 +10,15 @@ class AppConstants {
   static const int shiftTimeoutSeconds = 15;
   static const int checkoutTimeoutSeconds = 12;
 
-  /// Điện thoại thật: đặt IP máy tính chạy backend (cùng Wi‑Fi), ví dụ http://192.168.1.10:3000
-  /// Máy ảo Android: để null (app dùng http://10.0.2.2:3000)
+  /// Ưu tiên truyền khi chạy:
+  /// flutter run --dart-define=API_BASE_URL=http://IP_MAC:3000
+  ///
+  /// Nếu không truyền dart-define:
+  /// - Android emulator dùng http://10.0.2.2:3000 trong ApiService.
+  /// - iPhone thật/iOS dùng LAN IP dưới đây để không gọi localhost của máy iPhone.
+  /// Đổi IP này khi Mac đổi Wi-Fi hoặc router cấp IP mới.
   static const String? apiBaseUrlOverride = null;
+  static const String physicalDeviceApiBaseUrl = 'http://192.168.100.79:3000';
 
   // Hive box names
   static const String productsBox = 'products';

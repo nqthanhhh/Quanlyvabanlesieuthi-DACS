@@ -4,6 +4,7 @@ import '../models/work_shift.dart';
 import '../repositories/work_shift_repository.dart';
 import '../screens/employee_shift_schedule_screen.dart';
 import '../services/api_service.dart';
+import '../services/db_service.dart';
 
 /// Panel ca làm gọn — dùng trên Tài khoản / Chi tiết NV; lịch đầy đủ ở màn riêng.
 class EmployeeShiftCard extends StatefulWidget {
@@ -113,12 +114,16 @@ class _EmployeeShiftCardState extends State<EmployeeShiftCard> {
   }
 
   void _openSchedule() {
+    final role =
+        DBService.settings().get('current_role')?.toString().toLowerCase() ?? '';
+    final isAdmin = role == 'admin';
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => EmployeeShiftScheduleScreen(
           employeeId: widget.employeeId,
           employeeName: widget.employeeName,
-          canManageShift: widget.canManageShift,
+          canManageShift: widget.canManageShift && !isAdmin,
+          isAdminScheduleMode: isAdmin,
         ),
       ),
     );

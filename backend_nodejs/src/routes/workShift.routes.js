@@ -1,5 +1,6 @@
 const express = require('express');
 const pool = require('../config/db');
+const { assertCanStartShift } = require('./employeeSchedule.routes');
 
 const router = express.Router();
 
@@ -30,11 +31,15 @@ function toShift(row) {
   return {
     shift_id: row.shift_id,
     employee_id: row.employee_id,
+    employee_name: row.employee_name || row.full_name || null,
+    employee_email: row.employee_email || row.email || null,
     shift_date: formatDateOnly(row.shift_date),
     start_time: formatTimeOnly(row.start_time),
     end_time: formatTimeOnly(row.end_time),
     status: row.status || (row.end_time ? 'closed' : 'active'),
     note: row.note,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
   };
 }
 
@@ -80,6 +85,62 @@ async function workShiftHasStatus(connection) {
   return Number(rows[0]?.count || 0) > 0;
 }
 
+router.get('/', async (req, res) => {
+  try {
+    const employeeId = Number(req.query.employee_id || req.query.employeeId);
+    const status = (req.query.status || '').toString().toLowerCase();
+    const dateFilter = (req.query.date_filter || req.query.dateFilter || 'all').toString();
+
+    const params = [];
+    const where = ["r.role_name = 'employee'"];
+    if (employeeId) {
+      where.push('u.user_id = ?');
+      params.push(employeeId);
+    }
+    if (status === 'working') {
+      where.push("ws.end_time IS NULL AND COALESCE(ws.status, 'working') IN ('active', 'working', 'open')");
+    } else if (status === 'completed') {
+      where.push("(ws.end_time IS NOT NULL OR COALESCE(ws.status, '') IN ('completed', 'closed'))");
+    } else if (status === 'cancelled') {
+      where.push("COALESCE(ws.status, '') IN ('cancelled', 'canceled')");
+    }
+
+    if (dateFilter === 'today') {
+      where.push('ws.shift_date = CURDATE()');
+    } else if (dateFilter === 'week') {
+      where.push('YEARWEEK(ws.shift_date, 1) = YEARWEEK(CURDATE(), 1)');
+    } else if (dateFilter === 'month') {
+      where.push('YEAR(ws.shift_date) = YEAR(CURDATE()) AND MONTH(ws.shift_date) = MONTH(CURDATE())');
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT
+         ws.*,
+         u.full_name AS employee_name,
+         u.email AS employee_email
+       FROM work_shifts ws
+       JOIN users u ON u.user_id = ws.employee_id
+       JOIN roles r ON r.role_id = u.role_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY ws.shift_date DESC, ws.start_time DESC, ws.shift_id DESC`,
+      params
+    );
+
+    res.json({
+      success: true,
+      data: rows.map(toShift),
+      meta: { total: rows.length },
+    });
+  } catch (error) {
+    console.error('work-shifts all failed:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi lấy danh sách ca làm',
+      error: error.message,
+    });
+  }
+});
+
 router.get('/employee/:employeeId', async (req, res) => {
   try {
     const employeeId = Number(req.params.employeeId);
@@ -92,12 +153,16 @@ router.get('/employee/:employeeId', async (req, res) => {
     const month = Number(req.query.month) || now.getMonth() + 1;
 
     const [rows] = await pool.execute(
-      `SELECT *
-       FROM work_shifts
-       WHERE employee_id = ?
-         AND YEAR(shift_date) = ?
-         AND MONTH(shift_date) = ?
-       ORDER BY shift_date DESC, start_time DESC, shift_id DESC`,
+      `SELECT
+         ws.*,
+         u.full_name AS employee_name,
+         u.email AS employee_email
+       FROM work_shifts ws
+       JOIN users u ON u.user_id = ws.employee_id
+       WHERE ws.employee_id = ?
+         AND YEAR(ws.shift_date) = ?
+         AND MONTH(ws.shift_date) = ?
+       ORDER BY ws.shift_date DESC, ws.start_time DESC, ws.shift_id DESC`,
       [employeeId, year, month]
     );
 
@@ -129,14 +194,24 @@ router.post('/start', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy nhân viên active' });
     }
 
+    const today = new Date();
+    const workDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const scheduleCheck = await assertCanStartShift(employeeId, workDate);
+    if (!scheduleCheck.ok) {
+      return res.status(scheduleCheck.status).json({
+        success: false,
+        message: scheduleCheck.message,
+      });
+    }
+
     await connection.beginTransaction();
     const hasStatus = await workShiftHasStatus(connection);
     const activeShift = await findActiveShift(connection, employeeId);
     if (activeShift) {
-      await connection.commit();
-      return res.json({
-        success: true,
-        message: 'Nhân viên đang có ca active',
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: 'Nhân viên đang trong ca làm',
         data: toShift(activeShift),
       });
     }
@@ -184,7 +259,7 @@ router.post('/end', async (req, res) => {
     const activeShift = await findActiveShift(connection, employeeId);
     if (!activeShift) {
       await connection.rollback();
-      return res.status(404).json({ success: false, message: 'Nhân viên chưa có ca active' });
+      return res.status(404).json({ success: false, message: 'Nhân viên chưa có ca đang làm' });
     }
 
     if (hasStatus) {

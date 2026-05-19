@@ -1,11 +1,11 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/voucher.dart';
+import 'api_service.dart';
 import 'db_service.dart'; // Import để lấy token & user_id từ Hive
 
 class VoucherService {
-  static const String baseUrl =
-      'http://10.0.2.2:3000/api/vouchers'; // Android emulator localhost
+  static String get baseUrl => '${ApiService.baseUrl}/api/vouchers';
   static const Duration timeoutDuration = Duration(seconds: 10);
 
   // Helper: Get auth headers với token + user_id

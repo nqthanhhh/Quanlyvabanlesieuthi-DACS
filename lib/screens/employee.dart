@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/user.dart';
+import '../models/work_shift.dart';
+import '../repositories/work_shift_repository.dart';
 import '../services/db_service.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
@@ -76,6 +78,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<User> _allUsers = [];
   List<User> _displayedUsers = [];
+  List<WorkShift> _shiftBadges = [];
   bool _isLoading = true;
   String? _error;
 
@@ -119,6 +122,12 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
 
     try {
       await DBService.syncUsersFromApi();
+      List<WorkShift> shifts = const [];
+      try {
+        shifts = await WorkShiftRepository.getAllShifts();
+      } catch (_) {
+        // Hồ sơ nhân viên vẫn phải xem được nếu API ca làm tạm lỗi.
+      }
       final usersBox = DBService.users();
       final users = usersBox.values
           .cast<User>()
@@ -131,6 +140,7 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
 
       _allUsers = users;
       _displayedUsers = List.from(_allUsers);
+      _shiftBadges = shifts;
       setState(() {
         _isLoading = false;
       });
@@ -148,15 +158,23 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
     final phone = user.phone.isNotEmpty ? user.phone : '-';
 
     final isLocked = user.status.toLowerCase() == 'inactive';
-    final now = DateTime.now();
-    final workingStatus =
-        (user.startDate == null || user.startDate!.isAfter(now))
-        ? 'Chưa làm'
-        : 'Đang làm';
+    final isEmployeeRole = user.role.toLowerCase() == 'employee';
+    final shift = isEmployeeRole ? _displayShiftFor(user.userId) : null;
+    final workingStatus = !isEmployeeRole
+        ? 'Đang hoạt động'
+        : shift?.isOpen == true
+        ? 'Đang làm'
+        : shift != null
+        ? 'Đã kết thúc'
+        : 'Chưa làm';
     final status = isLocked ? 'Đã khóa' : workingStatus;
     final statusColor = isLocked
         ? Colors.red
         : (workingStatus == 'Đang làm')
+        ? Colors.green
+        : (workingStatus == 'Đã kết thúc')
+        ? Colors.blueGrey
+        : (workingStatus == 'Đang hoạt động')
         ? Colors.green
         : Colors.orange;
 
@@ -168,6 +186,27 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
       status: status,
       statusColor: statusColor,
     );
+  }
+
+  WorkShift? _displayShiftFor(int? employeeId) {
+    if (employeeId == null) return null;
+    final shifts = _shiftBadges
+        .where((s) => s.employeeId == employeeId)
+        .toList();
+    if (shifts.isEmpty) return null;
+    final open = shifts.where((s) => s.isOpen).toList()
+      ..sort(_compareShiftDesc);
+    if (open.isNotEmpty) return open.first;
+    final sorted = List<WorkShift>.from(shifts)..sort(_compareShiftDesc);
+    return sorted.first;
+  }
+
+  int _compareShiftDesc(WorkShift a, WorkShift b) {
+    final aTime = a.startDateTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final bTime = b.startDateTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final cmp = bTime.compareTo(aTime);
+    if (cmp != 0) return cmp;
+    return (b.id ?? 0).compareTo(a.id ?? 0);
   }
 
   String _mapRole(String role) {
@@ -225,13 +264,13 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: employee.statusColor.withOpacity(0.15),
+            color: employee.statusColor.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(15),
           ),
           child: Text(
             employee.status,
             style: TextStyle(
-              color: employee.statusColor.withOpacity(1.0),
+              color: employee.statusColor,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -241,9 +280,8 @@ class _EmployeeManagementScreenState extends State<EmployeeManagementScreen> {
           final changed = await Navigator.of(context).push<bool?>(
             MaterialPageRoute(builder: (_) => EmployeeDetailScreen(user: user)),
           );
-          if (changed == true) {
-            await _loadEmployees();
-          }
+          if (!mounted) return;
+          if (changed == true || changed == null) await _loadEmployees();
         },
       ),
     );

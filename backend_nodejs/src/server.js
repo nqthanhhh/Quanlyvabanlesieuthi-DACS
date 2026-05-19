@@ -21,6 +21,7 @@ const uploadRoutes = require("./routes/upload.routes");
 const reportRoutes = require("./routes/report.routes");
 const reviewRoutes = require("./routes/review.routes");
 const workShiftRoutes = require("./routes/workShift.routes");
+const employeeScheduleRoutes = require("./routes/employeeSchedule.routes");
 const voucherRoutes = require("./routes/voucher.routes");
 const myOrderRoutes = require("./routes/myOrder.routes");
 
@@ -39,6 +40,7 @@ app.use("/api/uploads", uploadRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/work-shifts", workShiftRoutes);
+app.use("/api/employee-schedules", employeeScheduleRoutes);
 app.use("/api/vouchers", voucherRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 

@@ -13,6 +13,7 @@ import 'product_management_screen.dart';
 import 'inventory_management_screen.dart';
 import 'employee.dart';
 import 'employee_confirm_orders_screen.dart';
+import 'work_shift_management_screen.dart';
 import 'customer_management_screen.dart';
 import 'orders_screen.dart';
 import 'order_management_screen.dart';
@@ -427,6 +428,18 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
         ListTile(
+          leading: const Icon(Icons.schedule_outlined),
+          title: const Text('Quản lý ca làm'),
+          onTap: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => WorkShiftManagementScreen(role: widget.role),
+              ),
+            );
+          },
+        ),
+        ListTile(
           leading: const Icon(Icons.groups_outlined),
           title: const Text('Quản lý khách hàng'),
           onTap: () {
@@ -455,6 +468,18 @@ class _HomeScreenState extends State<HomeScreen> {
       ]);
     } else if (widget.role == 'employee') {
       items.insertAll(0, [
+        ListTile(
+          leading: const Icon(Icons.schedule_outlined),
+          title: const Text('Ca làm của tôi'),
+          onTap: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => WorkShiftManagementScreen(role: widget.role),
+              ),
+            );
+          },
+        ),
         ListTile(
           leading: const Icon(Icons.receipt_long_outlined),
           title: const Text('Lịch sử'),

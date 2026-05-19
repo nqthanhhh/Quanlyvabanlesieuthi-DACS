@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -19,6 +18,8 @@ class _ScanProductScreenState extends State<ScanProductScreen> {
   final MobileScannerController _scannerController = MobileScannerController();
   bool _isCheckingPermission = true;
   bool _hasCameraPermission = false;
+  bool _permissionPermanentlyDenied = false;
+  PermissionStatus _cameraPermissionStatus = PermissionStatus.denied;
   bool _isProcessing = false;
   String? _errorMessage;
 
@@ -41,30 +42,39 @@ class _ScanProductScreenState extends State<ScanProductScreen> {
       _errorMessage = null;
     });
 
-    final status = await Permission.camera.request();
+    final current = await Permission.camera.status;
+    final status = current.isGranted
+        ? current
+        : await Permission.camera.request();
     if (!mounted) return;
 
     setState(() {
       _hasCameraPermission = status.isGranted;
+      _cameraPermissionStatus = status;
+      _permissionPermanentlyDenied =
+          status.isPermanentlyDenied || status.isRestricted;
       _isCheckingPermission = false;
-      _errorMessage = status.isGranted ? null : _cameraPermissionMessage();
+      _errorMessage = status.isGranted ? null : _cameraPermissionMessage(status);
     });
+
+    if (status.isGranted) {
+      await _scannerController.start();
+    }
   }
 
-  String _cameraPermissionMessage() {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      return 'Simulator có thể không hỗ trợ camera. Vui lòng nhập mã thủ công để demo.';
+  String _cameraPermissionMessage(PermissionStatus status) {
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      return 'Quyền camera đã bị tắt. Vào Cài đặt > Sieuthimini để bật Camera, hoặc nhập mã thủ công bên dưới.';
     }
     return 'Bạn cần cấp quyền camera để quét mã sản phẩm, hoặc nhập mã thủ công bên dưới.';
   }
 
-  String _cameraUnavailableMessage() {
-    if (kIsWeb ||
-        defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS) {
-      return 'Simulator có thể không hỗ trợ camera. Vui lòng nhập mã thủ công để demo.';
+  String _cameraUnavailableMessage(Object? error) {
+    final details = error?.toString().trim();
+    if (details != null && details.isNotEmpty) {
+      return 'Không mở được camera ($details). Hãy thử lại hoặc nhập mã thủ công.';
     }
-    return 'Không mở được camera. Hãy dùng ô nhập mã bên dưới.';
+    return 'Không mở được camera. Hãy thử lại hoặc nhập mã thủ công bên dưới.';
   }
 
   Future<void> _handleCode(String rawCode) async {
@@ -185,14 +195,21 @@ class _ScanProductScreenState extends State<ScanProductScreen> {
                         onDetect: _onBarcodeDetected,
                         errorBuilder: (context, error, child) {
                           return _CameraUnavailable(
-                            message: _cameraUnavailableMessage(),
+                            message: _cameraUnavailableMessage(error),
                             onRetry: _requestCameraPermission,
+                            onOpenSettings: _permissionPermanentlyDenied
+                                ? openAppSettings
+                                : null,
                           );
                         },
                       )
                     : _CameraUnavailable(
-                        message: _errorMessage ?? _cameraPermissionMessage(),
+                        message: _errorMessage ??
+                            _cameraPermissionMessage(_cameraPermissionStatus),
                         onRetry: _requestCameraPermission,
+                        onOpenSettings: _permissionPermanentlyDenied
+                            ? openAppSettings
+                            : null,
                       ),
               ),
             ),
@@ -277,8 +294,13 @@ class _ScanProductScreenState extends State<ScanProductScreen> {
 class _CameraUnavailable extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
+  final VoidCallback? onOpenSettings;
 
-  const _CameraUnavailable({required this.message, required this.onRetry});
+  const _CameraUnavailable({
+    required this.message,
+    required this.onRetry,
+    this.onOpenSettings,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -305,6 +327,17 @@ class _CameraUnavailable extends StatelessWidget {
               ),
               child: const Text('Thử lại'),
             ),
+            if (onOpenSettings != null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: onOpenSettings,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white70),
+                ),
+                child: const Text('Mở cài đặt'),
+              ),
+            ],
           ],
         ),
       ),

@@ -7,6 +7,7 @@ import '../models/order.dart';
 import '../models/product.dart';
 import '../models/product_review.dart';
 import '../models/work_shift.dart';
+import '../models/employee_schedule_day.dart';
 import '../models/user.dart';
 import '../models/inventory_item.dart';
 import '../utils/constants.dart';
@@ -30,10 +31,12 @@ class ApiService {
 
   static String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
-    if (configured.isNotEmpty) return configured;
+    if (configured.isNotEmpty) return _normalizeBaseUrl(configured);
 
     final override = AppConstants.apiBaseUrlOverride;
-    if (override != null && override.isNotEmpty) return override;
+    if (override != null && override.isNotEmpty) {
+      return _normalizeBaseUrl(override);
+    }
 
     if (kIsWeb) return 'http://localhost:3000';
 
@@ -42,9 +45,18 @@ class ApiService {
         // Chỉ máy ảo Android: 10.0.2.2 = localhost của máy host
         return 'http://10.0.2.2:3000';
       }
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        return AppConstants.physicalDeviceApiBaseUrl;
+      }
     } catch (_) {}
 
     return 'http://localhost:3000';
+  }
+
+  static String _normalizeBaseUrl(String value) {
+    final trimmed = value.trim();
+    if (trimmed.endsWith('/')) return trimmed.substring(0, trimmed.length - 1);
+    return trimmed;
   }
 
   static String connectionErrorMessage(Object error) {
@@ -57,7 +69,8 @@ class ApiService {
         msg.contains('clientexception')) {
       return 'Không kết nối được backend ($baseUrl). '
           'Kiểm tra backend đang chạy (npm start) và địa chỉ API: '
-          'máy ảo dùng 10.0.2.2, điện thoại thật cần IP máy tính trong constants.dart.';
+          'Android emulator dùng 10.0.2.2, iPhone thật dùng IP Wi-Fi của Mac '
+          'hoặc chạy với --dart-define=API_BASE_URL=http://<IP-Mac>:3000.';
     }
     return 'Email hoặc mật khẩu không đúng';
   }
@@ -216,7 +229,7 @@ class ApiService {
     return _dataMap(_decode(response));
   }
 
-  static Future<List<WorkShift>> fetchEmployeeShiftsForMonth({
+  static Future<EmployeeScheduleMonth> fetchEmployeeScheduleMonth({
     required int employeeId,
     required int year,
     required int month,
@@ -224,10 +237,83 @@ class ApiService {
     final response = await http
         .get(
           _uri(
-            '/api/work-shifts/employee/$employeeId?year=$year&month=$month',
+            '/api/employee-schedules/employee/$employeeId/month?year=$year&month=$month',
           ),
         )
         .timeout(_shiftTimeout);
+    final body = _dataMap(_decode(response));
+    return EmployeeScheduleMonth.fromJson(body);
+  }
+
+  static Future<EmployeeScheduleDay> setEmployeeDayStatus({
+    required int employeeId,
+    required String workDate,
+    required String dayStatus,
+    String? note,
+    int? setBy,
+  }) async {
+    final response = await http
+        .put(
+          _uri('/api/employee-schedules/employee/$employeeId/day'),
+          headers: _headers,
+          body: jsonEncode({
+            'work_date': workDate,
+            'day_status': dayStatus,
+            if (note != null) 'note': note,
+            if (setBy != null) 'set_by': setBy,
+          }),
+        )
+        .timeout(_shiftTimeout);
+    return EmployeeScheduleDay.fromJson(_dataMap(_decode(response)));
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchScheduleOverviewMonth({
+    required int year,
+    required int month,
+  }) async {
+    final response = await http
+        .get(
+          _uri(
+            '/api/employee-schedules/overview/month?year=$year&month=$month',
+          ),
+        )
+        .timeout(_shiftTimeout);
+    final body = _dataMap(_decode(response));
+    final list = body['employees'];
+    if (list is List) {
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return const [];
+  }
+
+  static Future<List<WorkShift>> fetchEmployeeShiftsForMonth({
+    required int employeeId,
+    required int year,
+    required int month,
+  }) async {
+    final response = await http
+        .get(
+          _uri('/api/work-shifts/employee/$employeeId?year=$year&month=$month'),
+        )
+        .timeout(_shiftTimeout);
+    final body = _decode(response);
+    return _dataList(body)
+        .map((e) => WorkShift.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  static Future<List<WorkShift>> fetchWorkShifts({
+    int? employeeId,
+    String status = 'all',
+    String dateFilter = 'all',
+  }) async {
+    final query = <String, String>{
+      if (employeeId != null) 'employee_id': employeeId.toString(),
+      if (status != 'all') 'status': status,
+      if (dateFilter != 'all') 'date_filter': dateFilter,
+    };
+    final uri = _uri('/api/work-shifts').replace(queryParameters: query);
+    final response = await http.get(uri).timeout(_shiftTimeout);
     final body = _decode(response);
     return _dataList(body)
         .map((e) => WorkShift.fromJson(Map<String, dynamic>.from(e as Map)))

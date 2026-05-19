@@ -47,6 +47,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Ứng dụng cần truy cập camera để quét mã sản phẩm.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Ứng dụng cần kết nối tới backend đang chạy trên máy Mac trong cùng mạng Wi-Fi.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

@@ -147,17 +147,26 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
               style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
             ),
             const SizedBox(height: 5),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 5),
               Text(
                 subtitle,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
               ),
@@ -178,57 +187,68 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
     final totalDiscount = _toDouble(revenue['total_discount']);
     final totalProfit = revenue['total_profit'];
 
-    return GridView.count(
-      crossAxisCount: 2,
-      childAspectRatio: 1.45,
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      children: [
-        _buildKpiCard(
-          title: 'Tổng doanh thu',
-          value: _formatCurrency(totalRevenue),
-          subtitle: 'Doanh thu trước giảm giá',
-          icon: Icons.payments_outlined,
-          color: Colors.indigo,
-        ),
-        _buildKpiCard(
-          title: 'Tổng số đơn hàng',
-          value: '$totalOrders',
-          subtitle: 'Đơn đã thanh toán/hoàn thành',
-          icon: Icons.receipt_long_outlined,
-          color: Colors.green,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const OrderListScreen()),
-            );
-          },
-        ),
-        _buildKpiCard(
-          title: 'Giá trị trung bình/đơn',
-          value: _formatCurrency(averageOrderValue),
-          subtitle: 'Theo doanh thu thuần',
-          icon: Icons.trending_up_outlined,
-          color: Colors.orange,
-        ),
-        _buildKpiCard(
-          title: 'Doanh thu thuần',
-          value: _formatCurrency(netRevenue),
-          subtitle: 'Sau giảm giá: ${_formatCurrency(totalDiscount)}',
-          icon: Icons.account_balance_wallet_outlined,
-          color: Colors.blue,
-        ),
-        if (totalProfit != null)
-          _buildKpiCard(
-            title: 'Tổng lợi nhuận',
-            value: _formatCurrency(_toDouble(totalProfit)),
-            subtitle: 'Tính theo giá nhập gần nhất',
-            icon: Icons.ssid_chart_outlined,
-            color: Colors.teal,
-          ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final childAspectRatio = width < 380
+            ? 1.05
+            : width < 520
+            ? 1.18
+            : 1.45;
+
+        return GridView.count(
+          crossAxisCount: 2,
+          childAspectRatio: childAspectRatio,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _buildKpiCard(
+              title: 'Tổng doanh thu',
+              value: _formatCurrency(totalRevenue),
+              subtitle: 'Doanh thu trước giảm giá',
+              icon: Icons.payments_outlined,
+              color: Colors.indigo,
+            ),
+            _buildKpiCard(
+              title: 'Tổng số đơn hàng',
+              value: '$totalOrders',
+              subtitle: 'Đơn đã thanh toán/hoàn thành',
+              icon: Icons.receipt_long_outlined,
+              color: Colors.green,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const OrderListScreen()),
+                );
+              },
+            ),
+            _buildKpiCard(
+              title: 'Giá trị trung bình/đơn',
+              value: _formatCurrency(averageOrderValue),
+              subtitle: 'Theo doanh thu thuần',
+              icon: Icons.trending_up_outlined,
+              color: Colors.orange,
+            ),
+            _buildKpiCard(
+              title: 'Doanh thu thuần',
+              value: _formatCurrency(netRevenue),
+              subtitle: 'Sau giảm giá: ${_formatCurrency(totalDiscount)}',
+              icon: Icons.account_balance_wallet_outlined,
+              color: Colors.blue,
+            ),
+            if (totalProfit != null)
+              _buildKpiCard(
+                title: 'Tổng lợi nhuận',
+                value: _formatCurrency(_toDouble(totalProfit)),
+                subtitle: 'Tính theo giá nhập gần nhất',
+                icon: Icons.ssid_chart_outlined,
+                color: Colors.teal,
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -793,10 +813,17 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  _formatCurrency(revenue),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      _formatCurrency(revenue),
+                                      maxLines: 1,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -837,37 +864,48 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
     final productsSold = _toInt(revenue['total_products_sold']);
     final profitNote = (revenue['profit_note'] ?? '').toString();
 
-    return Row(
-      children: [
-        Expanded(
-          child: _SmallMetric(
-            label: 'Tổng giảm giá',
-            value: _formatCurrency(totalDiscount),
-            icon: Icons.local_offer_outlined,
-            color: Colors.purple,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _SmallMetric(
-            label: 'Sản phẩm đã bán',
-            value: '$productsSold',
-            icon: Icons.inventory_2_outlined,
-            color: Colors.cyan,
-          ),
-        ),
-        if (profitNote.isNotEmpty) ...[
-          const SizedBox(width: 10),
-          Expanded(
-            child: _SmallMetric(
-              label: 'Ghi chú lợi nhuận',
-              value: 'Thiếu giá nhập',
-              icon: Icons.info_outline,
-              color: Colors.amber,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final itemCount = profitNote.isNotEmpty ? 3 : 2;
+        final itemWidth = constraints.maxWidth < 520
+            ? constraints.maxWidth
+            : (constraints.maxWidth - ((itemCount - 1) * 10)) / itemCount;
+
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            SizedBox(
+              width: itemWidth,
+              child: _SmallMetric(
+                label: 'Tổng giảm giá',
+                value: _formatCurrency(totalDiscount),
+                icon: Icons.local_offer_outlined,
+                color: Colors.purple,
+              ),
             ),
-          ),
-        ],
-      ],
+            SizedBox(
+              width: itemWidth,
+              child: _SmallMetric(
+                label: 'Sản phẩm đã bán',
+                value: '$productsSold',
+                icon: Icons.inventory_2_outlined,
+                color: Colors.cyan,
+              ),
+            ),
+            if (profitNote.isNotEmpty)
+              SizedBox(
+                width: itemWidth,
+                child: _SmallMetric(
+                  label: 'Ghi chú lợi nhuận',
+                  value: 'Thiếu giá nhập',
+                  icon: Icons.info_outline,
+                  color: Colors.amber,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -1019,7 +1057,19 @@ class _DashboardSection extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailing != null) trailing!,
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: trailing!,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 14),
@@ -1144,11 +1194,17 @@ class _SmallMetric extends StatelessWidget {
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
                 ),
                 const SizedBox(height: 3),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
                 ),
               ],
             ),

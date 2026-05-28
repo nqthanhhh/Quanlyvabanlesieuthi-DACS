@@ -518,6 +518,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 Expanded(
                   child: Text(
                     entry.key,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -895,20 +897,32 @@ class _PaymentScreenState extends State<PaymentScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: isTotal ? _ink : Colors.black.withValues(alpha: 0.62),
-              fontSize: isTotal ? 17 : 15,
-              fontWeight: isTotal ? FontWeight.w900 : FontWeight.w600,
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isTotal ? _ink : Colors.black.withValues(alpha: 0.62),
+                fontSize: isTotal ? 17 : 15,
+                fontWeight: isTotal ? FontWeight.w900 : FontWeight.w600,
+              ),
             ),
           ),
-          Text(
-            _formatCurrency(amount),
-            style: TextStyle(
-              color: isTotal ? _primary : _ink,
-              fontSize: isTotal ? 20 : 15,
-              fontWeight: FontWeight.w900,
+          const SizedBox(width: 12),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                _formatCurrency(amount),
+                maxLines: 1,
+                style: TextStyle(
+                  color: isTotal ? _primary : _ink,
+                  fontSize: isTotal ? 20 : 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
           ),
         ],

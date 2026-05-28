@@ -543,6 +543,8 @@ class _CustomerOnlineCheckoutScreenState
                 const SizedBox(height: 4),
                 Text(
                   '${_formatCurrency(product.price)} / ${product.unit}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.black54, fontSize: 13),
                 ),
                 const SizedBox(height: 10),
@@ -573,13 +575,20 @@ class _CustomerOnlineCheckoutScreenState
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      _formatCurrency(lineTotal),
+                      maxLines: 1,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            _formatCurrency(lineTotal),
-            style: const TextStyle(fontWeight: FontWeight.w900),
           ),
         ],
       ),
@@ -1025,20 +1034,32 @@ class _CustomerOnlineCheckoutScreenState
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: isTotal ? _ink : Colors.black54,
-              fontWeight: isTotal ? FontWeight.w900 : FontWeight.w600,
-              fontSize: isTotal ? 17 : 14,
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isTotal ? _ink : Colors.black54,
+                fontWeight: isTotal ? FontWeight.w900 : FontWeight.w600,
+                fontSize: isTotal ? 17 : 14,
+              ),
             ),
           ),
-          Text(
-            _formatCurrency(amount),
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              color: isTotal ? _primary : _ink,
-              fontSize: isTotal ? 19 : 14,
+          const SizedBox(width: 12),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                _formatCurrency(amount),
+                maxLines: 1,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: isTotal ? _primary : _ink,
+                  fontSize: isTotal ? 19 : 14,
+                ),
+              ),
             ),
           ),
         ],

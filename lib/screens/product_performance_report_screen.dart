@@ -1,8 +1,11 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
-import '../models/product.dart';
+import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+
+enum _PerformanceRange { today, sevenDays, thirtyDays, month }
 
 class ProductPerformanceReportScreen extends StatefulWidget {
   const ProductPerformanceReportScreen({super.key});
@@ -17,15 +20,19 @@ class _ProductPerformanceReportScreenState
   static const Color _surface = Color(0xFFF5F7FA);
   static const Color _primary = Color(0xFF146C43);
 
-  late Future<List<Map<String, dynamic>>> _future;
+  late Future<Map<String, dynamic>> _future;
+  _PerformanceRange _range = _PerformanceRange.thirtyDays;
+  late DateTime _selectedMonth;
 
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _selectedMonth = DateTime(now.year, now.month);
     _future = _loadData();
   }
 
-  Future<List<Map<String, dynamic>>> _loadData() async {
+  Future<Map<String, dynamic>> _loadData() async {
     final rawUserId = DBService.settings().get('current_user_id');
     final adminUserId = rawUserId is int
         ? rawUserId
@@ -34,11 +41,40 @@ class _ProductPerformanceReportScreenState
       throw ApiException('Thiếu thông tin admin');
     }
 
-    final products = await ApiService.fetchProductPerformanceReport(
-      adminUserId,
+    debugPrint(
+      '[performance] load dashboard range=$_rangeApiValue month=${_range == _PerformanceRange.month ? _monthKey(_selectedMonth) : '-'}',
     );
-    _fillMissingProductData(products);
-    products.sort((a, b) {
+    try {
+      final data = await ApiService.fetchProductPerformanceDashboard(
+        adminUserId,
+        range: _rangeApiValue,
+        month: _range == _PerformanceRange.month
+            ? _monthKey(_selectedMonth)
+            : null,
+      );
+      debugPrint('[performance] dashboard api ok keys=${data.keys.join(',')}');
+      return data;
+    } catch (error) {
+      debugPrint('[performance] dashboard api failed: $error');
+      return _loadLegacyDashboard(adminUserId);
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadLegacyDashboard(int adminUserId) async {
+    debugPrint('[performance] fallback to legacy report APIs');
+    final results = await Future.wait([
+      ApiService.fetchRevenueReport(adminUserId),
+      ApiService.fetchProductPerformanceReport(adminUserId),
+    ]);
+    final revenue = results[0] as Map<String, dynamic>;
+    final products = (results[1] as List<Map<String, dynamic>>)
+        .map((product) => Map<String, dynamic>.from(product))
+        .toList();
+    final orders = await _fetchFilteredOrderDetails();
+    final periodProducts = _productsFromOrders(products, orders);
+    final sourceProducts = periodProducts.isEmpty ? products : periodProducts;
+
+    sourceProducts.sort((a, b) {
       final bySold = _toInt(
         b['total_quantity_sold'],
       ).compareTo(_toInt(a['total_quantity_sold']));
@@ -47,88 +83,284 @@ class _ProductPerformanceReportScreenState
         b['total_revenue'],
       ).compareTo(_toDouble(a['total_revenue']));
     });
-    return products;
+
+    final topProducts = sourceProducts
+        .where((product) => _toInt(product['total_quantity_sold']) > 0)
+        .take(10)
+        .toList();
+    final highStockProducts =
+        sourceProducts
+            .where((product) => _toInt(product['current_stock']) > 50)
+            .toList()
+          ..sort(
+            (a, b) => _toInt(
+              b['current_stock'],
+            ).compareTo(_toInt(a['current_stock'])),
+          );
+    final slowProducts = sourceProducts
+        .where((product) => _toInt(product['total_quantity_sold']) < 5)
+        .map((product) {
+          product['days_without_order'] ??= 999;
+          return product;
+        })
+        .take(10)
+        .toList();
+    final totalStock = products.fold<int>(
+      0,
+      (sum, product) => sum + _toInt(product['current_stock']),
+    );
+    final revenueChart = orders.isEmpty
+        ? _filterLegacyRevenueRows(_list(revenue['revenue_by_time']))
+        : _chartFromOrders(orders);
+    final periodRevenue = orders.isEmpty
+        ? revenueChart.fold<double>(
+            0,
+            (sum, row) => sum + _toDouble(row['revenue']),
+          )
+        : orders.fold<double>(0, (sum, order) => sum + order.totalAmount);
+    final periodSold = orders.fold<int>(
+      0,
+      (sum, order) =>
+          sum +
+          order.items.fold<int>(0, (itemSum, item) => itemSum + item.quantity),
+    );
+
+    return {
+      'filter': {
+        'range': _rangeApiValue,
+        'month': _range == _PerformanceRange.month
+            ? _monthKey(_selectedMonth)
+            : null,
+        'source': 'legacy_reports',
+      },
+      'overview': {
+        'total_revenue': periodRevenue,
+        'total_orders': orders.isEmpty
+            ? _estimateOrders(revenueChart)
+            : orders.length,
+        'total_products_sold': orders.isEmpty
+            ? _toInt(revenue['total_products_sold'])
+            : periodSold,
+        'total_stock': totalStock,
+        'average_order_value': orders.isEmpty || periodRevenue <= 0
+            ? _toDouble(revenue['average_order_value'])
+            : periodRevenue / orders.length,
+      },
+      'top_products': topProducts,
+      'high_stock_products': highStockProducts.take(10).toList(),
+      'slow_products': slowProducts,
+      'suggestions': _buildLocalSuggestions(
+        topProducts,
+        highStockProducts,
+        slowProducts,
+      ),
+      'revenue_chart': revenueChart,
+    };
   }
 
-  void _fillMissingProductData(List<Map<String, dynamic>> products) {
-    final localProducts = DBService.getAllProducts();
-    final byId = <String, Product>{
-      for (final product in localProducts) product.id: product,
+  Future<List<Order>> _fetchFilteredOrderDetails() async {
+    try {
+      final orders = await ApiService.fetchOrders();
+      final filtered = orders.where(_isOrderInSelectedRange).toList();
+      final detailed = await Future.wait(
+        filtered.map((order) => ApiService.fetchOrderDetail(order.id)),
+      );
+      return detailed.where((order) => order.items.isNotEmpty).toList();
+    } catch (error) {
+      debugPrint('[performance] legacy order detail fallback failed: $error');
+      return const [];
+    }
+  }
+
+  bool _isOrderInSelectedRange(Order order) {
+    final date = order.orderDate;
+    final now = DateTime.now();
+    switch (_range) {
+      case _PerformanceRange.today:
+        return date.year == now.year &&
+            date.month == now.month &&
+            date.day == now.day;
+      case _PerformanceRange.sevenDays:
+        return date.isAfter(now.subtract(const Duration(days: 7)));
+      case _PerformanceRange.thirtyDays:
+        return date.isAfter(now.subtract(const Duration(days: 30)));
+      case _PerformanceRange.month:
+        return date.year == _selectedMonth.year &&
+            date.month == _selectedMonth.month;
+    }
+  }
+
+  List<Map<String, dynamic>> _productsFromOrders(
+    List<Map<String, dynamic>> allProducts,
+    List<Order> orders,
+  ) {
+    final byId = <String, Map<String, dynamic>>{
+      for (final product in allProducts)
+        (product['product_id'] ?? product['id'] ?? '').toString():
+            Map<String, dynamic>.from(product),
     };
-    final byBarcode = <String, Product>{
-      for (final product in localProducts)
-        if ((product.barcode ?? '').isNotEmpty) product.barcode!: product,
-    };
-
-    for (final product in products) {
-      final productId = (product['product_id'] ?? product['id'] ?? '')
-          .toString();
-      final barcode = (product['barcode'] ?? '').toString();
-      final local = byId[productId] ?? byBarcode[barcode];
-
-      if (local != null) {
-        if (_toDouble(product['sale_price'] ?? product['price']) <= 0) {
-          product['sale_price'] = local.price;
-        }
-        product['unit'] ??= local.unit;
-        product['barcode'] ??= local.barcode;
-        product['category_name'] ??= local.categoryName;
-        product['image_url'] ??= local.imageUrl;
-        product['current_stock'] ??= local.stockQuantity;
-        product['created_at'] ??= local.createdAt?.toIso8601String();
-      }
-
-      product['sell_through_rate'] = _calculateSellThroughRate(product);
+    final result = <String, Map<String, dynamic>>{};
+    for (final product in allProducts) {
+      final clone = Map<String, dynamic>.from(product);
+      clone['total_quantity_sold'] = 0;
+      clone['total_revenue'] = 0;
+      clone['orders_count'] = 0;
+      clone['days_without_order'] = 999;
+      result[(clone['product_id'] ?? clone['id'] ?? '').toString()] = clone;
     }
 
-    final existingIds = products
-        .map(
-          (product) =>
-              (product['product_id'] ?? product['id'] ?? '').toString(),
-        )
-        .where((id) => id.isNotEmpty)
-        .toSet();
-    for (final product in localProducts) {
-      if (existingIds.contains(product.id)) continue;
-      products.add({
-        'product_id': product.id,
-        'product_name': product.name,
-        'barcode': product.barcode,
-        'image_url': product.imageUrl,
-        'category_name': product.categoryName,
-        'sale_price': product.price,
-        'unit': product.unit,
-        'total_quantity_sold': 0,
-        'total_revenue': 0,
-        'orders_count': 0,
-        'total_profit': null,
-        'average_sale_price': 0,
-        'current_stock': product.stockQuantity,
-        'min_stock': product.minStock,
-        'import_price': null,
-        'sell_through_rate': product.stockQuantity > 0 ? 0 : null,
-        'created_at': product.createdAt?.toIso8601String(),
+    final productOrderIds = <String, Set<String>>{};
+    final lastSoldAt = <String, DateTime>{};
+    for (final order in orders) {
+      for (final item in order.items) {
+        final product =
+            result[item.productId] ??
+            Map<String, dynamic>.from(byId[item.productId] ?? const {});
+        product['product_id'] ??= item.productId;
+        product['product_name'] = (product['product_name'] ?? item.productName)
+            .toString();
+        product['total_quantity_sold'] =
+            _toInt(product['total_quantity_sold']) + item.quantity;
+        product['total_revenue'] =
+            _toDouble(product['total_revenue']) +
+            item.quantity * item.pricePerUnit;
+        result[item.productId] = product;
+        productOrderIds
+            .putIfAbsent(item.productId, () => <String>{})
+            .add(order.id);
+        final currentLast = lastSoldAt[item.productId];
+        if (currentLast == null || order.orderDate.isAfter(currentLast)) {
+          lastSoldAt[item.productId] = order.orderDate;
+        }
+      }
+    }
+
+    final now = DateTime.now();
+    for (final entry in result.entries) {
+      entry.value['orders_count'] = productOrderIds[entry.key]?.length ?? 0;
+      final last = lastSoldAt[entry.key];
+      entry.value['days_without_order'] = last == null
+          ? 999
+          : now.difference(last).inDays;
+    }
+    return result.values.toList();
+  }
+
+  List<Map<String, dynamic>> _chartFromOrders(List<Order> orders) {
+    final buckets = <String, Map<String, dynamic>>{};
+    for (final order in orders) {
+      final key =
+          '${order.orderDate.year.toString().padLeft(4, '0')}-${order.orderDate.month.toString().padLeft(2, '0')}-${order.orderDate.day.toString().padLeft(2, '0')}';
+      final bucket = buckets.putIfAbsent(
+        key,
+        () => {'period': key, 'revenue': 0.0, 'orders_count': 0},
+      );
+      bucket['revenue'] = _toDouble(bucket['revenue']) + order.totalAmount;
+      bucket['orders_count'] = _toInt(bucket['orders_count']) + 1;
+    }
+    final rows = buckets.values.toList()
+      ..sort(
+        (a, b) => a['period'].toString().compareTo(b['period'].toString()),
+      );
+    return rows;
+  }
+
+  List<Map<String, dynamic>> _filterLegacyRevenueRows(
+    List<Map<String, dynamic>> rows,
+  ) {
+    return rows.where((row) {
+      final raw = row['period'];
+      final date = DateTime.tryParse(raw?.toString() ?? '');
+      if (date == null) return true;
+      return _isOrderInSelectedRange(
+        Order(
+          id: '',
+          orderDate: date,
+          totalAmount: _toDouble(row['revenue']),
+          customerName: '',
+          status: '',
+          items: const [],
+        ),
+      );
+    }).toList();
+  }
+
+  int _estimateOrders(List<Map<String, dynamic>> rows) {
+    return rows.fold<int>(0, (sum, row) => sum + _toInt(row['orders_count']));
+  }
+
+  List<Map<String, dynamic>> _buildLocalSuggestions(
+    List<Map<String, dynamic>> topProducts,
+    List<Map<String, dynamic>> highStockProducts,
+    List<Map<String, dynamic>> slowProducts,
+  ) {
+    final suggestions = <Map<String, dynamic>>[];
+    for (final product in slowProducts.take(3)) {
+      if (_toInt(product['current_stock']) >= 50) {
+        suggestions.add({
+          'title': '${_productName(product)} tồn kho cao nhưng bán chậm',
+          'message':
+              'Nên tạo voucher hoặc chương trình xả kho cho sản phẩm này.',
+          'severity': 'warning',
+        });
+      }
+    }
+    for (final product in topProducts.take(3)) {
+      if (_toInt(product['current_stock']) <=
+          (_toInt(product['min_stock']) == 0
+              ? 10
+              : _toInt(product['min_stock']))) {
+        suggestions.add({
+          'title': '${_productName(product)} đang bán tốt, nên nhập thêm hàng',
+          'message': 'Sản phẩm có doanh số cao và tồn kho đang thấp.',
+          'severity': 'success',
+        });
+      }
+    }
+    if (suggestions.isEmpty) {
+      suggestions.add({
+        'title': 'Hiệu suất sản phẩm đang ổn định',
+        'message':
+            'Chưa phát hiện sản phẩm cần xử lý gấp theo tồn kho và doanh số.',
+        'severity': 'info',
       });
     }
+    return suggestions;
   }
 
-  static double? _calculateSellThroughRate(Map<String, dynamic> product) {
-    final explicitValue = product['sell_through_rate'];
-    if (explicitValue != null) {
-      return _toDouble(explicitValue);
+  String get _rangeApiValue {
+    switch (_range) {
+      case _PerformanceRange.today:
+        return 'today';
+      case _PerformanceRange.sevenDays:
+        return '7days';
+      case _PerformanceRange.thirtyDays:
+        return '30days';
+      case _PerformanceRange.month:
+        return 'month';
     }
-
-    final sold = _toInt(product['total_quantity_sold']);
-    final stock = _toInt(product['current_stock']);
-    final totalTracked = sold + stock;
-    if (totalTracked <= 0) {
-      return null;
-    }
-    return (sold * 100) / totalTracked;
   }
 
   void _reload() {
     setState(() {
+      _future = _loadData();
+    });
+  }
+
+  void _setRange(_PerformanceRange value) {
+    setState(() {
+      _range = value;
+      _future = _loadData();
+    });
+  }
+
+  void _changeMonth(int offset) {
+    setState(() {
+      _selectedMonth = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month + offset,
+      );
+      _range = _PerformanceRange.month;
       _future = _loadData();
     });
   }
@@ -144,18 +376,24 @@ class _ProductPerformanceReportScreenState
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  static List<Map<String, dynamic>> _list(dynamic value) {
+    return ((value as List?) ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
   static String _formatCurrency(num amount) {
     return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} VNĐ';
   }
 
-  String _formatPercent(num value) {
-    if (value == 0) return '0%';
-    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)}%';
+  static String _monthKey(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}';
   }
 
-  String _formatOptionalPercent(double? value) {
-    if (value == null) return 'Chưa có dữ liệu';
-    return _formatPercent(value);
+  static String _dateLabel(dynamic raw) {
+    final date = DateTime.tryParse(raw?.toString() ?? '');
+    if (date == null) return raw?.toString() ?? '';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
   }
 
   String _productName(Map<String, dynamic> product) {
@@ -163,255 +401,381 @@ class _ProductPerformanceReportScreenState
     return name.isEmpty ? 'Sản phẩm chưa đặt tên' : name;
   }
 
-  DateTime? _createdAtOf(Map<String, dynamic> product) {
-    final raw = product['created_at'] ?? product['createdAt'];
-    if (raw == null) return null;
-    if (raw is DateTime) return raw;
-    return DateTime.tryParse(raw.toString());
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-  }
-
-  List<Map<String, dynamic>> _newProducts(List<Map<String, dynamic>> products) {
-    final newest = products.toList();
-    newest.sort((a, b) {
-      final dateA = _createdAtOf(a);
-      final dateB = _createdAtOf(b);
-      if (dateA != null && dateB != null) {
-        return dateB.compareTo(dateA);
-      }
-      if (dateA != null) return -1;
-      if (dateB != null) return 1;
-      return _toInt(
-        b['product_id'] ?? b['id'],
-      ).compareTo(_toInt(a['product_id'] ?? a['id']));
-    });
-    return newest.take(6).toList();
-  }
-
-  Widget _buildSummary(List<Map<String, dynamic>> products) {
-    final totalSold = products.fold<int>(
-      0,
-      (sum, product) => sum + _toInt(product['total_quantity_sold']),
+  Widget _buildFilterBar() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<_PerformanceRange>(
+            showSelectedIcon: false,
+            selected: {_range},
+            onSelectionChanged: (value) => _setRange(value.first),
+            segments: const [
+              ButtonSegment(
+                value: _PerformanceRange.today,
+                icon: Icon(Icons.today_outlined),
+                label: Text('Hôm nay'),
+              ),
+              ButtonSegment(
+                value: _PerformanceRange.sevenDays,
+                icon: Icon(Icons.date_range_outlined),
+                label: Text('7 ngày'),
+              ),
+              ButtonSegment(
+                value: _PerformanceRange.thirtyDays,
+                icon: Icon(Icons.calendar_view_week_outlined),
+                label: Text('30 ngày'),
+              ),
+              ButtonSegment(
+                value: _PerformanceRange.month,
+                icon: Icon(Icons.calendar_month_outlined),
+                label: Text('Theo tháng'),
+              ),
+            ],
+          ),
+        ),
+        if (_range == _PerformanceRange.month) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              IconButton.filledTonal(
+                onPressed: () => _changeMonth(-1),
+                icon: const Icon(Icons.chevron_left),
+                tooltip: 'Tháng trước',
+              ),
+              Expanded(
+                child: Text(
+                  'Tháng ${_selectedMonth.month}/${_selectedMonth.year}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton.filledTonal(
+                onPressed: () => _changeMonth(1),
+                icon: const Icon(Icons.chevron_right),
+                tooltip: 'Tháng sau',
+              ),
+            ],
+          ),
+        ],
+      ],
     );
-    final totalRevenue = products.fold<double>(
-      0,
-      (sum, product) => sum + _toDouble(product['total_revenue']),
-    );
-    final activeProducts = products
-        .where((product) => _toInt(product['total_quantity_sold']) > 0)
-        .length;
+  }
+
+  Widget _buildOverview(Map<String, dynamic> overview) {
+    final cards = [
+      _MetricCard(
+        title: 'Tổng doanh thu',
+        value: _formatCurrency(_toDouble(overview['total_revenue'])),
+        subtitle: 'Theo bộ lọc hiện tại',
+        icon: Icons.payments_outlined,
+        color: Colors.orange.shade700,
+      ),
+      _MetricCard(
+        title: 'Tổng đơn hàng',
+        value: '${_toInt(overview['total_orders'])}',
+        subtitle: 'Đơn đã thanh toán',
+        icon: Icons.receipt_long_outlined,
+        color: Colors.indigo,
+      ),
+      _MetricCard(
+        title: 'Đã bán',
+        value: '${_toInt(overview['total_products_sold'])}',
+        subtitle: 'Tổng sản phẩm',
+        icon: Icons.shopping_cart_checkout_outlined,
+        color: _primary,
+      ),
+      _MetricCard(
+        title: 'Tồn kho',
+        value: '${_toInt(overview['total_stock'])}',
+        subtitle: 'Sản phẩm còn trong kho',
+        icon: Icons.warehouse_outlined,
+        color: Colors.blueGrey,
+      ),
+      _MetricCard(
+        title: 'Giá trị TB/đơn',
+        value: _formatCurrency(_toDouble(overview['average_order_value'])),
+        subtitle: 'Average order value',
+        icon: Icons.trending_up_outlined,
+        color: Colors.blue.shade700,
+      ),
+    ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth >= 720 ? 3 : 2;
+        final crossAxisCount = constraints.maxWidth >= 900
+            ? 3
+            : constraints.maxWidth >= 520
+            ? 2
+            : 2;
+        final ratio = constraints.maxWidth < 380 ? 1.15 : 1.45;
         return GridView.count(
           crossAxisCount: crossAxisCount,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: constraints.maxWidth >= 720 ? 2.7 : 1.6,
+          childAspectRatio: constraints.maxWidth >= 900 ? 2.2 : ratio,
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
-          children: [
-            _MetricCard(
-              title: 'Sản phẩm',
-              value: '${products.length}',
-              subtitle: '$activeProducts đang có doanh số',
-              icon: Icons.inventory_2_outlined,
-              color: Colors.indigo,
-            ),
-            _MetricCard(
-              title: 'Đã bán',
-              value: '$totalSold',
-              subtitle: 'Tổng số lượng',
-              icon: Icons.shopping_cart_checkout_outlined,
-              color: _primary,
-            ),
-            _MetricCard(
-              title: 'Tổng',
-              value: _formatCurrency(totalRevenue),
-              subtitle: 'Doanh thu sản phẩm',
-              icon: Icons.payments_outlined,
-              color: Colors.orange.shade700,
-            ),
-          ],
+          children: cards,
         );
       },
     );
   }
 
-  Widget _buildProductCard(Map<String, dynamic> product, int index) {
-    final importPrice = product['import_price'] == null
-        ? null
-        : _toDouble(product['import_price']);
-    final salePrice = _toDouble(product['sale_price'] ?? product['price']);
-    final sold = _toInt(product['total_quantity_sold']);
-    final revenue = _toDouble(product['total_revenue']);
-    final performance = _calculateSellThroughRate(product);
-    final stock = _toInt(product['current_stock']);
+  Widget _buildRevenueChart(List<Map<String, dynamic>> rows) {
+    final maxRevenue = rows.fold<double>(0, (max, row) {
+      final value = _toDouble(row['revenue']);
+      return value > max ? value : max;
+    });
+    final interval = maxRevenue <= 0 ? 1.0 : (maxRevenue / 4).ceilToDouble();
 
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => _ProductPerformanceDetailScreen(
-                product: product,
-                rank: index + 1,
-              ),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _RankBadge(rank: index + 1),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _productName(product),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            height: 1.2,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          '${product['category_name'] ?? 'Chưa phân loại'} • Tồn $stock',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
+    return _SectionCard(
+      title: 'Biểu đồ doanh thu',
+      trailing: Text(
+        '${rows.length} mốc',
+        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+      ),
+      child: SizedBox(
+        height: 260,
+        child: rows.isEmpty
+            ? const _EmptyState(
+                icon: Icons.bar_chart_outlined,
+                message: 'Chưa có dữ liệu doanh thu trong kỳ này.',
+              )
+            : BarChart(
+                BarChartData(
+                  maxY: maxRevenue <= 0 ? 1 : maxRevenue * 1.18,
+                  alignment: BarChartAlignment.spaceAround,
+                  barGroups: rows.asMap().entries.map((entry) {
+                    return BarChartGroupData(
+                      x: entry.key,
+                      barRods: [
+                        BarChartRodData(
+                          toY: _toDouble(entry.value['revenue']),
+                          width: rows.length > 20 ? 8 : 14,
+                          color: _primary,
+                          borderRadius: BorderRadius.circular(4),
                         ),
                       ],
+                    );
+                  }).toList(),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: interval,
+                    getDrawingHorizontalLine: (value) =>
+                        FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 42,
+                        interval: interval,
+                        getTitlesWidget: (value, meta) {
+                          if (value <= 0) return const SizedBox.shrink();
+                          return Text(
+                            _compactCurrency(value),
+                            style: const TextStyle(fontSize: 10),
+                          );
+                        },
+                      ),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 34,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index < 0 || index >= rows.length) {
+                            return const SizedBox.shrink();
+                          }
+                          if (rows.length > 12 && index % 3 != 0) {
+                            return const SizedBox.shrink();
+                          }
+                          return SideTitleWidget(
+                            axisSide: meta.axisSide,
+                            space: 8,
+                            child: Text(
+                              _dateLabel(rows[index]['period']),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                  Icon(Icons.chevron_right, color: Colors.grey.shade500),
-                ],
+                  barTouchData: BarTouchData(
+                    enabled: true,
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final row = rows[group.x.toInt()];
+                        return BarTooltipItem(
+                          '${_dateLabel(row['period'])}\n',
+                          const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: _formatCurrency(_toDouble(row['revenue'])),
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
               ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _InfoPill(
-                    label: 'Giá nhập',
-                    value: importPrice == null
-                        ? 'Chưa có'
-                        : _formatCurrency(importPrice),
-                  ),
-                  _InfoPill(
-                    label: 'Giá bán',
-                    value: salePrice <= 0
-                        ? 'Chưa có dữ liệu'
-                        : _formatCurrency(salePrice),
-                  ),
-                  _InfoPill(
-                    label: 'Hiệu suất bán',
-                    value: _formatOptionalPercent(performance),
-                    valueColor: _performanceColor(performance),
-                  ),
-                  _InfoPill(label: 'Đã bán', value: '$sold'),
-                  _InfoPill(label: 'Tổng', value: _formatCurrency(revenue)),
-                ],
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
 
-  Widget _buildNewProductsSection(List<Map<String, dynamic>> products) {
-    final newest = _newProducts(products);
-    if (newest.isEmpty) {
-      return const SizedBox.shrink();
+  static String _compactCurrency(num value) {
+    if (value >= 1000000000) {
+      return '${(value / 1000000000).toStringAsFixed(1)} tỷ';
     }
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1)} tr';
+    }
+    if (value >= 1000) return '${(value / 1000).toStringAsFixed(0)}k';
+    return value.round().toString();
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Sản phẩm mới',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-              ),
+  Widget _buildTopProducts(List<Map<String, dynamic>> products) {
+    final maxSold = products.fold<int>(0, (max, product) {
+      final sold = _toInt(product['total_quantity_sold']);
+      return sold > max ? sold : max;
+    });
+    return _SectionCard(
+      title: 'Top sản phẩm bán chạy',
+      trailing: Text(
+        'Top ${products.length}',
+        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+      ),
+      child: products.isEmpty
+          ? const _EmptyState(
+              icon: Icons.shopping_bag_outlined,
+              message: 'Chưa có sản phẩm bán chạy trong kỳ này.',
+            )
+          : Column(
+              children: products.take(10).toList().asMap().entries.map((entry) {
+                return _RankedProductTile(
+                  rank: entry.key + 1,
+                  product: entry.value,
+                  maxSold: maxSold,
+                  name: _productName(entry.value),
+                  onTap: () => _openDetail(entry.value, entry.key + 1),
+                );
+              }).toList(),
             ),
-            Text(
-              '${newest.length} mới nhất',
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 150,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: newest.length,
-            separatorBuilder: (context, index) => const SizedBox(width: 10),
-            itemBuilder: (context, index) {
-              final product = newest[index];
-              final createdAt = _createdAtOf(product);
-              final salePrice = _toDouble(
-                product['sale_price'] ?? product['price'],
-              );
-              return _NewProductCard(
-                name: _productName(product),
-                category: (product['category_name'] ?? 'Chưa phân loại')
-                    .toString(),
-                price: salePrice <= 0
-                    ? 'Chưa có giá'
-                    : _formatCurrency(salePrice),
-                createdAt: createdAt == null
-                    ? 'Chưa rõ ngày'
-                    : _formatDate(createdAt),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => _ProductPerformanceDetailScreen(
-                        product: product,
-                        rank: products.indexOf(product) + 1,
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 
-  Color _performanceColor(double? performance) {
-    if (performance == null) return Colors.grey.shade700;
-    if (performance >= 70) return _primary;
-    if (performance >= 35) return Colors.orange.shade700;
-    return Colors.red.shade600;
+  Widget _buildHighStock(List<Map<String, dynamic>> products) {
+    return _SectionCard(
+      title: 'Sản phẩm tồn kho cao',
+      trailing: const _StatusBadge(label: 'Ngưỡng > 50', color: Colors.orange),
+      child: products.isEmpty
+          ? const _EmptyState(
+              icon: Icons.inventory_2_outlined,
+              message: 'Không có sản phẩm tồn kho cao.',
+            )
+          : Column(
+              children: products
+                  .take(8)
+                  .map(
+                    (product) => _AlertProductTile(
+                      product: product,
+                      name: _productName(product),
+                      badge: 'Tồn cao',
+                      badgeColor: Colors.orange,
+                      titleValue: 'Tồn ${_toInt(product['current_stock'])}',
+                      subtitle:
+                          'Đã bán ${_toInt(product['total_quantity_sold'])}',
+                      onTap: () => _openDetail(product, null),
+                    ),
+                  )
+                  .toList(),
+            ),
+    );
+  }
+
+  Widget _buildSlowProducts(List<Map<String, dynamic>> products) {
+    return _SectionCard(
+      title: 'Sản phẩm bán chậm',
+      trailing: const _StatusBadge(label: 'Sold < 5', color: Colors.red),
+      child: products.isEmpty
+          ? const _EmptyState(
+              icon: Icons.speed_outlined,
+              message: 'Không có sản phẩm bán chậm trong kỳ này.',
+            )
+          : Column(
+              children: products
+                  .take(8)
+                  .map(
+                    (product) => _AlertProductTile(
+                      product: product,
+                      name: _productName(product),
+                      badge: _slowBadge(product),
+                      badgeColor: Colors.red,
+                      titleValue:
+                          'Đã bán ${_toInt(product['total_quantity_sold'])}',
+                      subtitle:
+                          '${_toInt(product['days_without_order'])} ngày chưa phát sinh đơn',
+                      onTap: () => _openDetail(product, null),
+                    ),
+                  )
+                  .toList(),
+            ),
+    );
+  }
+
+  String _slowBadge(Map<String, dynamic> product) {
+    final stock = _toInt(product['current_stock']);
+    if (stock > 50) return 'Cần xả kho';
+    if (stock > 20) return 'Nên giảm giá';
+    return 'Bán chậm';
+  }
+
+  Widget _buildSuggestions(List<Map<String, dynamic>> suggestions) {
+    return _SectionCard(
+      title: 'Đề xuất thông minh',
+      child: suggestions.isEmpty
+          ? const _EmptyState(
+              icon: Icons.lightbulb_outline,
+              message: 'Chưa có đề xuất trong kỳ này.',
+            )
+          : Column(
+              children: suggestions
+                  .map(
+                    (item) => _SuggestionTile(
+                      title: (item['title'] ?? '').toString(),
+                      message: (item['message'] ?? '').toString(),
+                      severity: (item['severity'] ?? 'info').toString(),
+                    ),
+                  )
+                  .toList(),
+            ),
+    );
+  }
+
+  void _openDetail(Map<String, dynamic> product, int? rank) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            _ProductPerformanceDetailScreen(product: product, rank: rank),
+      ),
+    );
   }
 
   Widget _buildError(Object error) {
@@ -426,7 +790,7 @@ class _ProductPerformanceReportScreenState
             Text(
               error is ApiException
                   ? error.message
-                  : 'Không tải được báo cáo hiệu suất sản phẩm',
+                  : 'Không tải được dashboard hiệu suất sản phẩm',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
@@ -457,50 +821,58 @@ class _ProductPerformanceReportScreenState
           ),
         ],
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
+      body: FutureBuilder<Map<String, dynamic>>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+          if (snapshot.hasError) return _buildError(snapshot.error!);
 
-          if (snapshot.hasError) {
-            return _buildError(snapshot.error!);
-          }
+          final data = snapshot.data ?? const <String, dynamic>{};
+          final overview = Map<String, dynamic>.from(
+            (data['overview'] as Map?) ?? const {},
+          );
+          final topProducts = _list(data['top_products']);
+          final highStock = _list(data['high_stock_products']);
+          final slowProducts = _list(data['slow_products']);
+          final suggestions = _list(data['suggestions']);
+          final revenueChart = _list(data['revenue_chart']);
 
-          final products = snapshot.data ?? const [];
-          if (products.isEmpty) {
-            return const Center(
-              child: Text('Chưa có dữ liệu hiệu suất sản phẩm.'),
-            );
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: products.length + 1,
-            separatorBuilder: (context, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSummary(products),
-                    const SizedBox(height: 18),
-                    _buildNewProductsSection(products),
-                    if (_newProducts(products).isNotEmpty)
-                      const SizedBox(height: 18),
-                    const Text(
-                      'Xếp hạng bán chạy',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                );
-              }
-              return _buildProductCard(products[index - 1], index - 1);
-            },
+          return RefreshIndicator(
+            onRefresh: () async => _reload(),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Text(
+                  'Dashboard phân tích bán hàng',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Theo dõi doanh thu, tốc độ bán, tồn kho và đề xuất xử lý sản phẩm.',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 16),
+                _SectionCard(
+                  title: 'Bộ lọc thời gian',
+                  child: _buildFilterBar(),
+                ),
+                const SizedBox(height: 14),
+                _buildOverview(overview),
+                const SizedBox(height: 14),
+                _buildRevenueChart(revenueChart),
+                const SizedBox(height: 14),
+                _buildTopProducts(topProducts),
+                const SizedBox(height: 14),
+                _buildHighStock(highStock),
+                const SizedBox(height: 14),
+                _buildSlowProducts(slowProducts),
+                const SizedBox(height: 14),
+                _buildSuggestions(suggestions),
+              ],
+            ),
           );
         },
       ),
@@ -510,12 +882,9 @@ class _ProductPerformanceReportScreenState
 
 class _ProductPerformanceDetailScreen extends StatelessWidget {
   final Map<String, dynamic> product;
-  final int rank;
+  final int? rank;
 
-  const _ProductPerformanceDetailScreen({
-    required this.product,
-    required this.rank,
-  });
+  const _ProductPerformanceDetailScreen({required this.product, this.rank});
 
   static int _toInt(dynamic value) {
     if (value is int) return value;
@@ -532,171 +901,20 @@ class _ProductPerformanceDetailScreen extends StatelessWidget {
     return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} VNĐ';
   }
 
-  String _formatPercent(num value) {
-    if (value == 0) return '0%';
-    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)}%';
-  }
-
-  String _formatOptionalPercent(double? value) {
-    if (value == null) return 'Chưa có dữ liệu';
-    return _formatPercent(value);
-  }
-
-  double? _calculateSellThroughRate() {
-    final explicitValue = product['sell_through_rate'];
-    if (explicitValue != null) {
-      return _toDouble(explicitValue);
-    }
-
-    final sold = _toInt(product['total_quantity_sold']);
-    final stock = _toInt(product['current_stock']);
-    final totalTracked = sold + stock;
-    if (totalTracked <= 0) {
-      return null;
-    }
-    return (sold * 100) / totalTracked;
-  }
-
   String _productName() {
     final name = (product['product_name'] ?? '').toString().trim();
     return name.isEmpty ? 'Sản phẩm chưa đặt tên' : name;
   }
 
-  DateTime? _createdAt() {
-    final raw = product['created_at'] ?? product['createdAt'];
-    if (raw == null) return null;
-    if (raw is DateTime) return raw;
-    return DateTime.tryParse(raw.toString());
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-  }
-
-  Widget _buildHeroImage() {
-    final imageUrl = (product['image_url'] ?? '').toString();
-    final resolvedUrl = imageUrl.startsWith('/')
-        ? '${ApiService.baseUrl}$imageUrl'
-        : imageUrl;
-    if (resolvedUrl.startsWith('http')) {
-      return Image.network(
-        resolvedUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => _fallbackImage(),
-      );
-    }
-    return _fallbackImage();
-  }
-
-  Widget _fallbackImage() {
-    return Container(
-      color: const Color(0xFFE9F5EF),
-      alignment: Alignment.center,
-      child: const Icon(
-        Icons.inventory_2_outlined,
-        size: 54,
-        color: Color(0xFF146C43),
-      ),
-    );
-  }
-
-  Widget _metric({
-    required String label,
-    required String value,
-    IconData? icon,
-    Color? color,
-  }) {
-    final effectiveColor = color ?? const Color(0xFF146C43);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: effectiveColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, size: 18, color: effectiveColor),
-            ),
-            const SizedBox(width: 10),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label, style: TextStyle(color: Colors.grey.shade600)),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final importPrice = product['import_price'] == null
-        ? null
-        : _toDouble(product['import_price']);
-    final salePrice = _toDouble(product['sale_price'] ?? product['price']);
     final sold = _toInt(product['total_quantity_sold']);
     final revenue = _toDouble(product['total_revenue']);
-    final profit = product['total_profit'] == null
-        ? null
-        : _toDouble(product['total_profit']);
-    final averageSalePrice = _toDouble(product['average_sale_price']);
-    final performance = _calculateSellThroughRate();
     final stock = _toInt(product['current_stock']);
     final ordersCount = _toInt(product['orders_count']);
     final unit = (product['unit'] ?? 'sp').toString();
-    final createdAt = _createdAt();
-    final profitMargin = profit == null || revenue <= 0
-        ? null
-        : (profit / revenue) * 100;
-    final profitPerUnit = profit == null || sold <= 0 ? null : profit / sold;
+    final salePrice = _toDouble(product['sale_price'] ?? product['price']);
+    final daysWithoutOrder = _toInt(product['days_without_order']);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
@@ -710,14 +928,19 @@ class _ProductPerformanceDetailScreen extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: SizedBox(height: 180, child: _buildHeroImage()),
+            child: SizedBox(
+              height: 180,
+              child: _ProductThumb(product: product, size: double.infinity),
+            ),
           ),
           const SizedBox(height: 16),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _RankBadge(rank: rank),
-              const SizedBox(width: 12),
+              if (rank != null) ...[
+                _RankBadge(rank: rank!),
+                const SizedBox(width: 12),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -733,6 +956,8 @@ class _ProductPerformanceDetailScreen extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       '${product['category_name'] ?? 'Chưa phân loại'} • ${product['barcode'] ?? 'Chưa có mã'}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   ],
@@ -741,94 +966,61 @@ class _ProductPerformanceDetailScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.8,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            children: [
-              _metric(
-                label: 'Đã bán',
-                value: '$sold $unit',
-                icon: Icons.shopping_bag_outlined,
-              ),
-              _metric(
-                label: 'Tổng',
-                value: _formatCurrency(revenue),
-                icon: Icons.payments_outlined,
-                color: Colors.orange.shade700,
-              ),
-              _metric(
-                label: 'Hiệu suất bán',
-                value: _formatOptionalPercent(performance),
-                icon: Icons.trending_up_outlined,
-                color: Colors.indigo,
-              ),
-              _metric(
-                label: 'Tồn kho',
-                value: '$stock $unit',
-                icon: Icons.warehouse_outlined,
-                color: Colors.blueGrey,
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final ratio = constraints.maxWidth < 380 ? 1.35 : 1.8;
+              return GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                childAspectRatio: ratio,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                children: [
+                  _MetricCard(
+                    title: 'Đã bán',
+                    value: '$sold $unit',
+                    subtitle: 'Trong kỳ lọc',
+                    icon: Icons.shopping_bag_outlined,
+                    color: const Color(0xFF146C43),
+                  ),
+                  _MetricCard(
+                    title: 'Doanh thu',
+                    value: _formatCurrency(revenue),
+                    subtitle: '$ordersCount đơn hàng',
+                    icon: Icons.payments_outlined,
+                    color: Colors.orange.shade700,
+                  ),
+                  _MetricCard(
+                    title: 'Tồn kho',
+                    value: '$stock $unit',
+                    subtitle: 'Hiện tại',
+                    icon: Icons.warehouse_outlined,
+                    color: Colors.blueGrey,
+                  ),
+                  _MetricCard(
+                    title: 'Giá bán',
+                    value: salePrice <= 0
+                        ? 'Chưa có'
+                        : _formatCurrency(salePrice),
+                    subtitle: 'Giá niêm yết',
+                    icon: Icons.sell_outlined,
+                    color: Colors.indigo,
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
+          _SectionCard(
+            title: 'Thông tin phân tích',
             child: Column(
               children: [
-                _detailRow(
-                  'Giá nhập',
-                  importPrice == null
-                      ? 'Chưa có'
-                      : _formatCurrency(importPrice),
-                ),
-                _detailRow(
-                  'Giá bán',
-                  salePrice <= 0
-                      ? 'Chưa có dữ liệu'
-                      : _formatCurrency(salePrice),
-                ),
-                _detailRow(
-                  'Giá bán TB',
-                  averageSalePrice <= 0
-                      ? salePrice <= 0
-                            ? 'Chưa có dữ liệu'
-                            : _formatCurrency(salePrice)
-                      : _formatCurrency(averageSalePrice),
-                ),
-                _detailRow('Số đơn', '$ordersCount'),
-                _detailRow(
-                  'Lợi nhuận',
-                  profit == null ? 'Chưa đủ dữ liệu' : _formatCurrency(profit),
-                ),
-                _detailRow(
-                  'Lãi / đơn vị',
-                  profitPerUnit == null
-                      ? 'Chưa đủ dữ liệu'
-                      : _formatCurrency(profitPerUnit),
-                ),
-                _detailRow(
-                  'Biên lợi nhuận',
-                  profitMargin == null
-                      ? 'Chưa đủ dữ liệu'
-                      : _formatPercent(profitMargin),
-                ),
-                _detailRow('Mã sản phẩm', '${product['product_id'] ?? '-'}'),
-                _detailRow('Mã vạch', '${product['barcode'] ?? '-'}'),
-                _detailRow(
-                  'Ngày thêm',
-                  createdAt == null
-                      ? 'Chưa có dữ liệu'
-                      : _formatDate(createdAt),
-                ),
+                _DetailRow('Số đơn', '$ordersCount'),
+                _DetailRow('Số ngày không phát sinh đơn', '$daysWithoutOrder'),
+                _DetailRow('Mã sản phẩm', '${product['product_id'] ?? '-'}'),
+                _DetailRow('Mã vạch', '${product['barcode'] ?? '-'}'),
+                _DetailRow('Danh mục', '${product['category_name'] ?? '-'}'),
               ],
             ),
           ),
@@ -838,101 +1030,46 @@ class _ProductPerformanceDetailScreen extends StatelessWidget {
   }
 }
 
-class _NewProductCard extends StatelessWidget {
-  final String name;
-  final String category;
-  final String price;
-  final String createdAt;
-  final VoidCallback onTap;
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final Widget child;
+  final Widget? trailing;
 
-  const _NewProductCard({
-    required this.name,
-    required this.category,
-    required this.price,
-    required this.createdAt,
-    required this.onTap,
-  });
+  const _SectionCard({required this.title, required this.child, this.trailing});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          width: 210,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF146C43).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.fiber_new_outlined,
-                        size: 18,
-                        color: Color(0xFF146C43),
-                      ),
-                    ),
-                    const Spacer(),
-                    Icon(Icons.chevron_right, color: Colors.grey.shade500),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
                   style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    height: 1.15,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  category,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        price,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF146C43),
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      createdAt,
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                Flexible(child: trailing!),
               ],
-            ),
+            ],
           ),
-        ),
+          const SizedBox(height: 14),
+          child,
+        ],
       ),
     );
   }
@@ -987,11 +1124,20 @@ class _MetricCard extends StatelessWidget {
             style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 3),
           Text(
@@ -1001,6 +1147,286 @@ class _MetricCard extends StatelessWidget {
             style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RankedProductTile extends StatelessWidget {
+  final int rank;
+  final Map<String, dynamic> product;
+  final int maxSold;
+  final String name;
+  final VoidCallback onTap;
+
+  const _RankedProductTile({
+    required this.rank,
+    required this.product,
+    required this.maxSold,
+    required this.name,
+    required this.onTap,
+  });
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _formatCurrency(num amount) {
+    return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} VNĐ';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sold = _toInt(product['total_quantity_sold']);
+    final progress = maxSold <= 0 ? 0.0 : sold / maxSold;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          children: [
+            _RankBadge(rank: rank),
+            const SizedBox(width: 10),
+            _ProductThumb(product: product, size: 52),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            _formatCurrency(
+                              _toDouble(product['total_revenue']),
+                            ),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: progress.clamp(0, 1),
+                      minHeight: 7,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Color(0xFF146C43),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Đã bán $sold sản phẩm',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AlertProductTile extends StatelessWidget {
+  final Map<String, dynamic> product;
+  final String name;
+  final String badge;
+  final Color badgeColor;
+  final String titleValue;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _AlertProductTile({
+    required this.product,
+    required this.name,
+    required this.badge,
+    required this.badgeColor,
+    required this.titleValue,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: badgeColor.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: badgeColor.withValues(alpha: 0.16)),
+        ),
+        child: Row(
+          children: [
+            _ProductThumb(product: product, size: 50),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _StatusBadge(label: badge, color: badgeColor),
+                const SizedBox(height: 6),
+                Text(
+                  titleValue,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionTile extends StatelessWidget {
+  final String title;
+  final String message;
+  final String severity;
+
+  const _SuggestionTile({
+    required this.title,
+    required this.message,
+    required this.severity,
+  });
+
+  Color get _color {
+    switch (severity) {
+      case 'success':
+        return const Color(0xFF146C43);
+      case 'warning':
+        return Colors.orange;
+      default:
+        return Colors.blueGrey;
+    }
+  }
+
+  IconData get _icon {
+    switch (severity) {
+      case 'success':
+        return Icons.trending_up_outlined;
+      case 'warning':
+        return Icons.warning_amber_outlined;
+      default:
+        return Icons.lightbulb_outline;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _color.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(_icon, color: _color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(message, style: TextStyle(color: Colors.grey.shade700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductThumb extends StatelessWidget {
+  final Map<String, dynamic> product;
+  final double size;
+
+  const _ProductThumb({required this.product, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = (product['image_url'] ?? '').toString();
+    final resolvedUrl = imageUrl.startsWith('/')
+        ? '${ApiService.baseUrl}$imageUrl'
+        : imageUrl;
+    final fallback = Container(
+      width: size,
+      height: size,
+      color: const Color(0xFFE9F5EF),
+      alignment: Alignment.center,
+      child: const Icon(Icons.inventory_2_outlined, color: Color(0xFF146C43)),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: resolvedUrl.startsWith('http')
+            ? Image.network(
+                resolvedUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => fallback,
+              )
+            : fallback,
       ),
     );
   }
@@ -1032,45 +1458,88 @@ class _RankBadge extends StatelessWidget {
   }
 }
 
-class _InfoPill extends StatelessWidget {
+class _StatusBadge extends StatelessWidget {
   final String label;
-  final String value;
-  final Color? valueColor;
+  final Color color;
 
-  const _InfoPill({required this.label, required this.value, this.valueColor});
+  const _StatusBadge({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minWidth: 104),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F7FA),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
       ),
-      child: Column(
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DetailRow(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+          SizedBox(
+            width: 130,
+            child: Text(label, style: TextStyle(color: Colors.grey.shade600)),
           ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: valueColor ?? Colors.black87,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final IconData icon;
+  final String message;
+
+  const _EmptyState({required this.icon, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 22),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.black26, size: 38),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ],
+        ),
       ),
     );
   }

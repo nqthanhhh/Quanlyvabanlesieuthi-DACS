@@ -310,6 +310,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           children: [
             Text(
               product.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w900,
@@ -319,6 +321,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 6),
             Text(
               '${_formatCurrency(product.price)} / ${product.unit}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.black54),
             ),
             const SizedBox(height: 10),
@@ -334,12 +338,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                 ),
                 _qtyButton(Icons.add, () => _increaseQty(product)),
-                const Spacer(),
-                Text(
-                  _formatCurrency(lineTotal),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: _ink,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _formatCurrency(lineTotal),
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: _ink,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -391,12 +404,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Tổng cộng:', style: TextStyle(fontSize: 18)),
-                Text(
-                  _formatCurrency(total),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: _primary,
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      _formatCurrency(total),
+                      maxLines: 1,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: _primary,
+                      ),
+                    ),
                   ),
                 ),
               ],

@@ -917,4 +917,27 @@ class ApiService {
       body,
     ).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
+
+  static Future<Map<String, dynamic>> fetchProductPerformanceDashboard(
+    int adminUserId, {
+    required String range,
+    String? month,
+  }) async {
+    final query = <String, String>{'range': range};
+    if (month != null && month.isNotEmpty) query['month'] = month;
+    final uri = _uri(
+      '/api/performance/dashboard',
+    ).replace(queryParameters: query);
+    final response = await http
+        .get(uri, headers: _adminHeaders(adminUserId))
+        .timeout(_timeout);
+    debugPrint(
+      '[performance] GET $uri -> ${response.statusCode} (${response.bodyBytes.length} bytes)',
+    );
+    final responseBody = utf8.decode(response.bodyBytes);
+    debugPrint(
+      '[performance] response ${responseBody.substring(0, responseBody.length > 800 ? 800 : responseBody.length)}',
+    );
+    return _dataMap(_decode(response));
+  }
 }

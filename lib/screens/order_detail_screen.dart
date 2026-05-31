@@ -139,7 +139,9 @@ class OrderDetailScreen extends StatelessWidget {
       case 'cod':
         return 'COD';
       case 'ewallet':
-        return 'Ví điện tử';
+        return 'QR mô phỏng (demo)';
+      case 'vnpay':
+        return 'VNPay';
       default:
         return value == null || value.trim().isEmpty ? '-' : value;
     }

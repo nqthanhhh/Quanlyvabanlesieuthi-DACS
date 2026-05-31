@@ -6,12 +6,28 @@ import 'package:flutter/material.dart';
 class OrderSuccessScreen extends StatelessWidget {
   final String totalAmount;
   final String paymentMethod;
+  final String? orderId;
+  final DateTime? paidAt;
+  final int? pointsAdded;
+  final int? totalPoints;
+  final String? loyaltyCustomerName;
 
   const OrderSuccessScreen({
     super.key,
     required this.totalAmount,
     required this.paymentMethod,
+    this.orderId,
+    this.paidAt,
+    this.pointsAdded,
+    this.totalPoints,
+    this.loyaltyCustomerName,
   });
+
+  String _formatPaidAt(DateTime? value) {
+    final dt = value ?? DateTime.now();
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,9 +65,23 @@ class OrderSuccessScreen extends StatelessWidget {
             const SizedBox(height: 20),
 
             // Chi tiết thanh toán
+            if (orderId != null) ...[
+              _buildInfoRow('Mã đơn:', '#$orderId'),
+              const SizedBox(height: 12),
+            ],
             _buildInfoRow('Đã thanh toán:', totalAmount),
             const SizedBox(height: 12),
             _buildInfoRow('Phương thức:', paymentMethod),
+            const SizedBox(height: 12),
+            _buildInfoRow('Thời gian:', _formatPaidAt(paidAt)),
+            if (pointsAdded != null && totalPoints != null) ...[
+              const SizedBox(height: 12),
+              _buildInfoRow('Khách tích điểm:', loyaltyCustomerName ?? '-'),
+              const SizedBox(height: 12),
+              _buildInfoRow('Điểm nhận:', '+$pointsAdded'),
+              const SizedBox(height: 12),
+              _buildInfoRow('Tổng điểm:', '$totalPoints'),
+            ],
             const SizedBox(height: 50),
 
             // Nút "In hóa đơn"

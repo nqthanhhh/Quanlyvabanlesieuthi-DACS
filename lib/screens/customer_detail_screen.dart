@@ -152,6 +152,10 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         return 'MoMo';
       case 'cod':
         return 'COD';
+      case 'ewallet':
+        return 'QR mô phỏng (demo)';
+      case 'vnpay':
+        return 'VNPay';
       default:
         return value == null || value.trim().isEmpty ? '-' : value;
     }

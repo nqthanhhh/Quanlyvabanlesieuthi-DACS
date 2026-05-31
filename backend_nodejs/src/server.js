@@ -25,6 +25,8 @@ const workShiftRoutes = require("./routes/workShift.routes");
 const employeeScheduleRoutes = require("./routes/employeeSchedule.routes");
 const voucherRoutes = require("./routes/voucher.routes");
 const myOrderRoutes = require("./routes/myOrder.routes");
+const paymentRoutes = require("./routes/payment.routes");
+const pointRoutes = require("./routes/point.routes");
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -44,6 +46,9 @@ app.use("/api/reviews", reviewRoutes);
 app.use("/api/work-shifts", workShiftRoutes);
 app.use("/api/employee-schedules", employeeScheduleRoutes);
 app.use("/api/vouchers", voucherRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/webhook", paymentRoutes);
+app.use("/api/points", pointRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/", (req, res) => {

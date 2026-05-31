@@ -62,6 +62,16 @@ async function ordersColumns(connection) {
   return new Set(rows.map((row) => row.COLUMN_NAME));
 }
 
+async function paymentsColumns(connection) {
+  const [rows] = await connection.execute(
+    `SELECT COLUMN_NAME
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'payments'`,
+  );
+  return new Set(rows.map((row) => row.COLUMN_NAME));
+}
+
 function normalizeOrder(row) {
   const orderStatus = row.order_status || row.status;
   const paymentMethod = row.payment_method || row.latest_payment_method || "cash";
@@ -75,8 +85,11 @@ function normalizeOrder(row) {
     orderStatus,
     paymentStatus: row.payment_status || row.latest_payment_status,
     paymentMethod,
+    transferContent: row.transfer_content || null,
     deliveryMethod: row.delivery_method,
     shippingAddress: row.shipping_address,
+    transactionId: row.transaction_id || null,
+    paidAt: row.paid_at || null,
   };
 }
 
@@ -580,7 +593,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
     if (deliveryMethod === "delivery" && !shippingAddress) {
       return res.status(400).json({ success: false, message: "Vui lòng nhập địa chỉ giao hàng" });
     }
-    if (!["cash", "ewallet"].includes(paymentMethod)) {
+    if (!["cash", "ewallet", "vnpay"].includes(paymentMethod)) {
       return res.status(400).json({ success: false, message: "Phương thức thanh toán không hợp lệ" });
     }
 
@@ -642,6 +655,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
     );
     const finalAmount = total - discountAmount;
     const paymentStatus = paymentMethod === "ewallet" ? "paid" : "pending";
+    // vnpay: pending until IPN/return confirms; cash: pending until pickup/delivery settlement
     const orderStatus = "pending";
     const columns = await ordersColumns(connection);
 
@@ -693,7 +707,9 @@ router.post("/checkout", requireAuth, async (req, res) => {
         paymentMethod,
         finalAmount,
         paymentStatus,
-        paymentMethod === "ewallet" ? `FAKE_QR_ORDER_${orderResult.insertId}_${Math.round(finalAmount)}` : null,
+        paymentMethod === "ewallet"
+          ? `FAKE_QR_ORDER_${orderResult.insertId}_${Math.round(finalAmount)}`
+          : null,
         paymentStatus === "paid" ? new Date() : null,
       ],
     );
@@ -711,7 +727,11 @@ router.post("/checkout", requireAuth, async (req, res) => {
         voucherCode: voucher?.code || null,
         discountAmount,
         finalAmount,
-        fakeQrContent: paymentMethod === "ewallet" ? `FAKE_QR_ORDER_${orderResult.insertId}_${Math.round(finalAmount)}` : null,
+        fakeQrContent:
+          paymentMethod === "ewallet"
+            ? `FAKE_QR_ORDER_${orderResult.insertId}_${Math.round(finalAmount)}`
+            : null,
+        requiresVnpayPayment: paymentMethod === "vnpay",
       },
     });
   } catch (error) {
@@ -763,6 +783,129 @@ async function fetchHistory(req, res) {
 
 router.get("/history", fetchHistory);
 router.get("/history/:customerId", fetchHistory);
+
+router.get("/status/:orderCode", async (req, res) => {
+  try {
+    const rawCode = String(req.params.orderCode || "").trim().toUpperCase();
+    const normalizedCode = rawCode.replace(/[^A-Z0-9]/g, "");
+    const orderIdFromCode = Number(normalizedCode.replace(/^DH/, ""));
+    if (!normalizedCode) {
+      return res.status(400).json({ success: false, message: "Thiếu mã đơn hàng" });
+    }
+
+    const connection = await pool.getConnection();
+    const columns = await ordersColumns(connection);
+    connection.release();
+    const where = columns.has("transfer_content")
+      ? "(UPPER(transfer_content) = ? OR order_id = ?)"
+      : "order_id = ?";
+    const params = columns.has("transfer_content")
+      ? [normalizedCode, orderIdFromCode || 0]
+      : [orderIdFromCode || 0];
+    const [rows] = await pool.execute(
+      `SELECT order_id
+       FROM orders
+       WHERE ${where}
+       ORDER BY created_at DESC, order_id DESC
+       LIMIT 1`,
+      params,
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+    }
+
+    const order = await fetchOrder(rows[0].order_id);
+    const paymentStatus = String(order.paymentStatus || "pending").toLowerCase();
+    return res.json({
+      success: true,
+      data: {
+        orderCode: order.transferContent || `DH${order.id}`,
+        orderId: Number(order.id),
+        paymentStatus,
+        orderStatus: order.orderStatus || order.status,
+        status: order.status,
+        totalAmount: order.totalAmount,
+        paidAt: order.paidAt || null,
+        transactionId: order.transactionId || null,
+        isPaid: ["paid", "success"].includes(paymentStatus),
+        isFailed: paymentStatus === "failed",
+        isPending: !["paid", "success", "failed"].includes(paymentStatus),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi kiểm tra trạng thái đơn hàng",
+      error: error.message,
+    });
+  }
+});
+
+router.get("/:id/payment-status", requireAuth, async (req, res) => {
+  try {
+    const userId = currentUserId(req);
+    const orderId = Number(req.params.id);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Vui lòng đăng nhập" });
+    }
+
+    const order = await fetchOrder(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+    }
+
+    const [rawRows] = await pool.execute(
+      `SELECT o.customer_id, o.employee_id, r.role_name
+       FROM orders o
+       LEFT JOIN users u ON u.user_id = ?
+       LEFT JOIN roles r ON r.role_id = u.role_id
+       WHERE o.order_id = ?
+       LIMIT 1`,
+      [userId, orderId],
+    );
+    const raw = rawRows[0] || {};
+    const customerId = Number(raw.customer_id || 0);
+    const employeeId = Number(raw.employee_id || 0);
+    const roleName = String(raw.role_name || "");
+    if (customerId !== userId && employeeId !== userId && roleName !== "admin") {
+      return res.status(403).json({ success: false, message: "Không có quyền xem đơn này" });
+    }
+
+    const [paymentRows] = await pool.execute(
+      `SELECT method, transaction_id, paid_at
+       FROM payments
+       WHERE order_id = ?
+       ORDER BY payment_id DESC
+       LIMIT 1`,
+      [orderId],
+    );
+    const latestPayment = paymentRows[0] || {};
+
+    const paymentStatus = String(order.paymentStatus || "pending").toLowerCase();
+    res.json({
+      success: true,
+      data: {
+        orderId,
+        paymentStatus,
+        orderStatus: order.orderStatus || order.status,
+        paymentMethod: order.paymentMethod,
+        transactionId: order.transactionId || latestPayment.transaction_id || null,
+        paidAt: order.paidAt || latestPayment.paid_at || null,
+        transferContent: order.transferContent || null,
+        totalAmount: order.totalAmount,
+        isPaid: ["paid", "success"].includes(paymentStatus),
+        isFailed: paymentStatus === "failed",
+        isPending: !["paid", "success", "failed"].includes(paymentStatus),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi kiểm tra trạng thái thanh toán",
+      error: error.message,
+    });
+  }
+});
 
 router.get("/:id", async (req, res) => {
   try {
@@ -868,6 +1011,10 @@ router.post("/", async (req, res) => {
       voucher_id,
       discount_amount = 0,
       user_id,
+      transaction_id,
+      transfer_content,
+      qr_content,
+      paid_at,
     } = req.body;
 
     // DEBUG: Log dữ liệu nhận được
@@ -998,6 +1145,14 @@ router.post("/", async (req, res) => {
     if (columns.has("payment_method")) addColumn("payment_method", payment_method);
     addColumn("status", normalizedOrderStatus);
     addColumn("payment_status", normalizedPaymentStatus);
+    if (columns.has("transaction_id")) addColumn("transaction_id", transaction_id || null);
+    if (columns.has("transfer_content")) addColumn("transfer_content", transfer_content || null);
+    if (columns.has("paid_at")) {
+      addColumn(
+        "paid_at",
+        normalizedPaymentStatus === "paid" ? (paid_at ? new Date(paid_at) : new Date()) : null,
+      );
+    }
     if (columns.has("order_status")) addColumn("order_status", normalizedOrderStatus);
     addColumn("shipping_address", shipping_address || null);
     addColumn("note", note || null);
@@ -1007,6 +1162,17 @@ router.post("/", async (req, res) => {
       `INSERT INTO orders (${insertColumns}) VALUES (${insertValues})`,
       insertParams,
     );
+
+    const generatedTransferContent =
+      payment_method === "bank_transfer"
+        ? transfer_content || `DH${orderResult.insertId}`
+        : transfer_content || null;
+    if (generatedTransferContent && columns.has("transfer_content")) {
+      await connection.execute(
+        "UPDATE orders SET transfer_content = ? WHERE order_id = ?",
+        [generatedTransferContent, orderResult.insertId],
+      );
+    }
 
     for (const item of normalizedItems) {
       await connection.execute(
@@ -1026,15 +1192,28 @@ router.post("/", async (req, res) => {
       );
     }
 
+    const paymentColumns = await paymentsColumns(connection);
+    const paymentInsertColumns = ["order_id", "method", "amount", "status"];
+    const paymentParams = [
+      orderResult.insertId,
+      payment_method,
+      total - finalDiscountAmount,
+      normalizedPaymentStatus,
+    ];
+    if (paymentColumns.has("transaction_id")) {
+      paymentInsertColumns.push("transaction_id");
+      paymentParams.push(transaction_id || null);
+    }
+    if (paymentColumns.has("qr_content")) {
+      paymentInsertColumns.push("qr_content");
+      paymentParams.push(qr_content || generatedTransferContent || null);
+    }
+    paymentInsertColumns.push("paid_at");
+    paymentParams.push(normalizedPaymentStatus === "paid" ? new Date() : null);
     await connection.execute(
-      "INSERT INTO payments (order_id, method, amount, status, paid_at) VALUES (?, ?, ?, ?, ?)",
-      [
-        orderResult.insertId,
-        payment_method,
-        total - finalDiscountAmount,
-        normalizedPaymentStatus,
-        normalizedPaymentStatus === "paid" ? new Date() : null,
-      ],
+      `INSERT INTO payments (${paymentInsertColumns.join(", ")})
+       VALUES (${paymentInsertColumns.map(() => "?").join(", ")})`,
+      paymentParams,
     );
 
     await connection.commit();

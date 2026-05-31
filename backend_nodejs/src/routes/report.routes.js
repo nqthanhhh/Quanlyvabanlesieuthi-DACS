@@ -37,8 +37,7 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-const paidOrderCondition =
-  "(o.payment_status IN ('paid', 'success') OR o.status IN ('completed', 'hoàn thành'))";
+const paidOrderCondition = "o.payment_status IN ('paid', 'success')";
 
 const latestImportPriceSql = `
   SELECT

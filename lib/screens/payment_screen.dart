@@ -6,10 +6,13 @@ import '../models/order.dart';
 import '../models/order_line.dart';
 import '../models/product.dart';
 import '../models/voucher.dart';
+import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/voucher_service.dart';
+import '../utils/payment_config.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
+import 'bank_transfer_qr_screen.dart';
 import 'checkout_screen.dart';
 import 'employee.dart';
 import 'employee_confirm_orders_screen.dart';
@@ -47,6 +50,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
   static const Duration _checkoutTimeout = Duration(seconds: 12);
 
   final TextEditingController _voucherController = TextEditingController();
+  final TextEditingController _loyaltyNameController = TextEditingController();
+  final TextEditingController _loyaltyPhoneController = TextEditingController();
   String? _selectedPaymentMethod;
   String? _voucherMessage;
   int? _appliedVoucherId;
@@ -55,6 +60,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
   List<Voucher> _savedVouchers = [];
   bool _isProcessing = false;
   bool _isApplyingVoucher = false;
+  bool _wantsLoyaltyPoints = false;
+  bool _isAddingPoints = false;
+  Map<String, dynamic>? _loyaltyResult;
 
   @override
   void initState() {
@@ -65,6 +73,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
   @override
   void dispose() {
     _voucherController.dispose();
+    _loyaltyNameController.dispose();
+    _loyaltyPhoneController.dispose();
     super.dispose();
   }
 
@@ -164,13 +174,214 @@ class _PaymentScreenState extends State<PaymentScreen> {
     switch (value) {
       case 'cash':
         return 'Tiền mặt';
-      case 'bank':
-        return 'Ngân hàng';
-      case 'e_wallet':
-        return 'Ví điện tử';
+      case 'bank_transfer':
+        return 'Chuyển khoản QR';
       default:
         return value;
     }
+  }
+
+  String _generateOrderCode() {
+    return 'POS${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  List<OrderLine> _buildOrderLines() {
+    final allProducts = DBService.getAllProducts();
+    final orderLines = <OrderLine>[];
+    for (final entry in widget.originalCart.entries) {
+      final product = allProducts.firstWhere((p) => p.id == entry.key);
+      if (entry.value > product.stockQuantity) {
+        throw Exception('${product.name} không đủ tồn kho');
+      }
+      orderLines.add(
+        OrderLine(
+          productId: product.id,
+          productName: product.name,
+          quantity: entry.value,
+          pricePerUnit: product.price,
+        ),
+      );
+    }
+    if (orderLines.isEmpty) {
+      throw Exception('Giỏ hàng đang trống, không thể thanh toán.');
+    }
+    return orderLines;
+  }
+
+  Order _buildPaidOrder({
+    required String paymentMethod,
+    required String transactionId,
+    required String? qrContent,
+    required String? note,
+  }) {
+    final rawUserId = DBService.settings().get('current_user_id');
+    final currentUserId = rawUserId is int
+        ? rawUserId
+        : int.tryParse(rawUserId?.toString() ?? '');
+    return Order(
+      id: transactionId,
+      orderDate: DateTime.now(),
+      totalAmount: _finalTotal,
+      customerName: 'Khách lẻ',
+      customerId: currentUserId,
+      status: 'completed',
+      paymentMethod: paymentMethod,
+      paymentStatus: 'paid',
+      paidAt: DateTime.now(),
+      transactionId: transactionId,
+      qrContent: qrContent,
+      transferContent: note?.replaceFirst('Nội dung chuyển khoản: ', ''),
+      note: note,
+      items: _buildOrderLines(),
+      voucherId: _appliedVoucherId,
+      discountAmount: _discountAmount,
+    );
+  }
+
+  Order _buildPendingBankOrder() {
+    final rawUserId = DBService.settings().get('current_user_id');
+    final currentUserId = rawUserId is int
+        ? rawUserId
+        : int.tryParse(rawUserId?.toString() ?? '');
+    return Order(
+      id: 'PENDING-${DateTime.now().millisecondsSinceEpoch}',
+      orderDate: DateTime.now(),
+      totalAmount: _finalTotal,
+      customerName: 'Khách lẻ',
+      customerId: currentUserId,
+      status: 'pending',
+      paymentMethod: 'bank_transfer',
+      paymentStatus: 'pending',
+      items: _buildOrderLines(),
+      voucherId: _appliedVoucherId,
+      discountAmount: _discountAmount,
+    );
+  }
+
+  Future<Order> _savePaidOrder(Order order) async {
+    if (_appliedVoucherId != null) {
+      await DBService.saveOrderWithVoucher(
+        order,
+        voucherId: _appliedVoucherId,
+        discountAmount: _discountAmount,
+        userId: order.customerId,
+      ).timeout(_checkoutTimeout);
+    } else {
+      await DBService.saveOrder(order).timeout(_checkoutTimeout);
+    }
+    final saved = DBService.getAllOrders().firstWhere(
+      (item) => item.transactionId == order.transactionId,
+      orElse: () => order,
+    );
+    return saved;
+  }
+
+  Future<Order> _createPendingBankOrder() async {
+    final order = _buildPendingBankOrder();
+    final rawUserId = DBService.settings().get('current_user_id');
+    final employeeId = rawUserId is int
+        ? rawUserId
+        : int.tryParse(rawUserId?.toString() ?? '');
+    final saved = _appliedVoucherId != null
+        ? await ApiService.createOrderWithVoucher(
+            order,
+            customerId: order.customerId,
+            employeeId: employeeId,
+            voucherId: _appliedVoucherId,
+            discountAmount: _discountAmount,
+            userId: order.customerId,
+          ).timeout(_checkoutTimeout)
+        : await ApiService.createOrder(
+            order,
+            customerId: order.customerId,
+            employeeId: employeeId,
+          ).timeout(_checkoutTimeout);
+    await DBService.orders().put(saved.id, saved);
+    return saved;
+  }
+
+  void _openSuccess(Order order, {Map<String, dynamic>? loyaltyResult}) {
+    widget.onCheckoutComplete();
+    Navigator.pushReplacement(
+      context,
+      buildSlidePageRoute(
+        OrderSuccessScreen(
+          totalAmount: _formatCurrency(_finalTotal),
+          paymentMethod: _paymentMethodLabel(_selectedPaymentMethod!),
+          orderId: order.id,
+          paidAt: order.paidAt ?? DateTime.now(),
+          pointsAdded: loyaltyResult == null
+              ? null
+              : NumberParser.toInt(loyaltyResult['pointsAdded']),
+          totalPoints: loyaltyResult == null
+              ? null
+              : NumberParser.toInt(loyaltyResult['totalPoints']),
+          loyaltyCustomerName: loyaltyResult?['customerName']?.toString(),
+        ),
+      ),
+    );
+  }
+
+  bool _validateLoyaltyFields() {
+    if (!_wantsLoyaltyPoints) return true;
+    final name = _loyaltyNameController.text.trim();
+    final phone = _loyaltyPhoneController.text.trim();
+    if (name.isEmpty) {
+      _showSnack('Vui lòng nhập tên khách để tích điểm', success: false);
+      return false;
+    }
+    if (!RegExp(r'^[0-9+\-\s]{8,15}$').hasMatch(phone)) {
+      _showSnack('Số điện thoại tích điểm không hợp lệ', success: false);
+      return false;
+    }
+    return true;
+  }
+
+  Future<Map<String, dynamic>?> _maybeAddLoyaltyPoints(Order order) async {
+    if (!_wantsLoyaltyPoints) return null;
+    final employeeId = DBService.currentUserId() ?? 0;
+    if (employeeId <= 0) {
+      throw Exception('Không xác định được nhân viên đang đăng nhập');
+    }
+    setState(() => _isAddingPoints = true);
+    try {
+      final result = await ApiService.addCustomerPoints(
+        customerName: _loyaltyNameController.text.trim(),
+        phone: _loyaltyPhoneController.text.trim(),
+        amount: _finalTotal,
+        employeeId: employeeId,
+        orderId: order.id,
+      ).timeout(_checkoutTimeout);
+      if (mounted) {
+        setState(() => _loyaltyResult = result);
+        _showSnack(
+          'Đã cộng ${result['pointsAdded']} điểm. Tổng điểm: ${result['totalPoints']}',
+          success: true,
+        );
+      }
+      return result;
+    } finally {
+      if (mounted) setState(() => _isAddingPoints = false);
+    }
+  }
+
+  Future<Order> _markPendingBankOrderPaid(
+    Order order,
+    Map<String, dynamic> data,
+  ) async {
+    final paidAtValue = data['paidAt'] ?? data['paid_at'];
+    order.paymentStatus = 'paid';
+    order.status = (data['orderStatus'] ?? data['status'] ?? 'completed')
+        .toString();
+    order.transactionId = (data['transactionId'] ?? data['transaction_id'])
+        ?.toString();
+    order.transferContent =
+        (data['transferContent'] ?? data['transfer_content'])?.toString() ??
+        order.transferContent;
+    order.paidAt =
+        DateTime.tryParse((paidAtValue ?? '').toString()) ?? DateTime.now();
+    await DBService.orders().put(order.id, order);
+    return order;
   }
 
   Future<void> _placeOrder() async {
@@ -180,14 +391,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _showSnack('Vui lòng chọn phương thức thanh toán', success: false);
       return;
     }
+    if (!_validateLoyaltyFields()) return;
+
+    if (_selectedPaymentMethod == 'bank_transfer') {
+      await _handleBankTransferPayment();
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Xác nhận thanh toán?'),
+        title: const Text('Xác nhận thu tiền mặt?'),
         content: Text(
-          'Tạo hóa đơn tại quầy với tổng thanh toán ${_formatCurrency(_finalTotal)}.',
+          'Tạo hóa đơn đã thanh toán tiền mặt với tổng ${_formatCurrency(_finalTotal)}.',
         ),
         actions: [
           TextButton(
@@ -206,66 +423,103 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     setState(() => _isProcessing = true);
     try {
-      final allProducts = DBService.getAllProducts();
-      final orderLines = <OrderLine>[];
-      for (final entry in widget.originalCart.entries) {
-        final product = allProducts.firstWhere((p) => p.id == entry.key);
-        if (entry.value > product.stockQuantity) {
-          throw Exception('${product.name} không đủ tồn kho');
-        }
-        orderLines.add(
-          OrderLine(
-            productId: product.id,
-            productName: product.name,
-            quantity: entry.value,
-            pricePerUnit: product.price,
-          ),
-        );
-      }
-
-      if (orderLines.isEmpty) {
-        throw Exception('Giỏ hàng đang trống, không thể thanh toán.');
-      }
-
-      final currentUserId = DBService.settings().get('current_user_id') as int?;
-      final newOrder = Order(
-        id: 'DH-${DateTime.now().microsecondsSinceEpoch}',
-        orderDate: DateTime.now(),
-        totalAmount: _finalTotal,
-        customerName: 'Khách lẻ',
-        customerId: currentUserId,
-        status: 'Hoàn thành',
-        items: orderLines,
-        voucherId: _appliedVoucherId,
-        discountAmount: _discountAmount,
+      final transactionId = _generateOrderCode();
+      final newOrder = _buildPaidOrder(
+        paymentMethod: 'cash',
+        transactionId: transactionId,
+        qrContent: null,
+        note: null,
       );
-
-      if (_appliedVoucherId != null) {
-        await DBService.saveOrderWithVoucher(
-          newOrder,
-          voucherId: _appliedVoucherId,
-          discountAmount: _discountAmount,
-          userId: currentUserId is int ? currentUserId : null,
-        ).timeout(_checkoutTimeout);
-      } else {
-        await DBService.saveOrder(newOrder).timeout(_checkoutTimeout);
-      }
-      widget.onCheckoutComplete();
+      final savedOrder = await _savePaidOrder(newOrder);
+      final loyaltyResult = await _maybeAddLoyaltyPoints(savedOrder);
 
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        buildSlidePageRoute(
-          OrderSuccessScreen(
-            totalAmount: _formatCurrency(_finalTotal),
-            paymentMethod: _paymentMethodLabel(_selectedPaymentMethod!),
-          ),
-        ),
-      );
+      _openSuccess(savedOrder, loyaltyResult: loyaltyResult);
     } on TimeoutException {
       if (!mounted) return;
       _showSnack(
         'Thanh toán quá thời gian chờ. Vui lòng thử lại.',
+        success: false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(e.toString().replaceFirst('Exception: ', ''), success: false);
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _handleBankTransferPayment() async {
+    setState(() => _isProcessing = true);
+    late final Order pendingOrder;
+    try {
+      pendingOrder = await _createPendingBankOrder();
+    } on TimeoutException {
+      if (!mounted) return;
+      _showSnack(
+        'Tạo đơn chuyển khoản quá thời gian chờ. Vui lòng thử lại.',
+        success: false,
+      );
+      setState(() => _isProcessing = false);
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(e.toString().replaceFirst('Exception: ', ''), success: false);
+      setState(() => _isProcessing = false);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+
+    final orderCode = pendingOrder.id;
+    final transferContent =
+        pendingOrder.transferContent ??
+        PaymentConfig.transferContent(orderCode);
+    final qrContent = PaymentConfig.qrContent(
+      orderCode: orderCode,
+      amount: _finalTotal,
+    );
+    debugPrint('VietQR URL: $qrContent');
+
+    final result = await Navigator.of(context).push<BankTransferQrResult>(
+      buildSlidePageRoute(
+        BankTransferQrScreen(
+          orderCode: orderCode,
+          amount: _finalTotal,
+          qrContent: qrContent,
+          transferContent: transferContent,
+          userId: pendingOrder.customerId ?? DBService.currentUserId() ?? 0,
+        ),
+      ),
+    );
+    if (result?.confirmed != true || !mounted) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final userId = pendingOrder.customerId ?? DBService.currentUserId() ?? 0;
+      final orderId = int.tryParse(pendingOrder.id) ?? 0;
+      final data = result!.paidAutomatically
+          ? await ApiService.fetchOrderPaymentStatus(
+              userId: userId,
+              orderId: orderId,
+            ).timeout(_checkoutTimeout)
+          : await ApiService.confirmBankTransferManual(
+              userId: userId,
+              orderId: orderId,
+            ).timeout(_checkoutTimeout);
+      final savedOrder = result.paidAutomatically
+          ? await _markPendingBankOrderPaid(pendingOrder, data)
+          : Order.fromJson(data);
+      if (!result.paidAutomatically) {
+        await DBService.orders().put(savedOrder.id, savedOrder);
+      }
+      final loyaltyResult = await _maybeAddLoyaltyPoints(savedOrder);
+      if (!mounted) return;
+      _openSuccess(savedOrder, loyaltyResult: loyaltyResult);
+    } on TimeoutException {
+      if (!mounted) return;
+      _showSnack(
+        'Lưu đơn chuyển khoản quá thời gian chờ. Vui lòng thử lại.',
         success: false,
       );
     } catch (e) {
@@ -365,6 +619,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
               _invoiceCard(),
               const SizedBox(height: 14),
               _voucherCard(),
+              const SizedBox(height: 14),
+              _loyaltyCard(),
               const SizedBox(height: 14),
               _paymentMethodCard(),
             ],
@@ -708,6 +964,89 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
+  Widget _loyaltyCard() {
+    return _sectionCard(
+      title: 'Tích điểm khách hàng',
+      subtitle: 'Dành cho khách mua tại quầy muốn lưu điểm bằng số điện thoại',
+      icon: Icons.stars_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _wantsLoyaltyPoints,
+            activeThumbColor: _primary,
+            title: const Text(
+              'Khách muốn tích điểm?',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: const Text(
+              'Nhập tên và SĐT để cộng điểm sau khi thanh toán thành công.',
+            ),
+            onChanged: (value) {
+              setState(() {
+                _wantsLoyaltyPoints = value;
+                if (!value) _loyaltyResult = null;
+              });
+            },
+          ),
+          if (_wantsLoyaltyPoints) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: _loyaltyNameController,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: 'Tên khách',
+                prefixIcon: const Icon(Icons.person_outline),
+                filled: true,
+                fillColor: _surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _loyaltyPhoneController,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: 'Số điện thoại',
+                prefixIcon: const Icon(Icons.phone_outlined),
+                filled: true,
+                fillColor: _surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+          if (_isAddingPoints) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(minHeight: 3),
+          ],
+          if (_loyaltyResult != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Đã cộng ${_loyaltyResult!['pointsAdded']} điểm. Tổng điểm hiện tại: ${_loyaltyResult!['totalPoints']}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _paymentMethodCard() {
     return _sectionCard(
       title: 'Phương thức thanh toán',
@@ -724,16 +1063,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const SizedBox(height: 10),
           _paymentOption(
             icon: Icons.account_balance,
-            title: 'Ngân hàng',
-            subtitle: 'Chuyển khoản hoặc quẹt thẻ.',
-            value: 'bank',
-          ),
-          const SizedBox(height: 10),
-          _paymentOption(
-            icon: Icons.account_balance_wallet_outlined,
-            title: 'Ví điện tử',
-            subtitle: 'Thanh toán bằng ví điện tử của khách.',
-            value: 'e_wallet',
+            title: 'Chuyển khoản QR',
+            subtitle:
+                'Hiển thị QR đúng tổng tiền, xác nhận sau khi khách chuyển.',
+            value: 'bank_transfer',
           ),
         ],
       ),
@@ -870,7 +1203,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     )
                   : const Icon(Icons.check_circle_outline),
               label: Text(
-                _isProcessing ? 'Đang thanh toán...' : 'Xác nhận thanh toán',
+                _isProcessing
+                    ? 'Đang thanh toán...'
+                    : _wantsLoyaltyPoints
+                    ? 'Tích điểm & Thanh toán'
+                    : 'Xác nhận thanh toán',
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primary,

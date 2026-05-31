@@ -122,6 +122,9 @@ CREATE TABLE IF NOT EXISTS orders (
   payment_method VARCHAR(50) DEFAULT 'cash',
   status VARCHAR(50) NOT NULL DEFAULT 'pending',
   payment_status VARCHAR(50) DEFAULT 'pending',
+  transaction_id VARCHAR(100),
+  transfer_content VARCHAR(100),
+  paid_at TIMESTAMP NULL DEFAULT NULL,
   order_status VARCHAR(50) NOT NULL DEFAULT 'waiting_confirm',
   shipping_address VARCHAR(255),
   confirmed_by INT,
@@ -184,6 +187,7 @@ CREATE TABLE IF NOT EXISTS payments (
   method VARCHAR(50) NOT NULL,
   amount DECIMAL(10,2) NOT NULL,
   status VARCHAR(50) NOT NULL,
+  transaction_id VARCHAR(100),
   qr_content VARCHAR(255),
   paid_at TIMESTAMP NULL DEFAULT NULL,
 
@@ -192,6 +196,25 @@ CREATE TABLE IF NOT EXISTS payments (
     REFERENCES orders(order_id)
     ON UPDATE CASCADE
     ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS payment_transactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  order_id INT NULL,
+  transaction_id VARCHAR(120) NOT NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  description TEXT,
+  provider VARCHAR(50) DEFAULT 'bank_webhook',
+  account_number VARCHAR(50),
+  raw_payload JSON NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_payment_transactions_transaction_id (transaction_id),
+  KEY idx_payment_transactions_order_id (order_id),
+  CONSTRAINT fk_payment_transactions_orders
+    FOREIGN KEY (order_id)
+    REFERENCES orders(order_id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS invoices (

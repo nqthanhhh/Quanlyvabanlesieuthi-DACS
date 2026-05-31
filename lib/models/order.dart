@@ -52,6 +52,18 @@ class Order extends HiveObject {
   @HiveField(14)
   String? deliveryMethod;
 
+  @HiveField(15)
+  String? transactionId;
+
+  @HiveField(16)
+  DateTime? paidAt;
+
+  @HiveField(17)
+  String? qrContent;
+
+  @HiveField(18)
+  String? transferContent;
+
   Order({
     required this.id,
     required this.orderDate,
@@ -68,6 +80,10 @@ class Order extends HiveObject {
     this.discountAmount = 0,
     this.orderType = 'offline',
     this.deliveryMethod,
+    this.transactionId,
+    this.paidAt,
+    this.qrContent,
+    this.transferContent,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -116,6 +132,18 @@ class Order extends HiveObject {
       deliveryMethod: TypeConverters.toNullableString(
         json['delivery_method'] ?? json['deliveryMethod'],
       ),
+      transactionId: TypeConverters.toNullableString(
+        json['transaction_id'] ?? json['transactionId'],
+      ),
+      paidAt: DateTime.tryParse(
+        (json['paid_at'] ?? json['paidAt'] ?? '').toString(),
+      ),
+      qrContent: TypeConverters.toNullableString(
+        json['qr_content'] ?? json['qrContent'],
+      ),
+      transferContent: TypeConverters.toNullableString(
+        json['transfer_content'] ?? json['transferContent'],
+      ),
     );
   }
 
@@ -133,6 +161,10 @@ class Order extends HiveObject {
       'note': note,
       'voucher_id': voucherId,
       'discount_amount': discountAmount,
+      'transaction_id': transactionId,
+      'paid_at': paidAt?.toIso8601String(),
+      'qr_content': qrContent,
+      'transfer_content': transferContent,
       'items': items.map((e) => e.toJson()).toList(),
     };
   }

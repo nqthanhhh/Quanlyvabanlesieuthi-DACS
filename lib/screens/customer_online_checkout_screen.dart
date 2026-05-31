@@ -7,6 +7,7 @@ import '../services/db_service.dart';
 import '../services/voucher_service.dart';
 import '../widgets/slide_page_route.dart';
 import 'orders_screen.dart';
+import 'vnpay_payment_screen.dart';
 
 class CustomerOnlineCheckoutScreen extends StatefulWidget {
   final Map<String, int> cart;
@@ -266,6 +267,20 @@ class _CustomerOnlineCheckoutScreenState
       DBService.syncProductsFromApi();
 
       if (!mounted) return;
+
+      if (_paymentMethod == 'vnpay') {
+        Navigator.of(context).pushReplacement(
+          buildSlidePageRoute(
+            VnpayPaymentScreen(
+              orderId: int.parse(order.id),
+              userId: userId,
+              amount: order.totalAmount,
+            ),
+          ),
+        );
+        return;
+      }
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đặt hàng thành công')));
@@ -830,10 +845,17 @@ class _CustomerOnlineCheckoutScreenState
           ),
           const SizedBox(height: 10),
           _optionTile(
+            value: 'vnpay',
+            icon: Icons.account_balance_outlined,
+            title: 'Thanh toán online VNPay',
+            subtitle: 'Mở cổng VNPay sandbox, xác nhận tự động qua IPN.',
+          ),
+          const SizedBox(height: 10),
+          _optionTile(
             value: 'ewallet',
             icon: Icons.qr_code_2_outlined,
-            title: 'Ví điện tử',
-            subtitle: 'Quét QR demo để đánh dấu đã thanh toán.',
+            title: 'QR mô phỏng (demo)',
+            subtitle: 'Chỉ dùng demo: đánh dấu đã thanh toán ngay, không qua cổng thật.',
           ),
           if (_paymentMethod == 'ewallet') _fakeQr(amount),
         ],

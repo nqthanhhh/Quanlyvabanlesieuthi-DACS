@@ -869,6 +869,85 @@ class ApiService {
     return _dataMap(body);
   }
 
+  static Future<Map<String, dynamic>> createVnpayPayment({
+    required int userId,
+    required int orderId,
+    String? bankCode,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/payments/vnpay/create'),
+          headers: _userHeadersFor(userId),
+          body: jsonEncode({
+            'order_id': orderId,
+            if (bankCode != null && bankCode.isNotEmpty) 'bank_code': bankCode,
+          }),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> fetchOrderPaymentStatus({
+    required int userId,
+    required int orderId,
+  }) async {
+    final response = await http
+        .get(
+          _uri('/api/orders/$orderId/payment-status'),
+          headers: _userHeadersFor(userId),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> fetchOrderPaymentStatusByCode(
+    String orderCode,
+  ) async {
+    final encodedCode = Uri.encodeComponent(orderCode.trim());
+    final response = await http
+        .get(_uri('/api/orders/status/$encodedCode'), headers: _headers)
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> confirmBankTransferManual({
+    required int userId,
+    required int orderId,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/payments/bank-transfer/manual-confirm'),
+          headers: _userHeadersFor(userId),
+          body: jsonEncode({'order_id': orderId}),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> addCustomerPoints({
+    required String customerName,
+    required String phone,
+    required double amount,
+    required int employeeId,
+    String? orderId,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/points/add'),
+          headers: _userHeadersFor(employeeId),
+          body: jsonEncode({
+            'customerName': customerName,
+            'phone': phone,
+            'amount': amount,
+            'employeeId': employeeId,
+            if (orderId != null && orderId.trim().isNotEmpty)
+              'orderId': int.tryParse(orderId) ?? orderId,
+          }),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
   static Future<Order> checkoutOnlineOrder({
     required int userId,
     required String deliveryMethod,

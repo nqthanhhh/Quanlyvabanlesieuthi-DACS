@@ -135,9 +135,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
   String _paymentLabel(String? status) {
     switch (status) {
       case 'paid':
+      case 'success':
         return 'Đã thanh toán';
       case 'pending':
         return 'Chờ thanh toán';
+      case 'failed':
+        return 'Thanh toán thất bại';
       default:
         return status?.isNotEmpty == true ? status! : 'Chưa rõ';
     }

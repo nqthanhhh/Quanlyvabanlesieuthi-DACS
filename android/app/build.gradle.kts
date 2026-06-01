@@ -42,3 +42,16 @@ android {
 flutter {
     source = "../.."
 }
+// Ép tất cả các plugin phụ thuộc (subprojects) phải compile bằng Java 11
+subprojects {
+    afterEvaluate {
+        if (hasProperty("android")) {
+            extensions.configure<com.android.build.gradle.BaseExtension>("android") {
+                compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_11
+                    targetCompatibility = JavaVersion.VERSION_11
+                }
+            }
+        }
+    }
+}

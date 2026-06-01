@@ -91,8 +91,8 @@ class Order extends HiveObject {
     return Order(
       id: (json['order_id'] ?? json['id']).toString(),
       orderDate:
-          DateTime.tryParse(
-            (json['created_at'] ?? json['orderDate'] ?? '').toString(),
+          TypeConverters.toLocalDateTime(
+            json['created_at'] ?? json['orderDate'],
           ) ??
           DateTime.now(),
       totalAmount: TypeConverters.toDouble(
@@ -135,9 +135,7 @@ class Order extends HiveObject {
       transactionId: TypeConverters.toNullableString(
         json['transaction_id'] ?? json['transactionId'],
       ),
-      paidAt: DateTime.tryParse(
-        (json['paid_at'] ?? json['paidAt'] ?? '').toString(),
-      ),
+      paidAt: TypeConverters.toLocalDateTime(json['paid_at'] ?? json['paidAt']),
       qrContent: TypeConverters.toNullableString(
         json['qr_content'] ?? json['qrContent'],
       ),

@@ -56,7 +56,8 @@ function rangeConfig(rawRange, rawMonth) {
     return {
       range: "7days",
       chartGranularity: "day",
-      dateCondition: "AND o.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)",
+      dateCondition:
+        "AND DATE(o.created_at) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND DATE(o.created_at) <= CURDATE()",
       params: [],
     };
   }
@@ -76,7 +77,8 @@ function rangeConfig(rawRange, rawMonth) {
   return {
     range: "30days",
     chartGranularity: "day",
-    dateCondition: "AND o.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)",
+    dateCondition:
+      "AND DATE(o.created_at) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) AND DATE(o.created_at) <= CURDATE()",
     params: [],
   };
 }
@@ -206,13 +208,13 @@ router.get("/dashboard", async (req, res) => {
 
     const [chartRows] = await pool.execute(
       `SELECT
-         DATE(o.created_at) AS period,
+         DATE_FORMAT(o.created_at, '%Y-%m-%d') AS period,
          COALESCE(SUM(o.final_amount), 0) AS revenue,
          COUNT(DISTINCT o.order_id) AS orders_count
        FROM orders o
        WHERE ${paidOrderCondition}
          ${config.dateCondition}
-       GROUP BY DATE(o.created_at)
+       GROUP BY DATE_FORMAT(o.created_at, '%Y-%m-%d')
        ORDER BY period ASC`,
       config.params,
     );
@@ -220,6 +222,10 @@ router.get("/dashboard", async (req, res) => {
     const products = productRows.map(mapProduct);
     const topProducts = products
       .filter((product) => product.total_quantity_sold > 0)
+      .slice(0, 10);
+    const topRevenueProducts = products
+      .filter((product) => product.total_revenue > 0)
+      .sort((a, b) => b.total_revenue - a.total_revenue)
       .slice(0, 10);
     const highStockProducts = products
       .filter((product) => product.current_stock > 50)
@@ -235,6 +241,7 @@ router.get("/dashboard", async (req, res) => {
       products: products.length,
       chart: chartRows.length,
       top: topProducts.length,
+      topRevenue: topRevenueProducts.length,
       highStock: highStockProducts.length,
       slow: slowProducts.length,
     });
@@ -255,6 +262,7 @@ router.get("/dashboard", async (req, res) => {
           average_order_value: Number(overview.average_order_value || 0),
         },
         top_products: topProducts,
+        top_revenue_products: topRevenueProducts,
         high_stock_products: highStockProducts,
         slow_products: slowProducts,
         suggestions: buildSuggestions(topProducts, highStockProducts, slowProducts),

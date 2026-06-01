@@ -111,12 +111,12 @@ router.get("/revenue", async (req, res) => {
 
     const [timeRows] = await pool.execute(
       `SELECT
-         DATE(o.created_at) AS period,
+         DATE_FORMAT(o.created_at, '%Y-%m-%d') AS period,
          COALESCE(SUM(o.final_amount), 0) AS revenue,
          COUNT(DISTINCT o.order_id) AS orders_count
        FROM orders o
        WHERE ${paidOrderCondition}
-       GROUP BY DATE(o.created_at)
+       GROUP BY DATE_FORMAT(o.created_at, '%Y-%m-%d')
        ORDER BY period ASC`,
     );
 

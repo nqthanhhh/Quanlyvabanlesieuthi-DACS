@@ -29,4 +29,31 @@ class TypeConverters {
     final text = value.toString();
     return text.isEmpty ? null : text;
   }
+
+  /// Parse an API timestamp and normalize it to the device timezone.
+  static DateTime? toLocalDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value.toLocal();
+    final text = value.toString();
+    if (text.isEmpty) return null;
+    return DateTime.tryParse(text)?.toLocal();
+  }
+
+  /// Format a date key using the local calendar day.
+  static String localDateKey(DateTime value) {
+    final local = value.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day';
+  }
+
+  /// Parse a date-like API value and return its local yyyy-MM-dd key.
+  static String? localDateKeyFromValue(dynamic value) {
+    final date = toLocalDateTime(value);
+    if (date == null) {
+      final text = value?.toString() ?? '';
+      return text.length >= 10 ? text.substring(0, 10) : null;
+    }
+    return localDateKey(date);
+  }
 }

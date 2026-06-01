@@ -1,8 +1,10 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../utils/type_converters.dart';
 import 'order_list_screen.dart';
 
 class RevenueOverviewScreen extends StatefulWidget {
@@ -12,11 +14,15 @@ class RevenueOverviewScreen extends StatefulWidget {
   State<RevenueOverviewScreen> createState() => _RevenueOverviewScreenState();
 }
 
+enum _RevenueTimeRange { today, sevenDays, thirtyDays, month }
+
 class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
   late Future<_RevenueDashboardData> _future;
   _DashboardTimeFilter _selectedFilter = _DashboardTimeFilter.day;
   late DateTime _visibleRevenueMonth;
   late DateTime _selectedRevenueDate;
+  _RevenueTimeRange _timeRange = _RevenueTimeRange.thirtyDays;
+  late DateTime _selectedMonth;
 
   @override
   void initState() {
@@ -24,6 +30,7 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
     final now = DateTime.now();
     _visibleRevenueMonth = DateTime(now.year, now.month);
     _selectedRevenueDate = DateTime(now.year, now.month, now.day);
+    _selectedMonth = DateTime(now.year, now.month);
     _future = _loadData();
   }
 
@@ -36,19 +43,139 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
       throw ApiException('Thiếu thông tin admin');
     }
 
-    final results = await Future.wait([
-      ApiService.fetchRevenueReport(adminUserId),
-      ApiService.fetchProductPerformanceReport(adminUserId),
-    ]);
+    var revenue = await ApiService.fetchRevenueReport(adminUserId);
 
-    return _RevenueDashboardData(
-      revenue: results[0] as Map<String, dynamic>,
-      products: (results[1] as List<Map<String, dynamic>>).take(10).toList(),
+    // Filter revenue data by selected time range
+    try {
+      final orders = await ApiService.fetchOrders();
+      final filtered = orders.where(_isOrderInSelectedRange).toList();
+      final detailed = await Future.wait(
+        filtered.map((order) => ApiService.fetchOrderDetail(order.id)),
+      );
+      revenue = _calculateFilteredRevenue(revenue, detailed);
+    } catch (error) {
+      debugPrint('[revenue] order filtering failed: $error');
+    }
+
+    return _RevenueDashboardData(revenue: revenue);
+  }
+
+  bool _isOrderInSelectedRange(Order order) {
+    final local = order.orderDate.toLocal();
+    final date = DateTime(local.year, local.month, local.day);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (_timeRange) {
+      case _RevenueTimeRange.today:
+        return date.isAtSameMomentAs(today);
+      case _RevenueTimeRange.sevenDays:
+        final start = today.subtract(const Duration(days: 6));
+        return !date.isBefore(start) && !date.isAfter(today);
+      case _RevenueTimeRange.thirtyDays:
+        final start = today.subtract(const Duration(days: 29));
+        return !date.isBefore(start) && !date.isAfter(today);
+      case _RevenueTimeRange.month:
+        return date.year == _selectedMonth.year &&
+            date.month == _selectedMonth.month;
+    }
+  }
+
+  Map<String, dynamic> _calculateFilteredRevenue(
+    Map<String, dynamic> baseRevenue,
+    List<Order> orders,
+  ) {
+    final filtered = Map<String, dynamic>.from(baseRevenue);
+    double totalNetRevenue = 0; // after discount
+    double totalDiscount = 0;
+    double totalGrossRevenue = 0; // before discount
+    int totalOrders = 0;
+    int totalProductsSold = 0;
+    final revenueByDate = <String, Map<String, dynamic>>{};
+    final revenueByMonth = <String, Map<String, dynamic>>{};
+    final revenueByYear = <String, Map<String, dynamic>>{};
+
+    for (final order in orders) {
+      totalNetRevenue += order.totalAmount;
+      totalDiscount += order.discountAmount;
+      final grossRevenue = order.totalAmount + order.discountAmount;
+      totalGrossRevenue += grossRevenue;
+      totalOrders += 1;
+      totalProductsSold += order.items.fold<int>(
+        0,
+        (sum, item) => sum + item.quantity,
+      );
+      _addRevenueBucket(
+        revenueByDate,
+        TypeConverters.localDateKey(order.orderDate),
+        grossRevenue,
+      );
+      final local = order.orderDate.toLocal();
+      _addRevenueBucket(
+        revenueByMonth,
+        '${local.year}-${local.month.toString().padLeft(2, '0')}-01',
+        grossRevenue,
+      );
+      _addRevenueBucket(revenueByYear, '${local.year}-01-01', grossRevenue);
+    }
+
+    final averageOrderValue = totalOrders > 0
+        ? totalGrossRevenue / totalOrders
+        : 0;
+
+    filtered['total_revenue'] = totalGrossRevenue;
+    filtered['total_orders'] = totalOrders;
+    filtered['total_net_revenue'] = totalNetRevenue;
+    filtered['average_order_value'] = averageOrderValue;
+    filtered['total_discount'] = totalDiscount;
+    filtered['total_products_sold'] = totalProductsSold;
+    filtered['revenue_by_time'] = _sortedRevenueBuckets(revenueByDate);
+    filtered['revenue_by_month'] = _sortedRevenueBuckets(revenueByMonth);
+    filtered['revenue_by_year'] = _sortedRevenueBuckets(revenueByYear);
+
+    return filtered;
+  }
+
+  void _addRevenueBucket(
+    Map<String, Map<String, dynamic>> buckets,
+    String period,
+    double revenue,
+  ) {
+    final bucket = buckets.putIfAbsent(
+      period,
+      () => {'period': period, 'revenue': 0.0, 'orders_count': 0},
+    );
+    bucket['revenue'] = _toDouble(bucket['revenue']) + revenue;
+    bucket['orders_count'] = _toInt(bucket['orders_count']) + 1;
+  }
+
+  List<Map<String, dynamic>> _sortedRevenueBuckets(
+    Map<String, Map<String, dynamic>> buckets,
+  ) {
+    return buckets.values.toList()..sort(
+      (a, b) => a['period'].toString().compareTo(b['period'].toString()),
     );
   }
 
   void _reload() {
     setState(() {
+      _future = _loadData();
+    });
+  }
+
+  void _setTimeRange(_RevenueTimeRange value) {
+    setState(() {
+      _timeRange = value;
+      _future = _loadData();
+    });
+  }
+
+  void _changeMonth(int offset) {
+    setState(() {
+      _selectedMonth = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month + offset,
+      );
+      _timeRange = _RevenueTimeRange.month;
       _future = _loadData();
     });
   }
@@ -281,6 +408,68 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
           });
         },
       ),
+    );
+  }
+
+  Widget _buildTimeRangeFilter() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<_RevenueTimeRange>(
+            showSelectedIcon: false,
+            selected: {_timeRange},
+            onSelectionChanged: (value) => _setTimeRange(value.first),
+            segments: const [
+              ButtonSegment(
+                value: _RevenueTimeRange.today,
+                icon: Icon(Icons.today_outlined),
+                label: Text('Hôm nay'),
+              ),
+              ButtonSegment(
+                value: _RevenueTimeRange.sevenDays,
+                icon: Icon(Icons.date_range_outlined),
+                label: Text('7 ngày'),
+              ),
+              ButtonSegment(
+                value: _RevenueTimeRange.thirtyDays,
+                icon: Icon(Icons.calendar_view_week_outlined),
+                label: Text('30 ngày'),
+              ),
+              ButtonSegment(
+                value: _RevenueTimeRange.month,
+                icon: Icon(Icons.calendar_month_outlined),
+                label: Text('Theo tháng'),
+              ),
+            ],
+          ),
+        ),
+        if (_timeRange == _RevenueTimeRange.month) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              IconButton.filledTonal(
+                onPressed: () => _changeMonth(-1),
+                icon: const Icon(Icons.chevron_left),
+                tooltip: 'Tháng trước',
+              ),
+              Expanded(
+                child: Text(
+                  'Tháng ${_selectedMonth.month}/${_selectedMonth.year}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton.filledTonal(
+                onPressed: () => _changeMonth(1),
+                icon: const Icon(Icons.chevron_right),
+                tooltip: 'Tháng sau',
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 
@@ -743,122 +932,6 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
     );
   }
 
-  Widget _buildTopProducts(List<Map<String, dynamic>> products) {
-    final topProducts = products.take(10).toList();
-    final maxRevenue = topProducts.fold<double>(0, (max, product) {
-      final revenue = _toDouble(product['total_revenue']);
-      return revenue > max ? revenue : max;
-    });
-
-    return _DashboardSection(
-      title: 'Top 10 sản phẩm bán chạy',
-      trailing: Text(
-        '${topProducts.length} sản phẩm',
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-      ),
-      child: topProducts.isEmpty
-          ? const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: Text('Chưa có dữ liệu sản phẩm bán chạy')),
-            )
-          : Column(
-              children: topProducts.asMap().entries.map((entry) {
-                final index = entry.key;
-                final product = entry.value;
-                final name = (product['product_name'] ?? '').toString();
-                final quantity = _toInt(product['total_quantity_sold']);
-                final revenue = _toDouble(product['total_revenue']);
-                final percent = maxRevenue == 0 ? 0.0 : revenue / maxRevenue;
-
-                return Padding(
-                  padding: EdgeInsets.only(
-                    bottom: index == topProducts.length - 1 ? 0 : 14,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            color: Colors.blue.shade700,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    name.isEmpty
-                                        ? 'Sản phẩm chưa đặt tên'
-                                        : name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: Alignment.centerRight,
-                                    child: Text(
-                                      _formatCurrency(revenue),
-                                      maxLines: 1,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 7),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(999),
-                              child: LinearProgressIndicator(
-                                value: percent.clamp(0, 1),
-                                minHeight: 7,
-                                backgroundColor: Colors.grey.shade200,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.blue.shade600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              'Đã bán $quantity sản phẩm',
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-    );
-  }
-
   Widget _buildDiscountProfitStrip(Map<String, dynamic> revenue) {
     final totalDiscount = _toDouble(revenue['total_discount']);
     final productsSold = _toInt(revenue['total_products_sold']);
@@ -997,19 +1070,22 @@ class _RevenueOverviewScreenState extends State<RevenueOverviewScreen> {
                     style: TextStyle(color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 16),
+                  _DashboardSection(
+                    title: 'Bộ lọc kỳ báo cáo',
+                    child: _buildTimeRangeFilter(),
+                  ),
+                  const SizedBox(height: 14),
                   _buildKpiGrid(data.revenue),
                   const SizedBox(height: 12),
                   _buildDiscountProfitStrip(data.revenue),
                   const SizedBox(height: 18),
                   _DashboardSection(
-                    title: 'Bộ lọc thời gian',
+                    title: 'Bộ lọc hiển thị lịch',
                     child: _buildFilterSelector(),
                   ),
                   const SizedBox(height: 14),
                   _buildTrendSection(data.revenue),
                   const SizedBox(height: 14),
-                  _buildTopProducts(data.products),
-                  const SizedBox(height: 12),
                 ],
               ),
             ),
@@ -1512,20 +1588,26 @@ class _TrendChartData {
 
   static Map<String, double> dailyRevenueMap(Map<String, dynamic> api) {
     final rows = (api['revenue_by_time'] as List?) ?? const [];
-    return {
-      for (final row in rows.whereType<Map>())
-        row['period'].toString().substring(0, 10): toDoubleValue(
-          row['revenue'],
-        ),
-    };
+    final result = <String, double>{};
+    for (final row in rows.whereType<Map>()) {
+      final key = TypeConverters.localDateKeyFromValue(row['period']);
+      if (key == null) continue;
+      result[key] = (result[key] ?? 0) + toDoubleValue(row['revenue']);
+    }
+    return result;
   }
 
   static Map<String, double> monthlyRevenueMap(Map<String, dynamic> api) {
     final rows = (api['revenue_by_month'] as List?) ?? const [];
-    return {
-      for (final row in rows.whereType<Map>())
-        row['period'].toString().substring(0, 7): toDoubleValue(row['revenue']),
-    };
+    final result = <String, double>{};
+    for (final row in rows.whereType<Map>()) {
+      final key = TypeConverters.localDateKeyFromValue(row['period']);
+      if (key == null || key.length < 7) continue;
+      final monthKey = key.substring(0, 7);
+      result[monthKey] =
+          (result[monthKey] ?? 0) + toDoubleValue(row['revenue']);
+    }
+    return result;
   }
 
   static String dateKey(DateTime date) {
@@ -1546,7 +1628,6 @@ class _TrendChartData {
 
 class _RevenueDashboardData {
   final Map<String, dynamic> revenue;
-  final List<Map<String, dynamic>> products;
 
-  const _RevenueDashboardData({required this.revenue, required this.products});
+  const _RevenueDashboardData({required this.revenue});
 }

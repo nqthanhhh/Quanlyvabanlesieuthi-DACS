@@ -1,11 +1,13 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../utils/type_converters.dart';
 
 enum _PerformanceRange { today, sevenDays, thirtyDays, month }
+
+enum _TopProductMode { quantity, revenue }
 
 class ProductPerformanceReportScreen extends StatefulWidget {
   const ProductPerformanceReportScreen({super.key});
@@ -22,6 +24,7 @@ class _ProductPerformanceReportScreenState
 
   late Future<Map<String, dynamic>> _future;
   _PerformanceRange _range = _PerformanceRange.thirtyDays;
+  _TopProductMode _topProductMode = _TopProductMode.quantity;
   late DateTime _selectedMonth;
 
   @override
@@ -53,7 +56,7 @@ class _ProductPerformanceReportScreenState
             : null,
       );
       debugPrint('[performance] dashboard api ok keys=${data.keys.join(',')}');
-      return data;
+      return _normalizeDashboardDates(data);
     } catch (error) {
       debugPrint('[performance] dashboard api failed: $error');
       return _loadLegacyDashboard(adminUserId);
@@ -88,6 +91,15 @@ class _ProductPerformanceReportScreenState
         .where((product) => _toInt(product['total_quantity_sold']) > 0)
         .take(10)
         .toList();
+    final topRevenueProducts =
+        sourceProducts
+            .where((product) => _toDouble(product['total_revenue']) > 0)
+            .toList()
+          ..sort(
+            (a, b) => _toDouble(
+              b['total_revenue'],
+            ).compareTo(_toDouble(a['total_revenue'])),
+          );
     final highStockProducts =
         sourceProducts
             .where((product) => _toInt(product['current_stock']) > 50)
@@ -147,6 +159,7 @@ class _ProductPerformanceReportScreenState
             : periodRevenue / orders.length,
       },
       'top_products': topProducts,
+      'top_revenue_products': topRevenueProducts.take(10).toList(),
       'high_stock_products': highStockProducts.take(10).toList(),
       'slow_products': slowProducts,
       'suggestions': _buildLocalSuggestions(
@@ -173,17 +186,19 @@ class _ProductPerformanceReportScreenState
   }
 
   bool _isOrderInSelectedRange(Order order) {
-    final date = order.orderDate;
+    final local = order.orderDate.toLocal();
+    final date = DateTime(local.year, local.month, local.day);
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     switch (_range) {
       case _PerformanceRange.today:
-        return date.year == now.year &&
-            date.month == now.month &&
-            date.day == now.day;
+        return date.isAtSameMomentAs(today);
       case _PerformanceRange.sevenDays:
-        return date.isAfter(now.subtract(const Duration(days: 7)));
+        final start = today.subtract(const Duration(days: 6));
+        return !date.isBefore(start) && !date.isAfter(today);
       case _PerformanceRange.thirtyDays:
-        return date.isAfter(now.subtract(const Duration(days: 30)));
+        final start = today.subtract(const Duration(days: 29));
+        return !date.isBefore(start) && !date.isAfter(today);
       case _PerformanceRange.month:
         return date.year == _selectedMonth.year &&
             date.month == _selectedMonth.month;
@@ -249,8 +264,7 @@ class _ProductPerformanceReportScreenState
   List<Map<String, dynamic>> _chartFromOrders(List<Order> orders) {
     final buckets = <String, Map<String, dynamic>>{};
     for (final order in orders) {
-      final key =
-          '${order.orderDate.year.toString().padLeft(4, '0')}-${order.orderDate.month.toString().padLeft(2, '0')}-${order.orderDate.day.toString().padLeft(2, '0')}';
+      final key = TypeConverters.localDateKey(order.orderDate);
       final bucket = buckets.putIfAbsent(
         key,
         () => {'period': key, 'revenue': 0.0, 'orders_count': 0},
@@ -270,7 +284,7 @@ class _ProductPerformanceReportScreenState
   ) {
     return rows.where((row) {
       final raw = row['period'];
-      final date = DateTime.tryParse(raw?.toString() ?? '');
+      final date = TypeConverters.toLocalDateTime(raw);
       if (date == null) return true;
       return _isOrderInSelectedRange(
         Order(
@@ -354,6 +368,12 @@ class _ProductPerformanceReportScreenState
     });
   }
 
+  void _setTopProductMode(_TopProductMode value) {
+    setState(() {
+      _topProductMode = value;
+    });
+  }
+
   void _changeMonth(int offset) {
     setState(() {
       _selectedMonth = DateTime(
@@ -382,18 +402,23 @@ class _ProductPerformanceReportScreenState
         .toList();
   }
 
-  static String _formatCurrency(num amount) {
-    return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} VNĐ';
-  }
-
   static String _monthKey(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}';
   }
 
-  static String _dateLabel(dynamic raw) {
-    final date = DateTime.tryParse(raw?.toString() ?? '');
-    if (date == null) return raw?.toString() ?? '';
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+  Map<String, dynamic> _normalizeDashboardDates(Map<String, dynamic> data) {
+    final normalized = Map<String, dynamic>.from(data);
+    final chart = _list(normalized['revenue_chart']);
+    if (chart.isNotEmpty) {
+      normalized['revenue_chart'] = chart.map((row) {
+        final copy = Map<String, dynamic>.from(row);
+        copy['period'] =
+            TypeConverters.localDateKeyFromValue(copy['period']) ??
+            copy['period'];
+        return copy;
+      }).toList();
+    }
+    return normalized;
   }
 
   String _productName(Map<String, dynamic> product) {
@@ -463,221 +488,69 @@ class _ProductPerformanceReportScreenState
     );
   }
 
-  Widget _buildOverview(Map<String, dynamic> overview) {
-    final cards = [
-      _MetricCard(
-        title: 'Tổng doanh thu',
-        value: _formatCurrency(_toDouble(overview['total_revenue'])),
-        subtitle: 'Theo bộ lọc hiện tại',
-        icon: Icons.payments_outlined,
-        color: Colors.orange.shade700,
-      ),
-      _MetricCard(
-        title: 'Tổng đơn hàng',
-        value: '${_toInt(overview['total_orders'])}',
-        subtitle: 'Đơn đã thanh toán',
-        icon: Icons.receipt_long_outlined,
-        color: Colors.indigo,
-      ),
-      _MetricCard(
-        title: 'Đã bán',
-        value: '${_toInt(overview['total_products_sold'])}',
-        subtitle: 'Tổng sản phẩm',
-        icon: Icons.shopping_cart_checkout_outlined,
-        color: _primary,
-      ),
-      _MetricCard(
-        title: 'Tồn kho',
-        value: '${_toInt(overview['total_stock'])}',
-        subtitle: 'Sản phẩm còn trong kho',
-        icon: Icons.warehouse_outlined,
-        color: Colors.blueGrey,
-      ),
-      _MetricCard(
-        title: 'Giá trị TB/đơn',
-        value: _formatCurrency(_toDouble(overview['average_order_value'])),
-        subtitle: 'Average order value',
-        icon: Icons.trending_up_outlined,
-        color: Colors.blue.shade700,
-      ),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth >= 900
-            ? 3
-            : constraints.maxWidth >= 520
-            ? 2
-            : 2;
-        final ratio = constraints.maxWidth < 380 ? 1.15 : 1.45;
-        return GridView.count(
-          crossAxisCount: crossAxisCount,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: constraints.maxWidth >= 900 ? 2.2 : ratio,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          children: cards,
-        );
-      },
-    );
-  }
-
-  Widget _buildRevenueChart(List<Map<String, dynamic>> rows) {
-    final maxRevenue = rows.fold<double>(0, (max, row) {
-      final value = _toDouble(row['revenue']);
-      return value > max ? value : max;
-    });
-    final interval = maxRevenue <= 0 ? 1.0 : (maxRevenue / 4).ceilToDouble();
+  Widget _buildTopProductList(
+    List<Map<String, dynamic>> topProducts,
+    List<Map<String, dynamic>> topRevenueProducts,
+  ) {
+    final products = _topProductMode == _TopProductMode.quantity
+        ? topProducts
+        : topRevenueProducts;
+    final title = _topProductMode == _TopProductMode.quantity
+        ? 'Bán chạy'
+        : 'Bán nhiều tiền';
 
     return _SectionCard(
-      title: 'Biểu đồ doanh thu',
+      title: 'Danh sách sản phẩm',
       trailing: Text(
-        '${rows.length} mốc',
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+        title,
+        style: TextStyle(
+          color: _primary,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
       ),
-      child: SizedBox(
-        height: 260,
-        child: rows.isEmpty
-            ? const _EmptyState(
-                icon: Icons.bar_chart_outlined,
-                message: 'Chưa có dữ liệu doanh thu trong kỳ này.',
-              )
-            : BarChart(
-                BarChartData(
-                  maxY: maxRevenue <= 0 ? 1 : maxRevenue * 1.18,
-                  alignment: BarChartAlignment.spaceAround,
-                  barGroups: rows.asMap().entries.map((entry) {
-                    return BarChartGroupData(
-                      x: entry.key,
-                      barRods: [
-                        BarChartRodData(
-                          toY: _toDouble(entry.value['revenue']),
-                          width: rows.length > 20 ? 8 : 14,
-                          color: _primary,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: interval,
-                    getDrawingHorizontalLine: (value) =>
-                        FlLine(color: Colors.grey.shade200, strokeWidth: 1),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 42,
-                        interval: interval,
-                        getTitlesWidget: (value, meta) {
-                          if (value <= 0) return const SizedBox.shrink();
-                          return Text(
-                            _compactCurrency(value),
-                            style: const TextStyle(fontSize: 10),
-                          );
-                        },
-                      ),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 34,
-                        getTitlesWidget: (value, meta) {
-                          final index = value.toInt();
-                          if (index < 0 || index >= rows.length) {
-                            return const SizedBox.shrink();
-                          }
-                          if (rows.length > 12 && index % 3 != 0) {
-                            return const SizedBox.shrink();
-                          }
-                          return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            space: 8,
-                            child: Text(
-                              _dateLabel(rows[index]['period']),
-                              style: const TextStyle(fontSize: 10),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  barTouchData: BarTouchData(
-                    enabled: true,
-                    touchTooltipData: BarTouchTooltipData(
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final row = rows[group.x.toInt()];
-                        return BarTooltipItem(
-                          '${_dateLabel(row['period'])}\n',
-                          const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          children: [
-                            TextSpan(
-                              text: _formatCurrency(_toDouble(row['revenue'])),
-                              style: const TextStyle(color: Colors.white70),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
+      child: Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<_TopProductMode>(
+              showSelectedIcon: false,
+              selected: {_topProductMode},
+              onSelectionChanged: (value) => _setTopProductMode(value.first),
+              segments: const [
+                ButtonSegment(
+                  value: _TopProductMode.quantity,
+                  icon: Icon(Icons.shopping_bag_outlined),
+                  label: Text('Bán chạy'),
                 ),
-              ),
-      ),
-    );
-  }
-
-  static String _compactCurrency(num value) {
-    if (value >= 1000000000) {
-      return '${(value / 1000000000).toStringAsFixed(1)} tỷ';
-    }
-    if (value >= 1000000) {
-      return '${(value / 1000000).toStringAsFixed(1)} tr';
-    }
-    if (value >= 1000) return '${(value / 1000).toStringAsFixed(0)}k';
-    return value.round().toString();
-  }
-
-  Widget _buildTopProducts(List<Map<String, dynamic>> products) {
-    final maxSold = products.fold<int>(0, (max, product) {
-      final sold = _toInt(product['total_quantity_sold']);
-      return sold > max ? sold : max;
-    });
-    return _SectionCard(
-      title: 'Top sản phẩm bán chạy',
-      trailing: Text(
-        'Top ${products.length}',
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-      ),
-      child: products.isEmpty
-          ? const _EmptyState(
-              icon: Icons.shopping_bag_outlined,
-              message: 'Chưa có sản phẩm bán chạy trong kỳ này.',
+                ButtonSegment(
+                  value: _TopProductMode.revenue,
+                  icon: Icon(Icons.payments_outlined),
+                  label: Text('Bán nhiều tiền'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (products.isEmpty)
+            const _EmptyState(
+              icon: Icons.insights_outlined,
+              message: 'Chưa có sản phẩm phát sinh bán trong kỳ này.',
             )
-          : Column(
+          else
+            Column(
               children: products.take(10).toList().asMap().entries.map((entry) {
-                return _RankedProductTile(
+                return _SalesProductTile(
                   rank: entry.key + 1,
                   product: entry.value,
-                  maxSold: maxSold,
                   name: _productName(entry.value),
+                  mode: _topProductMode,
                   onTap: () => _openDetail(entry.value, entry.key + 1),
                 );
               }).toList(),
             ),
+        ],
+      ),
     );
   }
 
@@ -830,14 +703,20 @@ class _ProductPerformanceReportScreenState
           if (snapshot.hasError) return _buildError(snapshot.error!);
 
           final data = snapshot.data ?? const <String, dynamic>{};
-          final overview = Map<String, dynamic>.from(
-            (data['overview'] as Map?) ?? const {},
-          );
           final topProducts = _list(data['top_products']);
+          final topRevenueProducts = _list(data['top_revenue_products']);
           final highStock = _list(data['high_stock_products']);
           final slowProducts = _list(data['slow_products']);
           final suggestions = _list(data['suggestions']);
-          final revenueChart = _list(data['revenue_chart']);
+          if (topRevenueProducts.isEmpty && topProducts.isNotEmpty) {
+            topRevenueProducts.addAll(
+              List<Map<String, dynamic>>.from(topProducts)..sort(
+                (a, b) => _toDouble(
+                  b['total_revenue'],
+                ).compareTo(_toDouble(a['total_revenue'])),
+              ),
+            );
+          }
 
           return RefreshIndicator(
             onRefresh: () async => _reload(),
@@ -845,26 +724,12 @@ class _ProductPerformanceReportScreenState
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
-                const Text(
-                  'Dashboard phân tích bán hàng',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Theo dõi doanh thu, tốc độ bán, tồn kho và đề xuất xử lý sản phẩm.',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 16),
                 _SectionCard(
                   title: 'Bộ lọc thời gian',
                   child: _buildFilterBar(),
                 ),
                 const SizedBox(height: 14),
-                _buildOverview(overview),
-                const SizedBox(height: 14),
-                _buildRevenueChart(revenueChart),
-                const SizedBox(height: 14),
-                _buildTopProducts(topProducts),
+                _buildTopProductList(topProducts, topRevenueProducts),
                 const SizedBox(height: 14),
                 _buildHighStock(highStock),
                 const SizedBox(height: 14),
@@ -1152,18 +1017,18 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _RankedProductTile extends StatelessWidget {
+class _SalesProductTile extends StatelessWidget {
   final int rank;
   final Map<String, dynamic> product;
-  final int maxSold;
   final String name;
+  final _TopProductMode mode;
   final VoidCallback onTap;
 
-  const _RankedProductTile({
+  const _SalesProductTile({
     required this.rank,
     required this.product,
-    required this.maxSold,
     required this.name,
+    required this.mode,
     required this.onTap,
   });
 
@@ -1185,65 +1050,61 @@ class _RankedProductTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sold = _toInt(product['total_quantity_sold']);
-    final progress = maxSold <= 0 ? 0.0 : sold / maxSold;
+    final revenue = _toDouble(product['total_revenue']);
+    final ordersCount = _toInt(product['orders_count']);
+    final titleValue = mode == _TopProductMode.quantity
+        ? '$sold đã bán'
+        : _formatCurrency(revenue);
+    final subtitle = mode == _TopProductMode.quantity
+        ? '${_formatCurrency(revenue)} · $ordersCount đơn'
+        : '$sold sản phẩm · $ordersCount đơn';
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
         child: Row(
           children: [
             _RankBadge(rank: rank),
             const SizedBox(width: 10),
-            _ProductThumb(product: product, size: 52),
+            _ProductThumb(product: product, size: 50),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            _formatCurrency(
-                              _toDouble(product['total_revenue']),
-                            ),
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      value: progress.clamp(0, 1),
-                      minHeight: 7,
-                      backgroundColor: Colors.grey.shade200,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        Color(0xFF146C43),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 5),
                   Text(
-                    'Đã bán $sold sản phẩm',
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 104),
+              child: Text(
+                titleValue,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
           ],

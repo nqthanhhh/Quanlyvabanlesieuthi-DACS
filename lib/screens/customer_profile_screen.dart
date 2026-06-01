@@ -224,34 +224,31 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _sectionPanel(
-                    title: 'Dành cho khách hàng',
-                    children: [
-                      _actionLine(
-                        icon: Icons.local_offer_outlined,
-                        label: 'Voucher của tôi',
-                        subtitle: 'Lấy mã ưu đãi và xem voucher đã lưu',
-                        onTap: () => Navigator.of(context).push(
-                          buildSlidePageRoute(const CustomerVouchersScreen()),
-                        ),
-                      ),
-                      _actionLine(
-                        icon: Icons.shopping_bag_outlined,
-                        label: 'Đơn hàng của tôi',
-                        subtitle: 'Theo dõi lịch sử và trạng thái đơn hàng',
-                        onTap: () => Navigator.of(
-                          context,
-                        ).push(buildSlidePageRoute(const OrdersScreen())),
-                      ),
-                      _actionLine(
-                        icon: Icons.lock_outline,
-                        label: 'Thông tin bảo mật',
-                        subtitle: 'Đổi mật khẩu và kiểm tra tài khoản',
-                        onTap: () => Navigator.of(
-                          context,
-                        ).push(buildSlidePageRoute(const SecurityInfoScreen())),
-                      ),
-                    ],
+                  _actionLine(
+                    icon: Icons.local_offer_outlined,
+                    label: 'Voucher của tôi',
+                    subtitle: 'Lấy mã ưu đãi và xem voucher đã lưu',
+                    onTap: () => Navigator.of(
+                      context,
+                    ).push(buildSlidePageRoute(const CustomerVouchersScreen())),
+                  ),
+                  const SizedBox(height: 12),
+                  _actionLine(
+                    icon: Icons.shopping_bag_outlined,
+                    label: 'Đơn hàng của tôi',
+                    subtitle: 'Theo dõi lịch sử và trạng thái đơn hàng',
+                    onTap: () => Navigator.of(
+                      context,
+                    ).push(buildSlidePageRoute(const OrdersScreen())),
+                  ),
+                  const SizedBox(height: 12),
+                  _actionLine(
+                    icon: Icons.lock_outline,
+                    label: 'Thông tin bảo mật',
+                    subtitle: 'Đổi mật khẩu và kiểm tra tài khoản',
+                    onTap: () => Navigator.of(
+                      context,
+                    ).push(buildSlidePageRoute(const SecurityInfoScreen())),
                   ),
                 ],
               ),
@@ -454,42 +451,63 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
-                borderRadius: BorderRadius.circular(8),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
               ),
-              child: Icon(icon, color: Colors.black87),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
-                  ),
-                ],
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF7F2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: const Color(0xFF2F855A), size: 22),
               ),
-            ),
-            const Icon(Icons.chevron_right, color: Colors.black38),
-          ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.black26, size: 20),
+            ],
+          ),
         ),
       ),
     );

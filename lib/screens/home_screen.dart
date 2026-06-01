@@ -385,39 +385,96 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Tách Menu Items
   List<Widget> _buildDrawerMenuItems() {
+    // Hàm helper để tạo item menu đồng bộ với thiết kế của ProfileViewScreen
+    Widget _buildMenuItem({
+      required IconData icon,
+      required String title,
+      required VoidCallback onTap,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Khối bọc icon màu xanh nhạt tương tự _infoRow
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF7F2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: const Color(0xFF2F855A), size: 22),
+                ),
+                const SizedBox(width: 14),
+                // Tiêu đề của mục menu
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                // Mũi tên điều hướng nhỏ ở góc phải
+                const Icon(
+                  Icons.chevron_right,
+                  color: Colors.black26,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Khởi tạo item mặc định dành cho tất cả mọi người
     final List<Widget> items = [
-      ListTile(
-        leading: const Icon(Icons.lock_outline),
-        title: const Text('Thông tin bảo mật'),
+      _buildMenuItem(
+        icon: Icons.lock_outline,
+        title: 'Thông tin bảo mật',
         onTap: () {
           Navigator.of(context).pop(); // Đóng Drawer
-
-          // Điều hướng đến màn hình đổi mật khẩu
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) =>
-                  const SecurityInfoScreen(), // SỬ DỤNG CLASS ĐÃ IMPORT
-            ),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const SecurityInfoScreen()));
         },
       ),
     ];
 
+    // Nếu là ADMIN
     if (widget.role == 'admin') {
       items.insertAll(0, [
-        ListTile(
-          leading: const Icon(Icons.account_balance_wallet_outlined),
-          title: const Text('Xem doanh thu và lợi nhuận'),
+        _buildMenuItem(
+          icon: Icons.account_balance_wallet_outlined,
+          title: 'Xem doanh thu và lợi nhuận',
           onTap: () {
-            Navigator.of(context).pop(); // Đóng Drawer
+            Navigator.of(context).pop();
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const RevenueOverviewScreen()),
             );
           },
         ),
-        ListTile(
-          leading: const Icon(Icons.bar_chart_outlined),
-          title: const Text('Xem báo cáo hiệu suất sản phẩm'),
+        _buildMenuItem(
+          icon: Icons.bar_chart_outlined,
+          title: 'Xem báo cáo hiệu suất sản phẩm',
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(context).push(
@@ -427,9 +484,9 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        ListTile(
-          leading: const Icon(Icons.schedule_outlined),
-          title: const Text('Quản lý ca làm'),
+        _buildMenuItem(
+          icon: Icons.schedule_outlined,
+          title: 'Quản lý ca làm',
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(context).push(
@@ -439,9 +496,9 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        ListTile(
-          leading: const Icon(Icons.groups_outlined),
-          title: const Text('Quản lý khách hàng'),
+        _buildMenuItem(
+          icon: Icons.groups_outlined,
+          title: 'Quản lý khách hàng',
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(context).push(
@@ -451,9 +508,9 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        ListTile(
-          leading: const Icon(Icons.card_giftcard_outlined),
-          title: const Text('Quản lý mã khuyến mãi'),
+        _buildMenuItem(
+          icon: Icons.card_giftcard_outlined,
+          title: 'Quản lý mã khuyến mãi',
           onTap: () {
             Navigator.of(context).pop();
             final settings = DBService.settings();
@@ -466,11 +523,13 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ]);
-    } else if (widget.role == 'employee') {
+    }
+    // Nếu là EMPLOYEE
+    else if (widget.role == 'employee') {
       items.insertAll(0, [
-        ListTile(
-          leading: const Icon(Icons.schedule_outlined),
-          title: const Text('Ca làm của tôi'),
+        _buildMenuItem(
+          icon: Icons.schedule_outlined,
+          title: 'Ca làm của tôi',
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(context).push(
@@ -480,9 +539,9 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        ListTile(
-          leading: const Icon(Icons.receipt_long_outlined),
-          title: const Text('Lịch sử'),
+        _buildMenuItem(
+          icon: Icons.receipt_long_outlined,
+          title: 'Lịch sử',
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(context).push(
@@ -490,11 +549,11 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        ListTile(
-          leading: const Icon(Icons.inventory_2_outlined),
-          title: const Text('Quản lý sản phẩm'),
+        _buildMenuItem(
+          icon: Icons.inventory_2_outlined,
+          title: 'Quản lý sản phẩm',
           onTap: () {
-            Navigator.of(context).pop(); // Đóng Drawer
+            Navigator.of(context).pop();
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const ProductManagementScreen(),
@@ -502,11 +561,11 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        ListTile(
-          leading: const Icon(Icons.inventory),
-          title: const Text('Quản lý kho hàng'),
+        _buildMenuItem(
+          icon: Icons.inventory,
+          title: 'Quản lý kho hàng',
           onTap: () {
-            Navigator.of(context).pop(); // Đóng Drawer
+            Navigator.of(context).pop();
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const InventoryManagementScreen(),
@@ -516,6 +575,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ]);
     }
+
     return items;
   }
 

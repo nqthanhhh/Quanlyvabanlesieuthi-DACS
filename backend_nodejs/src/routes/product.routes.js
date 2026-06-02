@@ -127,26 +127,42 @@ router.get('/scan/:code', async (req, res) => {
   }
 });
 
+router.get('/check-code/:code', async (req, res) => {
+  try {
+    const code = (req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập mã cần kiểm tra' });
+    }
+
+    const [products] = await pool.execute(
+      'SELECT product_id FROM products WHERE barcode = ? LIMIT 1',
+      [code]
+    );
+
+    const [inventoryItems] = await pool.execute(
+      'SELECT inventory_item_id FROM inventory_items WHERE barcode = ? LIMIT 1',
+      [code]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        exists: products.length > 0 || inventoryItems.length > 0,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi kiểm tra mã vạch / mã nội bộ', error: error.message });
+  }
+});
+
 router.post('/generate-code', async (req, res) => {
   try {
-    const { category_id, prefix } = req.body;
-    let codePrefix = String(prefix || '').trim().toUpperCase();
+    const { prefix } = req.body;
+    let codePrefix = String(prefix || 'SP').trim().toUpperCase();
+    codePrefix = codePrefix.replace(/[^A-Z]/g, '').slice(0, 8) || 'SP';
 
-    if (!codePrefix && category_id) {
-      const [categories] = await pool.execute(
-        'SELECT category_name FROM categories WHERE category_id = ? LIMIT 1',
-        [category_id]
-      );
-      const categoryName = (categories[0]?.category_name || '').toLowerCase();
-      if (categoryName.includes('rau') || categoryName.includes('trái') || categoryName.includes('fruit')) {
-        codePrefix = 'FRUIT';
-      }
-    }
-    if (!codePrefix) codePrefix = 'SP';
-    codePrefix = codePrefix.replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'SP';
-
-    for (let index = 1; index <= 999999; index += 1) {
-      const code = `${codePrefix}${String(index).padStart(6, '0')}`;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const code = `${codePrefix}${Date.now() + attempt}`;
       const [existingProducts] = await pool.execute(
         'SELECT product_id FROM products WHERE barcode = ? LIMIT 1',
         [code]

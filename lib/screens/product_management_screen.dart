@@ -6,6 +6,7 @@ import 'edit_product_screen.dart';
 import 'add_product_screen.dart';
 import 'product_detail_screen.dart';
 import '../utils/product_stock_utils.dart';
+import '../widgets/product_image_widget.dart';
 
 class ProductManagementScreen extends StatefulWidget {
   const ProductManagementScreen({super.key});
@@ -166,9 +167,9 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
       product.status = 'inactive';
       await DBService.updateProductRemote(product);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đã ngừng bán ${product.name}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Đã ngừng bán ${product.name}')));
       }
     } catch (e) {
       if (mounted) {
@@ -198,7 +199,10 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
             width: 50,
             height: 50,
             color: Colors.blue.shade50,
-            child: const Icon(Icons.shopping_bag_outlined, color: Colors.blue),
+            child: ProductImageWidget(
+              product: product,
+              assetFallback: _assetFallback,
+            ),
           ),
         ),
 

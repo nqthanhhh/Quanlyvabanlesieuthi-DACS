@@ -20,25 +20,40 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
+    const allowedExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif']);
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const isImageMime = (file.mimetype || '').startsWith('image/');
+    const isImageExt = allowedExts.has(ext);
+
+    if (!isImageMime && !isImageExt) {
       return cb(new Error('Chỉ hỗ trợ upload ảnh'));
     }
     cb(null, true);
   },
 });
 
-router.post('/product-image', upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ success: false, message: 'Vui lòng chọn file ảnh' });
-  }
+router.post('/product-image', (req, res) => {
+  upload.single('image')(req, res, (error) => {
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Lỗi upload ảnh',
+      });
+    }
 
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
-  res.status(201).json({
-    success: true,
-    message: 'Upload ảnh thành công',
-    data: {
-      image_url: `${baseUrl}/uploads/products/${req.file.filename}`,
-    },
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Vui lòng chọn file ảnh' });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    return res.status(201).json({
+      success: true,
+      message: 'Upload ảnh thành công',
+      data: {
+        url: `${baseUrl}/uploads/products/${req.file.filename}`,
+        image_url: `${baseUrl}/uploads/products/${req.file.filename}`,
+      },
+    });
   });
 });
 

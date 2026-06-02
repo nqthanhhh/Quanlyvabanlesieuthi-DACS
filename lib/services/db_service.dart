@@ -187,7 +187,10 @@ class DBService {
     for (final product in remoteProducts) {
       await productBox.put(product.id, product);
       if (product.imageUrl != null && product.imageUrl!.isNotEmpty) {
-        await imageBox.put(product.id, product.imageUrl!);
+        await imageBox.put(
+          product.id,
+          ApiService.resolveBackendUrl(product.imageUrl!),
+        );
       }
     }
   }
@@ -198,6 +201,12 @@ class DBService {
     await box.clear();
     for (final item in remoteItems) {
       await box.put(item.id, item);
+      if (item.imageUrl != null && item.imageUrl!.isNotEmpty) {
+        await productImages().put(
+          item.id,
+          ApiService.resolveBackendUrl(item.imageUrl!),
+        );
+      }
     }
   }
 
@@ -643,7 +652,10 @@ class DBService {
     final product = Product.fromJson(Map<String, dynamic>.from(productMap));
     await products().put(product.id, product);
     if (product.imageUrl != null && product.imageUrl!.isNotEmpty) {
-      await productImages().put(product.id, product.imageUrl!);
+      await productImages().put(
+        product.id,
+        ApiService.resolveBackendUrl(product.imageUrl!),
+      );
     }
     return product;
   }
@@ -682,7 +694,10 @@ class DBService {
     final saved = await ApiService.createProduct(product);
     await products().put(saved.id, saved);
     if (saved.imageUrl != null) {
-      await productImages().put(saved.id, saved.imageUrl!);
+      await productImages().put(
+        saved.id,
+        ApiService.resolveBackendUrl(saved.imageUrl!),
+      );
     }
     return saved;
   }
@@ -699,7 +714,10 @@ class DBService {
     final saved = await ApiService.updateProduct(product);
     await products().put(saved.id, saved);
     if (saved.imageUrl != null) {
-      await productImages().put(saved.id, saved.imageUrl!);
+      await productImages().put(
+        saved.id,
+        ApiService.resolveBackendUrl(saved.imageUrl!),
+      );
     }
     return saved;
   }
@@ -760,6 +778,15 @@ class DBService {
     int? categoryId,
     String? imagePath,
   }) async {
+    String? uploadedImageUrl;
+    if (imagePath != null &&
+        imagePath.isNotEmpty &&
+        !imagePath.startsWith('http')) {
+      uploadedImageUrl = await ApiService.uploadProductImage(imagePath);
+    } else if (imagePath != null && imagePath.isNotEmpty) {
+      uploadedImageUrl = ApiService.resolveBackendUrl(imagePath);
+    }
+
     final item = InventoryItem(
       name: name,
       price: price,
@@ -768,12 +795,17 @@ class DBService {
       id: barcode,
       stockQuantity: 0,
       categoryId: categoryId,
+      imageUrl: uploadedImageUrl,
     );
 
     final saved = await ApiService.createInventoryItem(item);
     await inventoryProducts().put(saved.id, saved);
-    if (imagePath != null && imagePath.isNotEmpty) {
-      await productImages().put(saved.id, imagePath);
+    final savedImageUrl = saved.imageUrl ?? uploadedImageUrl;
+    if (savedImageUrl != null && savedImageUrl.isNotEmpty) {
+      await productImages().put(
+        saved.id,
+        ApiService.resolveBackendUrl(savedImageUrl),
+      );
     }
     await importInventoryRemote(
       item: saved,
@@ -789,8 +821,16 @@ class DBService {
     return ApiService.fetchInventoryImportPrice(barcode);
   }
 
-  static Future<String> generateInternalProductCode({String? prefix}) {
-    return ApiService.generateProductCode(prefix: prefix);
+  static Future<String> generateInternalProductCode({String? prefix}) async {
+    for (var attempt = 0; attempt < 20; attempt += 1) {
+      final generated = await ApiService.generateProductCode(prefix: prefix);
+      final code = generated.trim();
+      if (code.isEmpty) continue;
+      if (!code.toUpperCase().startsWith('SP')) continue;
+      if (await ApiService.productCodeExists(code)) continue;
+      return code;
+    }
+    throw ApiException('Không tạo được mã nội bộ không trùng');
   }
 
   static Future<InventoryItem?> findInventoryItemByCode(String code) async {
@@ -809,6 +849,7 @@ class DBService {
           price: product.price,
           unit: product.unit,
           stockQuantity: product.stockQuantity,
+          imageUrl: product.imageUrl,
         );
       }
     } on ApiException {
@@ -831,8 +872,10 @@ class DBService {
     }
 
     Product saved;
+    final imageUrl = item.imageUrl ?? productImages().get(item.id);
     if (existing != null) {
       existing.stockQuantity += quantity;
+      existing.imageUrl ??= imageUrl;
       saved = await updateProductRemote(existing);
     } else {
       saved = await createProduct(
@@ -844,6 +887,7 @@ class DBService {
           barcode: item.id,
           stockQuantity: quantity,
           categoryId: categoryId,
+          imageUrl: imageUrl,
         ),
       );
     }

@@ -1,10 +1,13 @@
 // lib/screens/inventory_management_screen.dart (ĐÃ CẬP NHẬT: Kết nối nút Sắp hết hàng)
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:sieuthimini/screens/import_inventory_screen.dart';
 
 import '../models/inventory_item.dart';
 import '../models/product.dart';
+import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../utils/constants.dart';
 import 'edit_inventory_item_screen.dart';
@@ -152,10 +155,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                       color: Colors.blue.shade50,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(
-                      Icons.inventory_2_outlined,
-                      color: Colors.blue.shade700,
-                    ),
+                    child: _buildInventoryImage(item),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -250,6 +250,44 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildInventoryImage(InventoryItem item) {
+    final stored = ApiService.resolveBackendUrl(
+      (DBService.productImages().get(item.id) ?? item.imageUrl ?? '')
+          .toString(),
+    );
+
+    if (stored.startsWith('http')) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.network(
+          stored,
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _inventoryPlaceholderIcon(),
+        ),
+      );
+    }
+
+    if (stored.isNotEmpty) {
+      try {
+        final file = File(stored);
+        if (file.existsSync()) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.file(file, width: 48, height: 48, fit: BoxFit.cover),
+          );
+        }
+      } catch (_) {}
+    }
+
+    return _inventoryPlaceholderIcon();
+  }
+
+  Widget _inventoryPlaceholderIcon() {
+    return Icon(Icons.inventory_2_outlined, color: Colors.blue.shade700);
   }
 
   Widget _inventoryInfoChip(

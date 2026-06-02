@@ -11,6 +11,7 @@ class InventoryItem {
   String unit;
   int stockQuantity;
   int? categoryId;
+  String? imageUrl;
 
   InventoryItem({
     required this.id,
@@ -20,6 +21,7 @@ class InventoryItem {
     required this.unit,
     this.stockQuantity = 0,
     this.categoryId,
+    this.imageUrl,
   });
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
@@ -40,6 +42,7 @@ class InventoryItem {
       categoryId: TypeConverters.toNullableInt(
         json['category_id'] ?? json['categoryId'],
       ),
+      imageUrl: (json['image_url'] ?? json['imageUrl'])?.toString(),
     );
   }
 
@@ -54,6 +57,7 @@ class InventoryItem {
       'stock': stockQuantity,
       // IMPORTANT: backend expects category_id (or categoryId)
       'category_id': categoryId,
+      'image_url': imageUrl,
     };
   }
 }
@@ -80,13 +84,14 @@ class InventoryItemAdapter extends TypeAdapter<InventoryItem> {
       stockQuantity: (fields[4] as num).toInt(),
       importPrice: fields[5] == null ? null : (fields[5] as num).toDouble(),
       categoryId: fields[6] == null ? null : (fields[6] as num).toInt(),
+      imageUrl: fields[7] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, InventoryItem obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -100,6 +105,8 @@ class InventoryItemAdapter extends TypeAdapter<InventoryItem> {
       ..writeByte(5)
       ..write(obj.importPrice)
       ..writeByte(6)
-      ..write(obj.categoryId);
+      ..write(obj.categoryId)
+      ..writeByte(7)
+      ..write(obj.imageUrl);
   }
 }

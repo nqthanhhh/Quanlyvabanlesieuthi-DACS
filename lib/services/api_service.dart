@@ -78,6 +78,13 @@ class ApiService {
 
   static Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
+  static String resolveBackendUrl(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return trimmed;
+    if (trimmed.startsWith('/uploads/')) return '$baseUrl$trimmed';
+    return trimmed;
+  }
+
   static Map<String, String> get _headers => {
     'Content-Type': 'application/json',
   };
@@ -491,6 +498,14 @@ class ApiService {
     return _dataMap(_decode(response));
   }
 
+  static Future<bool> productCodeExists(String code) async {
+    final response = await http
+        .get(_uri('/api/products/check-code/${Uri.encodeComponent(code)}'))
+        .timeout(_timeout);
+    final body = _dataMap(_decode(response));
+    return body['exists'] == true;
+  }
+
   static Future<String> generateProductCode({
     int? categoryId,
     String? prefix,
@@ -517,7 +532,12 @@ class ApiService {
     request.files.add(await http.MultipartFile.fromPath('image', filePath));
     final streamed = await request.send().timeout(_timeout);
     final response = await http.Response.fromStream(streamed);
-    return _dataMap(_decode(response))['image_url'].toString();
+    final body = _dataMap(_decode(response));
+    final rawUrl = (body['url'] ?? body['image_url'] ?? '').toString();
+    if (rawUrl.isEmpty) {
+      throw ApiException('Backend không trả về URL ảnh');
+    }
+    return resolveBackendUrl(rawUrl);
   }
 
   static Future<List<Order>> fetchOrders() async {

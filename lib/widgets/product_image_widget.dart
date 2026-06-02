@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/product.dart';
+import '../services/api_service.dart';
 import '../services/db_service.dart';
 
 /// Hiển thị ảnh sản phẩm: URL mạng, file local, hoặc asset fallback.
@@ -22,10 +23,10 @@ class ProductImageWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stored = (DBService.productImages().get(product.id) ??
-            product.imageUrl ??
-            '')
-        .toString();
+    final storedRaw =
+        (DBService.productImages().get(product.id) ?? product.imageUrl ?? '')
+            .toString();
+    final stored = ApiService.resolveBackendUrl(storedRaw);
 
     Widget image;
     if (stored.isNotEmpty && stored.startsWith('http')) {

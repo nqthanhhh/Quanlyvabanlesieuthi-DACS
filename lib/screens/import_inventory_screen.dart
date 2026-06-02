@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/inventory_item.dart'; // <<< IMPORT InventoryItem
 import '../models/product.dart';
 import '../services/api_service.dart';
@@ -85,32 +87,12 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
   }
 
   Future<void> _openScanDialog() async {
-    final controller = TextEditingController(text: _searchController.text);
-    final code = await showDialog<String?>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Quét mã'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Mã vạch / Mã nội bộ',
-            helperText: 'Nhập mã thủ công để demo trên simulator',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Tìm'),
-          ),
-        ],
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) =>
+            _InventoryCodeScannerScreen(initialCode: _searchController.text),
       ),
     );
-    controller.dispose();
     if (code != null && code.isNotEmpty) {
       await _lookupCode(code);
     }
@@ -355,6 +337,52 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     }
   }
 
+  Widget _buildInventoryThumbnail(InventoryItem item) {
+    final stored = ApiService.resolveBackendUrl(
+      (DBService.productImages().get(item.id) ?? item.imageUrl ?? '')
+          .toString(),
+    );
+
+    if (stored.startsWith('http')) {
+      return SizedBox(
+        width: 56,
+        height: 56,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.network(
+            stored,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildInventoryAvatar(item.name),
+          ),
+        ),
+      );
+    }
+
+    if (stored.isNotEmpty) {
+      try {
+        final file = File(stored);
+        if (file.existsSync()) {
+          return SizedBox(
+            width: 56,
+            height: 56,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(file, fit: BoxFit.cover),
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    return _buildInventoryAvatar(item.name);
+  }
+
+  Widget _buildInventoryAvatar(String name) {
+    return CircleAvatar(
+      child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
+    );
+  }
+
   // ... (Phần UI build giữ nguyên)
   @override
   Widget build(BuildContext context) {
@@ -459,21 +487,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                       final name = item.name;
                       final stock = item.stockQuantity;
                       final unit = item.unit;
-                      final imgPath = DBService.productImages().get(id);
-                      Widget leading;
-                      if (imgPath != null && File(imgPath).existsSync()) {
-                        leading = SizedBox(
-                          width: 56,
-                          height: 56,
-                          child: Image.file(File(imgPath), fit: BoxFit.cover),
-                        );
-                      } else {
-                        leading = CircleAvatar(
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          ),
-                        );
-                      }
+                      final leading = _buildInventoryThumbnail(item);
 
                       return ListTile(
                         leading: leading,
@@ -655,6 +669,196 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryCodeScannerScreen extends StatefulWidget {
+  final String initialCode;
+
+  const _InventoryCodeScannerScreen({required this.initialCode});
+
+  @override
+  State<_InventoryCodeScannerScreen> createState() =>
+      _InventoryCodeScannerScreenState();
+}
+
+class _InventoryCodeScannerScreenState
+    extends State<_InventoryCodeScannerScreen> {
+  late final TextEditingController _controller;
+  final MobileScannerController _scannerController = MobileScannerController();
+  bool _checkingPermission = true;
+  bool _hasCameraPermission = false;
+  bool _processing = false;
+  String? _cameraMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialCode);
+    _requestCameraPermission();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scannerController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _requestCameraPermission() async {
+    setState(() {
+      _checkingPermission = true;
+      _cameraMessage = null;
+    });
+
+    final current = await Permission.camera.status;
+    final status = current.isGranted
+        ? current
+        : await Permission.camera.request();
+    if (!mounted) return;
+
+    setState(() {
+      _hasCameraPermission = status.isGranted;
+      _checkingPermission = false;
+      _cameraMessage = status.isGranted
+          ? null
+          : 'Simulator có thể không hỗ trợ camera. Vui lòng nhập mã thủ công để demo.';
+    });
+
+    if (status.isGranted) {
+      try {
+        await _scannerController.start();
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _hasCameraPermission = false;
+          _cameraMessage =
+              'Simulator có thể không hỗ trợ camera. Vui lòng nhập mã thủ công để demo.';
+        });
+      }
+    }
+  }
+
+  void _finish(String rawCode) {
+    final code = rawCode.trim();
+    if (code.isEmpty || _processing) return;
+    _processing = true;
+    Navigator.of(context).pop(code);
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_processing) return;
+    for (final barcode in capture.barcodes) {
+      final value = barcode.rawValue;
+      if (value != null && value.trim().isNotEmpty) {
+        _finish(value);
+        return;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Quét mã vạch'),
+        backgroundColor: Colors.blue.shade600,
+        foregroundColor: Colors.white,
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: _checkingPermission
+                    ? const ColoredBox(
+                        color: Colors.black12,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _hasCameraPermission
+                    ? MobileScanner(
+                        controller: _scannerController,
+                        onDetect: _onDetect,
+                        errorBuilder: (context, error, child) {
+                          return _ScannerFallback(
+                            message:
+                                'Simulator có thể không hỗ trợ camera. Vui lòng nhập mã thủ công để demo.',
+                            onRetry: _requestCameraPermission,
+                          );
+                        },
+                      )
+                    : _ScannerFallback(
+                        message:
+                            _cameraMessage ??
+                            'Bạn cần cấp quyền camera để quét mã sản phẩm, hoặc nhập mã thủ công bên dưới.',
+                        onRetry: _requestCameraPermission,
+                      ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              autofocus: !_hasCameraPermission,
+              decoration: const InputDecoration(
+                labelText: 'Mã vạch / Mã nội bộ',
+                helperText: 'Nhập mã thủ công để demo trên simulator',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: _finish,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _finish(_controller.text),
+                icon: const Icon(Icons.search),
+                label: const Text('Tìm mã'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScannerFallback extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _ScannerFallback({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black87,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.videocam_off, color: Colors.white, size: 44),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Thử lại camera'),
+              ),
+            ],
+          ),
         ),
       ),
     );

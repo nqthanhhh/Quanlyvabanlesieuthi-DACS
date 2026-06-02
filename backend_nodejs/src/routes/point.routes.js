@@ -1,5 +1,6 @@
 const express = require('express');
 const pool = require('../config/db');
+const { hashPassword } = require('../services/auth.service');
 
 const router = express.Router();
 
@@ -79,11 +80,12 @@ router.post('/add', async (req, res) => {
     } else {
       const syntheticEmail = `offline_${phone}@smartpos.local`;
       const membershipCode = `MB${Date.now()}${phone.slice(-4)}`;
+      const offlinePasswordHash = await hashPassword(`offline_${phone}_${Date.now()}`);
       const [result] = await connection.execute(
         `INSERT INTO users
           (full_name, email, phone, password, role_id, points, membership_code, status)
          VALUES (?, ?, ?, ?, ?, 0, ?, 'active')`,
-        [customerName, syntheticEmail, phone, 'offline_customer', customerRoleId, membershipCode],
+        [customerName, syntheticEmail, phone, offlinePasswordHash, customerRoleId, membershipCode],
       );
       customer = {
         user_id: result.insertId,

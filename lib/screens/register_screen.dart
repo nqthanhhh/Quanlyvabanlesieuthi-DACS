@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+
+import '../services/api_service.dart';
 import '../services/db_service.dart';
-import 'profile_details_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -11,90 +11,107 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final _fullNameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
-  bool _remember = false;
+  bool _remember = true;
   bool _obscurePass = true;
   bool _obscureConfirm = true;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
+    _fullNameCtrl.dispose();
     _emailCtrl.dispose();
+    _phoneCtrl.dispose();
+    _addressCtrl.dispose();
     _passCtrl.dispose();
     _confirmPassCtrl.dispose();
     super.dispose();
   }
 
-  void _submit() {
-    final email = _emailCtrl.text.trim();
+  bool _validEmail(String value) =>
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
+
+  Future<void> _submit() async {
+    final fullName = _fullNameCtrl.text.trim();
+    final email = _emailCtrl.text.trim().toLowerCase();
+    final phone = _phoneCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
+    final address = _addressCtrl.text.trim();
     final pass = _passCtrl.text;
     final confirm = _confirmPassCtrl.text;
-    if (email.isEmpty || pass.isEmpty || confirm.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng điền đầy đủ thông tin')),
-      );
+
+    if (fullName.isEmpty ||
+        email.isEmpty ||
+        phone.isEmpty ||
+        pass.isEmpty ||
+        confirm.isEmpty) {
+      _showMessage('Vui lòng điền đầy đủ thông tin bắt buộc');
       return;
     }
+
+    if (!_validEmail(email)) {
+      _showMessage('Email không đúng định dạng');
+      return;
+    }
+
+    if (phone.length < 8 || phone.length > 15) {
+      _showMessage('Số điện thoại không hợp lệ');
+      return;
+    }
+
+    if (pass.length < 6) {
+      _showMessage('Mật khẩu phải có ít nhất 6 ký tự');
+      return;
+    }
+
     if (pass != confirm) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mật khẩu xác nhận không khớp')),
-      );
-      return;
-    }
-    // basic email format check
-    final emailLower = email.toLowerCase();
-    if (!RegExp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$").hasMatch(emailLower)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Email không đúng định dạng')),
-      );
+      _showMessage('Mật khẩu xác nhận không khớp');
       return;
     }
 
-    // check duplicate email (case-insensitive)
-    final usersBox = DBService.users();
-    final exists = usersBox.values.any(
-      (u) => (u.email).toLowerCase() == emailLower,
-    );
-    if (exists) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Email đã tồn tại, vui lòng dùng email khác'),
-        ),
+    setState(() => _isSubmitting = true);
+    try {
+      await ApiService.register(
+        fullName: fullName,
+        email: email,
+        phone: phone,
+        password: pass,
+        address: address,
       );
-      return;
-    }
 
-    // open profile details form to collect extended info
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ProfileDetailsScreen(
-          email: email,
-          password: pass,
-          remember: _remember,
-        ),
-      ),
-    );
+      try {
+        await DBService.syncUsersFromApi();
+      } catch (syncError) {
+        debugPrint('Đăng ký thành công nhưng đồng bộ cache lỗi: $syncError');
+      }
+
+      if (_remember) {
+        await DBService.settings().put('remember_email', email);
+      }
+      await DBService.settings().delete('remember_pass');
+
+      if (!mounted) return;
+      _showMessage('Đăng ký khách hàng thành công. Vui lòng đăng nhập');
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      final message = e is ApiException
+          ? e.message
+          : ApiService.connectionErrorMessage(e);
+      _showMessage(message);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
-  Widget _socialButton(String assetName) {
-    return Container(
-      width: 64,
-      height: 64,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
-        ],
-      ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: SvgPicture.asset(assetName),
-        ),
-      ),
-    );
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -102,36 +119,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
               const Text(
-                'Tạo tài khoản của bạn',
+                'Đăng ký khách hàng',
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 20),
-              TextField(
+              _textField(
+                controller: _fullNameCtrl,
+                icon: Icons.badge_outlined,
+                hintText: 'Họ tên',
+              ),
+              const SizedBox(height: 12),
+              _textField(
                 controller: _emailCtrl,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.email),
-                  hintText: 'Email',
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
+                icon: Icons.email_outlined,
+                hintText: 'Email',
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 12),
+              _textField(
+                controller: _phoneCtrl,
+                icon: Icons.phone_outlined,
+                hintText: 'Số điện thoại',
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 12),
+              _textField(
+                controller: _addressCtrl,
+                icon: Icons.location_on_outlined,
+                hintText: 'Địa chỉ',
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _passCtrl,
                 obscureText: _obscurePass,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.lock),
+                decoration: _inputDecoration(
+                  icon: Icons.lock_outline,
                   hintText: 'Mật khẩu',
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -140,20 +169,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     onPressed: () =>
                         setState(() => _obscurePass = !_obscurePass),
                   ),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _confirmPassCtrl,
                 obscureText: _obscureConfirm,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.lock_outline),
+                decoration: _inputDecoration(
+                  icon: Icons.lock_reset_outlined,
                   hintText: 'Nhập lại mật khẩu',
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -161,12 +184,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     onPressed: () =>
                         setState(() => _obscureConfirm = !_obscureConfirm),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
                   ),
                 ),
               ),
@@ -177,12 +194,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     value: _remember,
                     onChanged: (v) => setState(() => _remember = v ?? false),
                   ),
-                  const Text('Nhớ tài khoản'),
+                  const Text('Nhớ email để đăng nhập'),
                 ],
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 22),
               ElevatedButton(
-                onPressed: _submit,
+                onPressed: _isSubmitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color.fromARGB(255, 0, 73, 125),
                   foregroundColor: Colors.white,
@@ -191,35 +208,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     borderRadius: BorderRadius.circular(36),
                   ),
                 ),
-                child: const Text('Tạo tài khoản'),
+                child: Text(
+                  _isSubmitting ? 'Đang tạo tài khoản...' : 'Tạo tài khoản',
+                ),
               ),
-              const SizedBox(height: 50),
-              Row(
-                children: const [
-                  Expanded(child: Divider()),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Text('Hoặc tiếp tục với'),
-                  ),
-                  Expanded(child: Divider()),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _socialButton('assets/images/material-icon-theme_google.svg'),
-                  _socialButton('assets/images/Vector.svg'),
-                  _socialButton('assets/images/ic_baseline-apple.svg'),
-                ],
-              ),
-              const Spacer(),
+              const SizedBox(height: 18),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Text('Bạn đã có tài khoản? '),
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: _isSubmitting
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     child: const Text('Đăng nhập'),
                   ),
                 ],
@@ -227,6 +228,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _textField({
+    required TextEditingController controller,
+    required IconData icon,
+    required String hintText,
+    TextInputType? keyboardType,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: _inputDecoration(icon: icon, hintText: hintText),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    required IconData icon,
+    required String hintText,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      prefixIcon: Icon(icon),
+      hintText: hintText,
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: Colors.grey.shade100,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
       ),
     );
   }

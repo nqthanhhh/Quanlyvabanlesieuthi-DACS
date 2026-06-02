@@ -1,5 +1,7 @@
 const express = require('express');
 const pool = require('../config/db');
+const { hashPassword } = require('../services/auth.service');
+const { requireAuth, requireRoles } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
 
@@ -119,7 +121,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, requireRoles('admin'), async (req, res) => {
   try {
     const { full_name, fullName, email, phone, password, address, role_name, role } = req.body;
     const name = full_name || fullName;
@@ -146,11 +148,22 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
     }
 
-    const [result] = await pool.execute(
-      `INSERT INTO users (full_name, email, phone, password, address, role_id)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [name, email, phone || null, password, address || null, roles[0].role_id]
-    );
+    const passwordHash = await hashPassword(password);
+    const hasPasswordHash = await columnExists('users', 'password_hash');
+    let result;
+    if (hasPasswordHash) {
+      [result] = await pool.execute(
+        `INSERT INTO users (full_name, email, phone, password, password_hash, address, role_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [name, email, phone || null, passwordHash, passwordHash, address || null, roles[0].role_id]
+      );
+    } else {
+      [result] = await pool.execute(
+        `INSERT INTO users (full_name, email, phone, password, address, role_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [name, email, phone || null, passwordHash, address || null, roles[0].role_id]
+      );
+    }
     const [rows] = await pool.execute(
       `SELECT u.*, r.role_name FROM users u JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ?`,
       [result.insertId]
@@ -308,10 +321,16 @@ router.get('/:id/employee-summary', async (req, res) => {
   }
 });
 
-router.put('/:id/profile', async (req, res) => {
+router.put('/:id/profile', requireAuth, async (req, res) => {
   try {
     const { full_name, fullName, phone, password, address } = req.body;
     const name = full_name || fullName || null;
+    const isOwner = Number(req.user?.id || req.user?.user_id) === Number(req.params.id);
+    const isAdmin = req.user?.role_name === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền cập nhật tài khoản này' });
+    }
 
     if (!name && phone === undefined && address === undefined && !password) {
       return res.status(400).json({ success: false, message: 'Không có thông tin cần cập nhật' });
@@ -327,15 +346,30 @@ router.put('/:id/profile', async (req, res) => {
       }
     }
 
-    await pool.execute(
-      `UPDATE users
-       SET full_name = COALESCE(?, full_name),
-           phone = ?,
-           password = COALESCE(?, password),
-           address = ?
-       WHERE user_id = ?`,
-      [name, phone ?? null, password || null, address ?? null, req.params.id]
-    );
+    const passwordHash = password ? await hashPassword(password) : null;
+    const hasPasswordHash = await columnExists('users', 'password_hash');
+    if (hasPasswordHash) {
+      await pool.execute(
+        `UPDATE users
+         SET full_name = COALESCE(?, full_name),
+             phone = ?,
+             password = COALESCE(?, password),
+             password_hash = COALESCE(?, password_hash),
+             address = ?
+         WHERE user_id = ?`,
+        [name, phone ?? null, passwordHash, passwordHash, address ?? null, req.params.id]
+      );
+    } else {
+      await pool.execute(
+        `UPDATE users
+         SET full_name = COALESCE(?, full_name),
+             phone = ?,
+             password = COALESCE(?, password),
+             address = ?
+         WHERE user_id = ?`,
+        [name, phone ?? null, passwordHash, address ?? null, req.params.id]
+      );
+    }
 
     const [rows] = await pool.execute(
       `SELECT u.*, r.role_name FROM users u JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ?`,
@@ -351,7 +385,7 @@ router.put('/:id/profile', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, requireRoles('admin'), async (req, res) => {
   try {
     const { full_name, fullName, email, phone, password, address, role_name, role, status } = req.body;
     let roleId = null;
@@ -363,27 +397,55 @@ router.put('/:id', async (req, res) => {
       roleId = roles[0].role_id;
     }
 
-    await pool.execute(
-      `UPDATE users
-       SET full_name = COALESCE(?, full_name),
-           email = COALESCE(?, email),
-           phone = ?,
-           password = COALESCE(?, password),
-           address = ?,
-           role_id = COALESCE(?, role_id),
-           status = COALESCE(?, status)
-       WHERE user_id = ?`,
-      [
-        full_name || fullName || null,
-        email || null,
-        phone ?? null,
-        password || null,
-        address ?? null,
-        roleId,
-        status || null,
-        req.params.id,
-      ]
-    );
+    const passwordHash = password ? await hashPassword(password) : null;
+    const hasPasswordHash = await columnExists('users', 'password_hash');
+    if (hasPasswordHash) {
+      await pool.execute(
+        `UPDATE users
+         SET full_name = COALESCE(?, full_name),
+             email = COALESCE(?, email),
+             phone = ?,
+             password = COALESCE(?, password),
+             password_hash = COALESCE(?, password_hash),
+             address = ?,
+             role_id = COALESCE(?, role_id),
+             status = COALESCE(?, status)
+         WHERE user_id = ?`,
+        [
+          full_name || fullName || null,
+          email || null,
+          phone ?? null,
+          passwordHash,
+          passwordHash,
+          address ?? null,
+          roleId,
+          status || null,
+          req.params.id,
+        ]
+      );
+    } else {
+      await pool.execute(
+        `UPDATE users
+         SET full_name = COALESCE(?, full_name),
+             email = COALESCE(?, email),
+             phone = ?,
+             password = COALESCE(?, password),
+             address = ?,
+             role_id = COALESCE(?, role_id),
+             status = COALESCE(?, status)
+         WHERE user_id = ?`,
+        [
+          full_name || fullName || null,
+          email || null,
+          phone ?? null,
+          passwordHash,
+          address ?? null,
+          roleId,
+          status || null,
+          req.params.id,
+        ]
+      );
+    }
 
     const [rows] = await pool.execute(
       `SELECT u.*, r.role_name FROM users u JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ?`,
@@ -399,7 +461,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, requireRoles('admin'), async (req, res) => {
   try {
     await pool.execute("UPDATE users SET status = 'inactive' WHERE user_id = ?", [req.params.id]);
     res.json({ success: true, message: 'Đã khóa người dùng' });

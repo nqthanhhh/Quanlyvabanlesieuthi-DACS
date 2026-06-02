@@ -57,16 +57,18 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
       );
       await DBService.syncUsersFromApi();
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : 'Lỗi tạo tài khoản')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e is ApiException ? e.message : 'Lỗi tạo tài khoản'),
+        ),
+      );
       return;
     }
 
     if (widget.remember) {
       final settings = DBService.settings();
       settings.put('remember_email', widget.email);
-      settings.put('remember_pass', widget.password);
+      settings.delete('remember_pass');
     }
 
     ScaffoldMessenger.of(

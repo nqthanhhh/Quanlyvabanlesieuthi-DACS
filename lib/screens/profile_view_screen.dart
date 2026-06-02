@@ -53,7 +53,7 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
   }
 
   Future<void> _logout() async {
-    await DBService.settings().delete('current_user_email');
+    await DBService.clearAuthSession();
 
     if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);

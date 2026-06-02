@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'register_screen.dart';
 import '../services/db_service.dart';
 import '../services/api_service.dart';
+import 'forgot_password_screen.dart';
 
 class PasswordLoginScreen extends StatefulWidget {
   final void Function(String role) onLogin;
@@ -13,57 +13,54 @@ class PasswordLoginScreen extends StatefulWidget {
 }
 
 class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
-  final _emailCtrl = TextEditingController();
+  final _identifierCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _remember = false;
   bool _obscurePass = true;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
     final settings = DBService.settings();
-    final savedEmail = settings.get('remember_email');
-    final savedPass = settings.get('remember_pass');
-    if (savedEmail != null && savedPass != null) {
-      _emailCtrl.text = savedEmail as String;
-      _passCtrl.text = savedPass as String;
+    final savedIdentifier = settings.get('remember_email');
+    if (savedIdentifier != null) {
+      _identifierCtrl.text = savedIdentifier as String;
       _remember = true;
     }
+    settings.delete('remember_pass');
   }
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
+    _identifierCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final email = _emailCtrl.text.trim();
+    final identifier = _identifierCtrl.text.trim();
     final pass = _passCtrl.text.trim();
-    if (email.isEmpty || pass.isEmpty) {
+    if (identifier.isEmpty || pass.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng nhập email và mật khẩu')),
+        const SnackBar(
+          content: Text('Vui lòng nhập email/số điện thoại và mật khẩu'),
+        ),
       );
       return;
     }
+    setState(() => _isSubmitting = true);
     try {
-      final user = await ApiService.login(email, pass);
+      final user = await ApiService.login(identifier, pass);
       final role = (user['role_name'] ?? user['role'] ?? 'customer').toString();
-      // persist credentials when remember is checked
       final settings = DBService.settings();
       if (_remember) {
-        settings.put('remember_email', email);
-        settings.put('remember_pass', pass);
+        await settings.put('remember_email', identifier);
       } else {
         if (settings.containsKey('remember_email')) {
-          settings.delete('remember_email');
-        }
-        if (settings.containsKey('remember_pass')) {
-          settings.delete('remember_pass');
+          await settings.delete('remember_email');
         }
       }
-      // set current user email so other screens can load per-user data (e.g., cart)
       final settings2 = DBService.settings();
       await settings2.put('current_user_id', user['user_id']);
       await settings2.put('current_user_email', user['email']);
@@ -97,27 +94,9 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
-  }
-
-  Widget _socialButton(String assetName) {
-    return Container(
-      width: 64,
-      height: 64,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
-        ],
-      ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: SvgPicture.asset(assetName),
-        ),
-      ),
-    );
   }
 
   @override
@@ -141,10 +120,11 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
               ),
               const SizedBox(height: 20),
               TextField(
-                controller: _emailCtrl,
+                controller: _identifierCtrl,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.email),
-                  hintText: 'Email',
+                  prefixIcon: const Icon(Icons.person_outline),
+                  hintText: 'Email hoặc số điện thoại',
                   filled: true,
                   fillColor: Colors.grey.shade100,
                   border: OutlineInputBorder(
@@ -182,12 +162,12 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
                     value: _remember,
                     onChanged: (v) => setState(() => _remember = v ?? false),
                   ),
-                  const Text('Nhớ tài khoản'),
+                  const Text('Nhớ email/số điện thoại'),
                 ],
               ),
               const SizedBox(height: 30),
               ElevatedButton(
-                onPressed: _submit,
+                onPressed: _isSubmitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color.fromARGB(255, 0, 73, 125),
                   foregroundColor: Colors.white,
@@ -196,29 +176,16 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
                     borderRadius: BorderRadius.circular(36),
                   ),
                 ),
-                child: const Text('Đăng nhập'),
+                child: Text(_isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'),
               ),
               const SizedBox(height: 8),
-              TextButton(onPressed: () {}, child: const Text('Quên mật khẩu')),
-              const SizedBox(height: 40),
-              Row(
-                children: const [
-                  Expanded(child: Divider()),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Text('Hoặc tiếp tục với'),
+              TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ForgotPasswordScreen(),
                   ),
-                  Expanded(child: Divider()),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _socialButton('assets/images/material-icon-theme_google.svg'),
-                  _socialButton('assets/images/Vector.svg'),
-                  _socialButton('assets/images/ic_baseline-apple.svg'),
-                ],
+                ),
+                child: const Text('Quên mật khẩu'),
               ),
               const Spacer(),
               Row(

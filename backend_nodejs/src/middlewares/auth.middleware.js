@@ -3,7 +3,8 @@ const pool = require('../config/db');
 
 async function loadUser(userId) {
   const [users] = await pool.execute(
-    `SELECT u.user_id, u.full_name, u.email, r.role_name
+    `SELECT u.user_id, u.full_name, u.email, u.phone, u.address, u.points,
+            u.membership_code, u.status, u.created_at, r.role_name
      FROM users u
      JOIN roles r ON r.role_id = u.role_id
      WHERE u.user_id = ? AND u.status = 'active'
@@ -22,7 +23,22 @@ async function requireAuth(req, res, next) {
   const [scheme, token] = authHeader.split(' ');
   const headerUserId = Number(req.get('x-user-id'));
 
-  if (headerUserId) {
+  if (scheme === 'Bearer' && token) {
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET || 'mini_market_secret');
+      const user = await loadUser(payload.id || payload.user_id);
+      if (!user) {
+        return res.status(401).json({ success: false, message: 'Tài khoản không hợp lệ' });
+      }
+      req.user = user;
+      return next();
+    } catch (error) {
+      return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
+    }
+  }
+
+  // Dev/backward-compatible fallback for old Flutter calls. Prefer Bearer token.
+  if (headerUserId && process.env.ALLOW_HEADER_USER_AUTH !== 'false') {
     try {
       const user = await loadUser(headerUserId);
       if (!user) {
@@ -37,14 +53,6 @@ async function requireAuth(req, res, next) {
 
   if (scheme !== 'Bearer' || !token) {
     return res.status(401).json({ success: false, message: 'Vui lòng đăng nhập' });
-  }
-
-  try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET || 'mini_market_secret');
-    req.user.id = req.user.id || req.user.user_id;
-    next();
-  } catch (error) {
-    return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
   }
 }
 

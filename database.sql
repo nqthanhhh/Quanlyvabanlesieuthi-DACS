@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(100) NOT NULL UNIQUE,
   phone VARCHAR(20) UNIQUE,
   password VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255),
   address VARCHAR(255),
   role_id INT NOT NULL,
   points INT DEFAULT 0,
@@ -34,6 +35,23 @@ CREATE TABLE IF NOT EXISTS users (
     REFERENCES roles(role_id)
     ON UPDATE CASCADE
     ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  otp_code VARCHAR(255) NOT NULL,
+  type VARCHAR(20) NOT NULL,
+  expired_at DATETIME NOT NULL,
+  used TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_password_reset_user_type (user_id, type, used, expired_at),
+
+  CONSTRAINT fk_password_reset_tokens_users
+    FOREIGN KEY (user_id)
+    REFERENCES users(user_id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -440,11 +458,11 @@ VALUES
 ('employee'),
 ('admin');
 
-INSERT IGNORE INTO users(full_name, email, phone, password, address, role_id, status)
+INSERT IGNORE INTO users(full_name, email, phone, password, password_hash, address, role_id, status)
 VALUES
-('Admin', 'a@gmail.com', '0900000001', '123', 'Tai khoan quan tri', (SELECT role_id FROM roles WHERE role_name = 'admin'), 'active'),
-('Nhan vien', 'b@gmail.com', '0900000002', '123', 'Tai khoan nhan vien', (SELECT role_id FROM roles WHERE role_name = 'employee'), 'active'),
-('Khach hang', 'c@gmail.com', '0900000003', '123', 'Tai khoan khach hang', (SELECT role_id FROM roles WHERE role_name = 'customer'), 'active');
+('Admin', 'a@gmail.com', '0900000001', '$2b$10$kB30S.076z6zgyr1G8hmguFXQ4S0csQQNBRIo7BIpN2W8aXejiHaG', '$2b$10$kB30S.076z6zgyr1G8hmguFXQ4S0csQQNBRIo7BIpN2W8aXejiHaG', 'Tai khoan quan tri', (SELECT role_id FROM roles WHERE role_name = 'admin'), 'active'),
+('Nhan vien', 'b@gmail.com', '0900000002', '$2b$10$kB30S.076z6zgyr1G8hmguFXQ4S0csQQNBRIo7BIpN2W8aXejiHaG', '$2b$10$kB30S.076z6zgyr1G8hmguFXQ4S0csQQNBRIo7BIpN2W8aXejiHaG', 'Tai khoan nhan vien', (SELECT role_id FROM roles WHERE role_name = 'employee'), 'active'),
+('Khach hang', 'c@gmail.com', '0900000003', '$2b$10$kB30S.076z6zgyr1G8hmguFXQ4S0csQQNBRIo7BIpN2W8aXejiHaG', '$2b$10$kB30S.076z6zgyr1G8hmguFXQ4S0csQQNBRIo7BIpN2W8aXejiHaG', 'Tai khoan khach hang', (SELECT role_id FROM roles WHERE role_name = 'customer'), 'active');
 INSERT IGNORE INTO categories(category_name)
 VALUES
 ('Đồ uống'),

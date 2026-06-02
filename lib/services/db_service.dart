@@ -615,6 +615,18 @@ class DBService {
     return int.tryParse(value?.toString() ?? '');
   }
 
+  static Future<void> clearAuthSession() async {
+    final box = settings();
+    await Future.wait([
+      box.delete('auth_token'),
+      box.delete('current_user_id'),
+      box.delete('current_user_email'),
+      box.delete('current_user_name'),
+      box.delete('current_role'),
+      box.delete('remember_pass'),
+    ]);
+  }
+
   static Future<Product> findSaleProductByCode(String code) async {
     final normalized = code.trim();
     if (normalized.isEmpty) {

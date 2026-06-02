@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:provider/provider.dart';
+import '../services/auth_state.dart';
 import '../services/db_service.dart';
 import '../models/product.dart';
 import 'profile_route.dart';
@@ -21,6 +23,7 @@ import 'product_performance_report_screen.dart';
 import 'scan_product_screen.dart';
 import 'security_info_screen.dart';
 import 'admin_vouchers_screen.dart';
+import 'login_screen.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/product_list_card.dart';
 import '../widgets/slide_page_route.dart';
@@ -58,6 +61,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const Color _primaryGreen = Color(0xFF1B7F4D);
   static const Color _surface = Color(0xFFF6F7F9);
+
+  bool get _isGuest => DBService.currentUserId() == null;
+
+  Future<bool> _requireLogin({
+    String message = 'Vui lòng đăng nhập để tiếp tục',
+  }) async {
+    if (!_isGuest) return true;
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+    final auth = Provider.of<AuthState>(context, listen: false);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LoginScreen(
+          closeOnLogin: true,
+          onLogin: (role) => auth.login(role),
+        ),
+      ),
+    );
+    if (!mounted) return false;
+    await _loadCurrentUserCart();
+    return !_isGuest;
+  }
 
   // Mapping sản phẩm sang đường dẫn ảnh asset (fallback khi không có ảnh từ backend)
   String _imageFor(Product p) {
@@ -176,15 +203,18 @@ class _HomeScreenState extends State<HomeScreen> {
     final settings = DBService.settings();
     final email = settings.get('current_user_email') as String?;
     _currentUserEmail = email;
-    if (email != null) {
-      final saved = await DBService.loadCartForCurrentUser(email);
-      if (saved.isNotEmpty) {
-        setState(() {
-          _cart
-            ..clear()
-            ..addAll(saved);
-        });
-      }
+    if (email == null) {
+      if (mounted) setState(() => _cart.clear());
+      return;
+    }
+
+    final saved = await DBService.loadCartForCurrentUser(email);
+    if (mounted) {
+      setState(() {
+        _cart
+          ..clear()
+          ..addAll(saved);
+      });
     }
   }
 
@@ -450,8 +480,14 @@ class _HomeScreenState extends State<HomeScreen> {
       _buildMenuItem(
         icon: Icons.lock_outline,
         title: 'Thông tin bảo mật',
-        onTap: () {
+        onTap: () async {
           Navigator.of(context).pop(); // Đóng Drawer
+          if (!await _requireLogin(
+            message: 'Vui lòng đăng nhập để xem thông tin bảo mật',
+          )) {
+            return;
+          }
+          if (!mounted) return;
           Navigator.of(
             context,
           ).push(MaterialPageRoute(builder: (_) => const SecurityInfoScreen()));
@@ -582,11 +618,20 @@ class _HomeScreenState extends State<HomeScreen> {
   // Tách Profile Section trong Drawer
   Widget _buildProfileSection() {
     return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => buildProfileScreenForRole(widget.role),
-        ),
-      ),
+      onTap: () async {
+        Navigator.of(context).pop();
+        if (!await _requireLogin(
+          message: 'Vui lòng đăng nhập để vào tài khoản',
+        )) {
+          return;
+        }
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => buildProfileScreenForRole(widget.role),
+          ),
+        );
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
         child: Column(
@@ -660,10 +705,15 @@ class _HomeScreenState extends State<HomeScreen> {
           product: p,
           assetFallback: _imageFor,
           onAddToCart: (product, quantity) async {
-            _addToCart(product, quantity: quantity, showSnack: false);
+            await _addToCart(product, quantity: quantity, showSnack: false);
           },
           onBuyNow: (product, quantity) async {
-            _addToCart(product, quantity: quantity, showSnack: false);
+            final added = await _addToCart(
+              product,
+              quantity: quantity,
+              showSnack: false,
+            );
+            if (!added) return;
             if (!mounted) return;
             await _openCheckoutScreen();
           },
@@ -683,13 +733,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _addToCart(Product p, {int quantity = 1, bool showSnack = true}) {
-    if (quantity <= 0) return;
+  Future<bool> _addToCart(
+    Product p, {
+    int quantity = 1,
+    bool showSnack = true,
+  }) async {
+    if (quantity <= 0) return false;
+    final loggedIn = await _requireLogin(
+      message: 'Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng',
+    );
+    if (!loggedIn) return false;
+    if (!mounted) return false;
     if (!ProductStockUtils.canPurchase(p)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Sản phẩm "${p.name}" đã hết hàng')),
       );
-      return;
+      return false;
     }
 
     final current = _cart[p.id] ?? 0;
@@ -701,7 +760,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       );
-      return;
+      return false;
     }
 
     setState(() {
@@ -716,9 +775,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
+    return true;
   }
 
   Future<void> _scanAndAddToCart() async {
+    final loggedIn = await _requireLogin(
+      message: 'Vui lòng đăng nhập để quét và thêm sản phẩm',
+    );
+    if (!mounted) return;
+    if (!loggedIn) {
+      setState(() => _currentBottomTab = RoleBottomTab.home);
+      return;
+    }
+
     final product = await Navigator.of(
       context,
     ).push<Product?>(buildSlidePageRoute(const ScanProductScreen()));
@@ -750,6 +819,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openCheckoutScreen() async {
+    final loggedIn = await _requireLogin(
+      message: 'Vui lòng đăng nhập để xem giỏ hàng',
+    );
+    if (!mounted) return;
+    if (!loggedIn) {
+      setState(() => _currentBottomTab = RoleBottomTab.home);
+      return;
+    }
+
     if (_cart.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -861,6 +939,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ).push(buildSlidePageRoute(const EmployeeConfirmOrdersScreen()));
         break;
       case RoleBottomTab.offers:
+        if (!await _requireLogin(
+          message: 'Vui lòng đăng nhập để xem ưu đãi của bạn',
+        )) {
+          if (!mounted) return;
+          setState(() => _currentBottomTab = RoleBottomTab.home);
+          return;
+        }
+        if (!mounted) return;
         setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
@@ -873,12 +959,28 @@ class _HomeScreenState extends State<HomeScreen> {
         await _openCheckoutScreen();
         break;
       case RoleBottomTab.orders:
+        if (!await _requireLogin(
+          message: 'Vui lòng đăng nhập để xem đơn hàng',
+        )) {
+          if (!mounted) return;
+          setState(() => _currentBottomTab = RoleBottomTab.home);
+          return;
+        }
+        if (!mounted) return;
         setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => const OrdersScreen()));
         break;
       case RoleBottomTab.account:
+        if (!await _requireLogin(
+          message: 'Vui lòng đăng nhập để vào tài khoản',
+        )) {
+          if (!mounted) return;
+          setState(() => _currentBottomTab = RoleBottomTab.home);
+          return;
+        }
+        if (!mounted) return;
         setState(() => _currentBottomTab = tab);
         Navigator.of(
           context,
@@ -902,10 +1004,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         title: _buildSearchBar(), // Sử dụng Widget đã tách
         actions: [
-          IconButton(
-            onPressed: widget.onLogout,
-            icon: const Icon(Icons.logout, color: Colors.black87),
-          ),
+          if (_isGuest)
+            IconButton(
+              onPressed: () =>
+                  _requireLogin(message: 'Vui lòng đăng nhập để vào tài khoản'),
+              icon: const Icon(Icons.login, color: Colors.black87),
+              tooltip: 'Đăng nhập',
+            )
+          else
+            IconButton(
+              onPressed: widget.onLogout,
+              icon: const Icon(Icons.logout, color: Colors.black87),
+              tooltip: 'Đăng xuất',
+            ),
         ],
       ),
 

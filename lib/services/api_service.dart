@@ -10,6 +10,7 @@ import '../models/work_shift.dart';
 import '../models/employee_schedule_day.dart';
 import '../models/user.dart';
 import '../models/inventory_item.dart';
+import 'db_service.dart';
 import '../utils/constants.dart';
 import '../utils/type_converters.dart';
 
@@ -81,18 +82,33 @@ class ApiService {
     'Content-Type': 'application/json',
   };
 
-  static Map<String, String> get _userHeaders => {
+  static String? get _authToken {
+    try {
+      final token = DBService.settings().get('auth_token');
+      return token is String && token.isNotEmpty ? token : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Map<String, String> get _authHeaders => {
     ..._headers,
-    if (_currentUserId != null) 'x-user-id': _currentUserId.toString(),
+    if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+  };
+
+  static Map<String, String> get _userHeaders => {
+    ..._authHeaders,
+    if ((_currentUserId ?? DBService.currentUserId()) != null)
+      'x-user-id': (_currentUserId ?? DBService.currentUserId()).toString(),
   };
 
   static Map<String, String> _userHeadersFor(int userId) => {
-    ..._headers,
+    ..._authHeaders,
     'x-user-id': userId.toString(),
   };
 
   static Map<String, String> _adminHeaders(int adminUserId) => {
-    ..._headers,
+    ..._authHeaders,
     'x-user-id': adminUserId.toString(),
   };
 
@@ -127,18 +143,22 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> login(
-    String email,
+    String identifier,
     String password,
   ) async {
     final response = await http
         .post(
           _uri('/api/auth/login'),
           headers: _headers,
-          body: jsonEncode({'email': email, 'password': password}),
+          body: jsonEncode({'identifier': identifier, 'password': password}),
         )
         .timeout(_timeout);
     final body = _decode(response);
     final user = Map<String, dynamic>.from((body as Map)['user'] as Map);
+    final token = body['token']?.toString();
+    if (token != null && token.isNotEmpty) {
+      await DBService.settings().put('auth_token', token);
+    }
     _currentUserId = TypeConverters.toNullableInt(
       user['user_id'] ?? user['userId'],
     );
@@ -149,7 +169,7 @@ class ApiService {
     required String fullName,
     required String email,
     required String password,
-    String? phone,
+    required String phone,
     String? address,
   }) async {
     final response = await http
@@ -168,6 +188,65 @@ class ApiService {
     _decode(response);
   }
 
+  static Future<Map<String, dynamic>> forgotPasswordEmail(String email) async {
+    final response = await http
+        .post(
+          _uri('/api/auth/forgot-password/email'),
+          headers: _headers,
+          body: jsonEncode({'email': email}),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> forgotPasswordPhone(String phone) async {
+    final response = await http
+        .post(
+          _uri('/api/auth/forgot-password/phone'),
+          headers: _headers,
+          body: jsonEncode({'phone': phone}),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<String> verifyPasswordResetOtp({
+    required String identifier,
+    required String type,
+    required String otp,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/auth/verify-otp'),
+          headers: _headers,
+          body: jsonEncode({
+            'identifier': identifier,
+            'type': type,
+            'otp': otp,
+          }),
+        )
+        .timeout(_timeout);
+    final body = _dataMap(_decode(response));
+    return (body['reset_token'] ?? '').toString();
+  }
+
+  static Future<void> resetPassword({
+    required String resetToken,
+    required String newPassword,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/auth/reset-password'),
+          headers: _headers,
+          body: jsonEncode({
+            'reset_token': resetToken,
+            'new_password': newPassword,
+          }),
+        )
+        .timeout(_timeout);
+    _decode(response);
+  }
+
   static Future<List<User>> fetchUsers() async {
     final response = await http.get(_uri('/api/users')).timeout(_timeout);
     final body = _decode(response);
@@ -180,7 +259,7 @@ class ApiService {
     final response = await http
         .post(
           _uri('/api/users'),
-          headers: _headers,
+          headers: _authHeaders,
           body: jsonEncode(user.toJson()),
         )
         .timeout(_timeout);
@@ -192,7 +271,7 @@ class ApiService {
     final response = await http
         .put(
           _uri('/api/users/$userId'),
-          headers: _headers,
+          headers: _authHeaders,
           body: jsonEncode(user.toJson()),
         )
         .timeout(_timeout);
@@ -210,7 +289,7 @@ class ApiService {
     final response = await http
         .put(
           _uri('/api/users/$userId/profile'),
-          headers: _headers,
+          headers: _userHeadersFor(userId),
           body: jsonEncode({
             'full_name': fullName,
             'phone': phone.isEmpty ? null : phone,
@@ -344,7 +423,7 @@ class ApiService {
 
   static Future<void> deleteUser(int userId) async {
     final response = await http
-        .delete(_uri('/api/users/$userId'))
+        .delete(_uri('/api/users/$userId'), headers: _authHeaders)
         .timeout(_timeout);
     _decode(response);
   }

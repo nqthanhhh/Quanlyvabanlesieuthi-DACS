@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'services/auth_state.dart';
 import 'services/db_service.dart';
-import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/welcome_screen.dart';
 
@@ -10,24 +10,6 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   runApp(const MyApp());
-}
-
-class AuthState extends ChangeNotifier {
-  String? _role;
-  String? get role => _role;
-
-  bool get isLoggedIn => _role != null;
-
-  void login(String role) {
-    _role = role;
-    notifyListeners();
-  }
-
-
-  void logout() {
-    _role = null;
-    notifyListeners();
-  }
 }
 
 class MyApp extends StatelessWidget {
@@ -72,7 +54,14 @@ class _RootPageState extends State<RootPage> {
       // read flag from Hive settings box
       final box = DBService.settings();
       final seen = box.get('welcomeSeen', defaultValue: false) as bool;
+      final savedRole = box.get('current_role')?.toString();
+      final hasSession =
+          DBService.currentUserId() != null &&
+          (box.get('auth_token')?.toString().isNotEmpty ?? false);
       if (!mounted) return;
+      if (hasSession && savedRole != null && savedRole.isNotEmpty) {
+        Provider.of<AuthState>(context, listen: false).restore(savedRole);
+      }
       setState(() {
         _welcomeSeen = seen;
         _initialized = true;
@@ -117,10 +106,7 @@ class _RootPageState extends State<RootPage> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    _initError!,
-                    textAlign: TextAlign.center,
-                  ),
+                  Text(_initError!, textAlign: TextAlign.center),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () {
@@ -145,9 +131,11 @@ class _RootPageState extends State<RootPage> {
     }
 
     final auth = Provider.of<AuthState>(context);
-    if (!auth.isLoggedIn) {
-      return LoginScreen(onLogin: (role) => auth.login(role));
-    }
-    return HomeScreen(role: auth.role!, onLogout: () => auth.logout());
+    return HomeScreen(
+      role: auth.role ?? 'customer',
+      onLogout: () {
+        auth.logout();
+      },
+    );
   }
 }

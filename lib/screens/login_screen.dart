@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'register_screen.dart';
-import 'password_login_screen.dart';
 
-class LoginScreen extends StatefulWidget {
+import 'password_login_screen.dart';
+import 'register_screen.dart';
+
+class LoginScreen extends StatelessWidget {
   final void Function(String role) onLogin;
   final bool closeOnLogin;
 
@@ -13,43 +14,59 @@ class LoginScreen extends StatefulWidget {
     this.closeOnLogin = false,
   });
 
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
+  static const Color _primaryBlue = Color(0xFF2536B8);
+  static const Color _socialBackground = Color(0xFFF0F3FF);
 
-class _LoginScreenState extends State<LoginScreen> {
-  void _showDemoSocialLogin(String provider) {
+  void _openPasswordLogin(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PasswordLoginScreen(
+          onLogin: (role) {
+            onLogin(role);
+            if (closeOnLogin) {
+              Navigator.of(context).pop();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showDemo(BuildContext context, String provider) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Đăng nhập $provider đang để demo giao diện')),
     );
   }
 
-  Widget _socialIconButton({
+  Widget _socialButton({
+    required BuildContext context,
     required String provider,
-    required String assetName,
+    required String asset,
   }) {
-    return Tooltip(
-      message: provider,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(32),
-        onTap: () => _showDemoSocialLogin(provider),
-        child: Container(
-          width: 56,
-          height: 56,
-          padding: const EdgeInsets.all(13),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black12,
-                blurRadius: 8,
-                offset: Offset(0, 3),
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: Material(
+        color: _socialBackground,
+        borderRadius: BorderRadius.circular(28),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(28),
+          onTap: () => _showDemo(context, provider),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(width: 24, height: 24, child: SvgPicture.asset(asset)),
+              const SizedBox(width: 12),
+              Text(
+                'Đăng nhập bằng $provider',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF222831),
+                ),
               ),
             ],
           ),
-          child: SvgPicture.asset(assetName),
         ),
       ),
     );
@@ -57,127 +74,128 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canGoBack = Navigator.of(context).canPop();
+
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
-        leading: Navigator.of(context).canPop() ? const BackButton() : null,
+        leading: canGoBack ? const BackButton(color: Colors.black87) : null,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 0),
-              Expanded(
-                child: SingleChildScrollView(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final heroHeight = (constraints.maxHeight * 0.40)
+                .clamp(230.0, 320.0)
+                .toDouble();
+
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     children: [
                       SizedBox(
-                        height: 300,
-                        child: Center(
-                          child: Image.asset(
-                            'assets/images/anh1.png',
-                            fit: BoxFit.contain,
-                            width: double.infinity,
-                            height: 300,
-                            errorBuilder: (context, error, stackTrace) =>
-                                Container(
-                                  height: 20,
-                                  color: Colors.grey.shade200,
-                                  child: const Center(
-                                    child: Text('Hình ảnh không tải được'),
-                                  ),
-                                ),
+                        height: heroHeight,
+                        width: double.infinity,
+                        child: Image.asset(
+                          'assets/images/anh1.png',
+                          fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: Colors.grey.shade100,
+                            alignment: Alignment.center,
+                            child: const Text('Hình ảnh không tải được'),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 0),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 30),
+                      _socialButton(
+                        context: context,
+                        provider: 'Google',
+                        asset: 'assets/images/material-icon-theme_google.svg',
+                      ),
+                      const SizedBox(height: 12),
+                      _socialButton(
+                        context: context,
+                        provider: 'Facebook',
+                        asset: 'assets/images/Vector.svg',
+                      ),
+                      const SizedBox(height: 12),
+                      _socialButton(
+                        context: context,
+                        provider: 'Apple',
+                        asset: 'assets/images/ic_baseline-apple.svg',
+                      ),
+                      const SizedBox(height: 32),
                       Row(
                         children: const [
-                          Expanded(child: Divider()),
+                          Expanded(child: Divider(color: Colors.black38)),
                           Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 10),
-                            child: Text('Hoặc đăng nhập bằng'),
+                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            child: Text(
+                              'hoặc',
+                              style: TextStyle(color: Colors.black54),
+                            ),
                           ),
-                          Expanded(child: Divider()),
+                          Expanded(child: Divider(color: Colors.black38)),
                         ],
                       ),
-                      const SizedBox(height: 18),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _socialIconButton(
-                            provider: 'Google',
-                            assetName:
-                                'assets/images/material-icon-theme_google.svg',
+                      const SizedBox(height: 34),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 58,
+                        child: ElevatedButton(
+                          onPressed: () => _openPasswordLogin(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _primaryBlue,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: const StadiumBorder(),
                           ),
-                          const SizedBox(width: 18),
-                          _socialIconButton(
-                            provider: 'Facebook',
-                            assetName: 'assets/images/Vector.svg',
-                          ),
-                          const SizedBox(width: 18),
-                          _socialIconButton(
-                            provider: 'Apple',
-                            assetName: 'assets/images/ic_baseline-apple.svg',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 26),
-                      ElevatedButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PasswordLoginScreen(
-                              onLogin: (role) {
-                                widget.onLogin(role);
-                                if (widget.closeOnLogin) {
-                                  Navigator.of(context).pop();
-                                }
-                              },
+                          child: const Text(
+                            'Đăng nhập bằng mật khẩu',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color.fromARGB(
-                            255,
-                            0,
-                            73,
-                            125,
-                          ),
-                          foregroundColor: Colors.white,
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          minimumSize: Size.fromHeight(40),
-                        ),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12.0),
-                          child: Text('Đăng nhập bằng tài khoản'),
-                        ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 20),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text('Bạn chưa có tài khoản? '),
+                          const Text(
+                            'Bạn chưa có tài khoản ?',
+                            style: TextStyle(color: Colors.black54),
+                          ),
                           TextButton(
                             onPressed: () => Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (_) => const RegisterScreen(),
                               ),
                             ),
-                            child: const Text('Đăng kí'),
+                            child: const Text(
+                              'Đăng kí',
+                              style: TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

@@ -26,6 +26,8 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
   bool get _isEditing => widget.item != null;
   bool _processing = false;
   String? _imagePath;
+  List<Map<String, dynamic>> _categories = [];
+  int? _selectedCategoryId;
 
   @override
   void initState() {
@@ -42,10 +44,22 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
     _stockController = TextEditingController(
       text: widget.item?.stockQuantity.toString() ?? '0',
     );
+    _selectedCategoryId = widget.item?.categoryId;
+    _loadCategories();
     if (_isEditing) {
       _idController.text = widget.item!.id;
       // load image path if any
       _imagePath = DBService.productImages().get(widget.item!.id);
+    }
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await ApiService.fetchCategories();
+      if (!mounted) return;
+      setState(() => _categories = categories);
+    } catch (_) {
+      if (mounted) setState(() => _categories = []);
     }
   }
 
@@ -102,6 +116,10 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
       final unit = _unitController.text.trim();
       final qty = int.parse(_stockController.text.trim());
 
+      if (_selectedCategoryId == null) {
+        throw Exception('Vui lòng chọn danh mục');
+      }
+
       if (_isEditing) {
         final existing = widget.item!;
         final newId = id;
@@ -119,6 +137,8 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
           importPrice: importPrice,
           unit: unit,
           stockQuantity: existing.stockQuantity,
+          categoryId: _selectedCategoryId,
+          imageUrl: existing.imageUrl,
         );
 
         await ApiService.updateInventoryItem(updated);
@@ -131,6 +151,7 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
           );
         }
 
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Cập nhật kho thành công'),
@@ -150,8 +171,10 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
           importPrice: importPrice,
           unit: unit,
           quantity: qty,
+          categoryId: _selectedCategoryId,
           imagePath: _imagePath,
         );
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Thêm vào kho thành công'),
@@ -161,6 +184,7 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
         Navigator.of(context).pop();
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Lỗi: ${e.toString()}'),
@@ -174,6 +198,11 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedCategoryId =
+        _categories.any((c) => c['category_id'] == _selectedCategoryId)
+        ? _selectedCategoryId
+        : null;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? 'Chỉnh sửa Kho' : 'Thêm hàng vào Kho'),
@@ -255,6 +284,25 @@ class _AddInventoryItemScreenState extends State<AddInventoryItemScreen> {
                 ),
                 validator: (v) =>
                     (v == null || v.isEmpty) ? 'Nhập đơn vị' : null,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                key: ValueKey(selectedCategoryId),
+                initialValue: selectedCategoryId,
+                decoration: const InputDecoration(
+                  labelText: 'Danh mục sản phẩm',
+                  border: OutlineInputBorder(),
+                ),
+                items: _categories
+                    .map(
+                      (c) => DropdownMenuItem<int>(
+                        value: c['category_id'] as int,
+                        child: Text(c['category_name'].toString()),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedCategoryId = v),
+                validator: (v) => v == null ? 'Vui lòng chọn danh mục' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(

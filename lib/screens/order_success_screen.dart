@@ -11,6 +11,8 @@ class OrderSuccessScreen extends StatelessWidget {
   final int? pointsAdded;
   final int? totalPoints;
   final String? loyaltyCustomerName;
+  final int pointsUsed;
+  final double pointsDiscount;
 
   const OrderSuccessScreen({
     super.key,
@@ -21,6 +23,8 @@ class OrderSuccessScreen extends StatelessWidget {
     this.pointsAdded,
     this.totalPoints,
     this.loyaltyCustomerName,
+    this.pointsUsed = 0,
+    this.pointsDiscount = 0,
   });
 
   String _formatPaidAt(DateTime? value) {
@@ -74,13 +78,25 @@ class OrderSuccessScreen extends StatelessWidget {
             _buildInfoRow('Phương thức:', paymentMethod),
             const SizedBox(height: 12),
             _buildInfoRow('Thời gian:', _formatPaidAt(paidAt)),
-            if (pointsAdded != null && totalPoints != null) ...[
+            if (loyaltyCustomerName != null &&
+                loyaltyCustomerName!.isNotEmpty) ...[
               const SizedBox(height: 12),
               _buildInfoRow('Khách tích điểm:', loyaltyCustomerName ?? '-'),
+              if (pointsUsed > 0) ...[
+                const SizedBox(height: 12),
+                _buildInfoRow('Điểm đã dùng:', '-$pointsUsed'),
+                const SizedBox(height: 12),
+                _buildInfoRow(
+                  'Giảm bằng điểm:',
+                  '${pointsDiscount.round().toString().replaceAllMapped(RegExp(r'(\\d{1,3})(?=(\\d{3})+(?!\\d))'), (m) => '${m[1]}.')}đ',
+                ),
+              ],
               const SizedBox(height: 12),
-              _buildInfoRow('Điểm nhận:', '+$pointsAdded'),
-              const SizedBox(height: 12),
-              _buildInfoRow('Tổng điểm:', '$totalPoints'),
+              _buildInfoRow('Điểm nhận:', '+${pointsAdded ?? 0}'),
+              if (totalPoints != null) ...[
+                const SizedBox(height: 12),
+                _buildInfoRow('Điểm còn lại:', '$totalPoints'),
+              ],
             ],
             const SizedBox(height: 50),
 

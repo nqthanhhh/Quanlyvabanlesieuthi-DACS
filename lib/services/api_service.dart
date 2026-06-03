@@ -47,7 +47,9 @@ class ApiService {
         return 'http://10.0.2.2:3000';
       }
       if (defaultTargetPlatform == TargetPlatform.iOS) {
-        return AppConstants.physicalDeviceApiBaseUrl;
+        // iOS Simulator truy cập backend trên Mac bằng localhost.
+        // iPhone thật cần truyền API_BASE_URL bằng IP Wi-Fi/mDNS của Mac.
+        return AppConstants.iosSimulatorApiBaseUrl;
       }
     } catch (_) {}
 
@@ -69,9 +71,9 @@ class ApiService {
         msg.contains('connection refused') ||
         msg.contains('clientexception')) {
       return 'Không kết nối được backend ($baseUrl). '
-          'Kiểm tra backend đang chạy (npm start) và địa chỉ API: '
-          'Android emulator dùng 10.0.2.2, iPhone thật dùng IP Wi-Fi của Mac '
-          'hoặc chạy với --dart-define=API_BASE_URL=http://<IP-Mac>:3000.';
+          'Kiểm tra backend đang chạy (npm run dev). '
+          'Android emulator dùng 10.0.2.2, iOS simulator dùng localhost, '
+          'iPhone thật chạy với --dart-define=API_BASE_URL=http://<IP-Mac>:3000.';
     }
     return 'Email hoặc mật khẩu không đúng';
   }
@@ -1045,6 +1047,24 @@ class ApiService {
         )
         .timeout(_timeout);
     return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> fetchCustomerPoints({
+    required String phone,
+    double? amountAfterVoucher,
+  }) async {
+    final query = <String, String>{'phone': phone};
+    if (amountAfterVoucher != null) {
+      query['amount_after_voucher'] = amountAfterVoucher.toStringAsFixed(0);
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/points/customer',
+    ).replace(queryParameters: query);
+    final response = await http.get(uri, headers: _headers).timeout(_timeout);
+    final decoded = _decode(response);
+    return decoded is Map<String, dynamic>
+        ? decoded
+        : Map<String, dynamic>.from(decoded as Map);
   }
 
   static Future<Order> checkoutOnlineOrder({

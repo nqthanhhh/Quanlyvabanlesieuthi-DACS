@@ -15,10 +15,10 @@ class AppConstants {
   ///
   /// Nếu không truyền dart-define:
   /// - Android emulator dùng http://10.0.2.2:3000 trong ApiService.
-  /// - iPhone thật/iOS dùng LAN IP dưới đây để không gọi localhost của máy iPhone.
-  /// Đổi IP này khi Mac đổi Wi-Fi hoặc router cấp IP mới.
+  /// - iOS simulator dùng http://localhost:3000 trong ApiService.
+  /// - iPhone thật phải truyền IP Wi-Fi hoặc mDNS của Mac bằng dart-define.
   static const String? apiBaseUrlOverride = null;
-  static const String physicalDeviceApiBaseUrl = 'http://192.168.100.79:3000';
+  static const String iosSimulatorApiBaseUrl = 'http://localhost:3000';
 
   // Hive box names
   static const String productsBox = 'products';

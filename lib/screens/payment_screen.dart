@@ -54,6 +54,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final TextEditingController _voucherController = TextEditingController();
   final TextEditingController _loyaltyNameController = TextEditingController();
   final TextEditingController _loyaltyPhoneController = TextEditingController();
+  final TextEditingController _pointsToUseController = TextEditingController();
   String? _selectedPaymentMethod;
   String? _voucherMessage;
   int? _appliedVoucherId;
@@ -63,8 +64,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _isProcessing = false;
   bool _isApplyingVoucher = false;
   bool _wantsLoyaltyPoints = false;
-  bool _isAddingPoints = false;
-  Map<String, dynamic>? _loyaltyResult;
+  bool _isCheckingPoints = false;
+  bool _usePoints = false;
+  Map<String, dynamic>? _loyaltyCustomer;
 
   String _imageFor(Product product) {
     return ProductAssetResolver.forProduct(product);
@@ -97,10 +99,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _voucherController.dispose();
     _loyaltyNameController.dispose();
     _loyaltyPhoneController.dispose();
+    _pointsToUseController.dispose();
     super.dispose();
   }
 
   double get _finalTotal => widget.totalAmount - _discountAmount;
+  int get _pointsToUse => int.tryParse(_pointsToUseController.text.trim()) ?? 0;
+  double get _pointsDiscount => _usePoints ? (_pointsToUse ~/ 100) * 10000 : 0;
+  double get _payableTotal =>
+      (_finalTotal - _pointsDiscount).clamp(0, double.infinity).toDouble();
 
   String _formatCurrency(double amount) {
     return '${amount.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} VND';
@@ -150,6 +157,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _discountAmount = NumberParser.toDouble(data['discountAmount']);
           _voucherMessage = 'Đã áp dụng mã ${data['code']}';
           _voucherController.text = data['code'].toString();
+          _usePoints = false;
+          _pointsToUseController.clear();
         });
         _showSnack(_voucherMessage!, success: true);
       } else {
@@ -180,6 +189,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _discountAmount = 0;
       _voucherMessage = null;
       _voucherController.clear();
+      _usePoints = false;
+      _pointsToUseController.clear();
     });
   }
 
@@ -243,9 +254,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return Order(
       id: transactionId,
       orderDate: DateTime.now(),
-      totalAmount: _finalTotal,
-      customerName: 'Khách lẻ',
-      customerId: currentUserId,
+      totalAmount: _payableTotal,
+      customerName: _wantsLoyaltyPoints
+          ? _loyaltyNameController.text.trim()
+          : 'Khách lẻ',
+      customerId: _wantsLoyaltyPoints ? null : currentUserId,
       status: 'completed',
       paymentMethod: paymentMethod,
       paymentStatus: 'paid',
@@ -257,6 +270,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       items: _buildOrderLines(),
       voucherId: _appliedVoucherId,
       discountAmount: _discountAmount,
+      pointsUsed: _usePoints ? _pointsToUse : 0,
+      pointsDiscount: _pointsDiscount,
+      customerPhone: _wantsLoyaltyPoints
+          ? _loyaltyPhoneController.text.trim()
+          : null,
     );
   }
 
@@ -268,15 +286,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return Order(
       id: 'PENDING-${DateTime.now().millisecondsSinceEpoch}',
       orderDate: DateTime.now(),
-      totalAmount: _finalTotal,
-      customerName: 'Khách lẻ',
-      customerId: currentUserId,
+      totalAmount: _payableTotal,
+      customerName: _wantsLoyaltyPoints
+          ? _loyaltyNameController.text.trim()
+          : 'Khách lẻ',
+      customerId: _wantsLoyaltyPoints ? null : currentUserId,
       status: 'pending',
       paymentMethod: 'bank_transfer',
       paymentStatus: 'pending',
       items: _buildOrderLines(),
       voucherId: _appliedVoucherId,
       discountAmount: _discountAmount,
+      pointsUsed: _usePoints ? _pointsToUse : 0,
+      pointsDiscount: _pointsDiscount,
+      customerPhone: _wantsLoyaltyPoints
+          ? _loyaltyPhoneController.text.trim()
+          : null,
     );
   }
 
@@ -322,23 +347,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return saved;
   }
 
-  void _openSuccess(Order order, {Map<String, dynamic>? loyaltyResult}) {
+  void _openSuccess(Order order) {
+    final startingPoints = NumberParser.toInt(_loyaltyCustomer?['points']) ?? 0;
+    final totalPoints = _wantsLoyaltyPoints
+        ? startingPoints - order.pointsUsed + order.pointsEarned
+        : null;
     widget.onCheckoutComplete();
     Navigator.pushReplacement(
       context,
       buildSlidePageRoute(
         OrderSuccessScreen(
-          totalAmount: _formatCurrency(_finalTotal),
+          totalAmount: _formatCurrency(_payableTotal),
           paymentMethod: _paymentMethodLabel(_selectedPaymentMethod!),
           orderId: order.id,
           paidAt: order.paidAt ?? DateTime.now(),
-          pointsAdded: loyaltyResult == null
-              ? null
-              : NumberParser.toInt(loyaltyResult['pointsAdded']),
-          totalPoints: loyaltyResult == null
-              ? null
-              : NumberParser.toInt(loyaltyResult['totalPoints']),
-          loyaltyCustomerName: loyaltyResult?['customerName']?.toString(),
+          pointsAdded: order.pointsEarned,
+          totalPoints: totalPoints,
+          loyaltyCustomerName: _wantsLoyaltyPoints
+              ? _loyaltyNameController.text.trim()
+              : null,
+          pointsUsed: order.pointsUsed,
+          pointsDiscount: order.pointsDiscount,
         ),
       ),
     );
@@ -356,34 +385,60 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _showSnack('Số điện thoại tích điểm không hợp lệ', success: false);
       return false;
     }
+    if (_usePoints) {
+      if (_loyaltyCustomer?['exists'] != true) {
+        _showSnack('Vui lòng kiểm tra điểm khách hàng trước', success: false);
+        return false;
+      }
+      final points = _pointsToUse;
+      final maxPoints =
+          NumberParser.toInt(_loyaltyCustomer?['max_redeem_points']) ?? 0;
+      if (points <= 0 || points % 100 != 0) {
+        _showSnack('Số điểm sử dụng phải là bội số của 100', success: false);
+        return false;
+      }
+      if (points > maxPoints) {
+        _showSnack('Số điểm dùng vượt mức cho phép', success: false);
+        return false;
+      }
+    }
     return true;
   }
 
-  Future<Map<String, dynamic>?> _maybeAddLoyaltyPoints(Order order) async {
-    if (!_wantsLoyaltyPoints) return null;
-    final employeeId = DBService.currentUserId() ?? 0;
-    if (employeeId <= 0) {
-      throw Exception('Không xác định được nhân viên đang đăng nhập');
+  Future<void> _checkCustomerPoints() async {
+    final phone = _loyaltyPhoneController.text.trim();
+    if (!RegExp(r'^[0-9+\-\s]{8,15}$').hasMatch(phone)) {
+      _showSnack('Số điện thoại tích điểm không hợp lệ', success: false);
+      return;
     }
-    setState(() => _isAddingPoints = true);
+    setState(() => _isCheckingPoints = true);
     try {
-      final result = await ApiService.addCustomerPoints(
-        customerName: _loyaltyNameController.text.trim(),
-        phone: _loyaltyPhoneController.text.trim(),
-        amount: _finalTotal,
-        employeeId: employeeId,
-        orderId: order.id,
+      final result = await ApiService.fetchCustomerPoints(
+        phone: phone,
+        amountAfterVoucher: _finalTotal,
       ).timeout(_checkoutTimeout);
       if (mounted) {
-        setState(() => _loyaltyResult = result);
+        setState(() {
+          _loyaltyCustomer = result;
+          if (result['exists'] == true) {
+            _loyaltyNameController.text =
+                result['name']?.toString() ?? _loyaltyNameController.text;
+          }
+          _usePoints = false;
+          _pointsToUseController.clear();
+        });
         _showSnack(
-          'Đã cộng ${result['pointsAdded']} điểm. Tổng điểm: ${result['totalPoints']}',
-          success: true,
+          result['exists'] == true
+              ? 'Khách có ${result['points']} điểm'
+              : (result['message']?.toString() ?? 'Khách hàng chưa có điểm'),
+          success: result['exists'] == true,
         );
       }
-      return result;
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(e.toString().replaceFirst('Exception: ', ''), success: false);
     } finally {
-      if (mounted) setState(() => _isAddingPoints = false);
+      if (mounted) setState(() => _isCheckingPoints = false);
     }
   }
 
@@ -400,6 +455,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
     order.transferContent =
         (data['transferContent'] ?? data['transfer_content'])?.toString() ??
         order.transferContent;
+    order.pointsUsed =
+        NumberParser.toInt(data['pointsUsed'] ?? data['points_used']) ??
+        order.pointsUsed;
+    order.pointsEarned =
+        NumberParser.toInt(data['pointsEarned'] ?? data['points_earned']) ??
+        order.pointsEarned;
+    order.pointsDiscount = NumberParser.toDouble(
+      data['pointsDiscount'] ?? data['points_discount'] ?? order.pointsDiscount,
+    );
     order.paidAt =
         DateTime.tryParse((paidAtValue ?? '').toString()) ?? DateTime.now();
     await DBService.orders().put(order.id, order);
@@ -453,10 +517,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         note: null,
       );
       final savedOrder = await _savePaidOrder(newOrder);
-      final loyaltyResult = await _maybeAddLoyaltyPoints(savedOrder);
 
       if (!mounted) return;
-      _openSuccess(savedOrder, loyaltyResult: loyaltyResult);
+      _openSuccess(savedOrder);
     } on TimeoutException {
       if (!mounted) return;
       _showSnack(
@@ -499,7 +562,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         PaymentConfig.transferContent(orderCode);
     final qrContent = PaymentConfig.qrContent(
       orderCode: orderCode,
-      amount: _finalTotal,
+      amount: _payableTotal,
     );
     debugPrint('VietQR URL: $qrContent');
 
@@ -507,7 +570,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       buildSlidePageRoute(
         BankTransferQrScreen(
           orderCode: orderCode,
-          amount: _finalTotal,
+          amount: _payableTotal,
           qrContent: qrContent,
           transferContent: transferContent,
           userId: pendingOrder.customerId ?? DBService.currentUserId() ?? 0,
@@ -535,9 +598,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (!result.paidAutomatically) {
         await DBService.orders().put(savedOrder.id, savedOrder);
       }
-      final loyaltyResult = await _maybeAddLoyaltyPoints(savedOrder);
       if (!mounted) return;
-      _openSuccess(savedOrder, loyaltyResult: loyaltyResult);
+      _openSuccess(savedOrder);
     } on TimeoutException {
       if (!mounted) return;
       _showSnack(
@@ -1014,12 +1076,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
             subtitle: const Text(
-              'Nhập tên và SĐT để cộng điểm sau khi thanh toán thành công.',
+              'Tra điểm bằng SĐT, có thể dùng điểm để giảm tiền và vẫn tích điểm sau đơn.',
             ),
             onChanged: (value) {
               setState(() {
                 _wantsLoyaltyPoints = value;
-                if (!value) _loyaltyResult = null;
+                if (!value) {
+                  _loyaltyCustomer = null;
+                  _usePoints = false;
+                  _pointsToUseController.clear();
+                }
               });
             },
           ),
@@ -1028,6 +1094,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             TextField(
               controller: _loyaltyNameController,
               textInputAction: TextInputAction.next,
+              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: 'Tên khách',
                 prefixIcon: const Icon(Icons.person_outline),
@@ -1043,10 +1110,31 @@ class _PaymentScreenState extends State<PaymentScreen> {
             TextField(
               controller: _loyaltyPhoneController,
               keyboardType: TextInputType.phone,
-              textInputAction: TextInputAction.done,
+              textInputAction: TextInputAction.search,
+              onChanged: (_) {
+                setState(() {
+                  _loyaltyCustomer = null;
+                  _usePoints = false;
+                  _pointsToUseController.clear();
+                });
+              },
               decoration: InputDecoration(
                 labelText: 'Số điện thoại',
                 prefixIcon: const Icon(Icons.phone_outlined),
+                suffixIcon: _isCheckingPoints
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        onPressed: _checkCustomerPoints,
+                        icon: const Icon(Icons.search),
+                        tooltip: 'Kiểm tra điểm',
+                      ),
                 filled: true,
                 fillColor: _surface,
                 border: OutlineInputBorder(
@@ -1054,26 +1142,112 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   borderSide: BorderSide.none,
                 ),
               ),
+              onSubmitted: (_) => _checkCustomerPoints(),
             ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isCheckingPoints ? null : _checkCustomerPoints,
+                icon: const Icon(Icons.manage_search),
+                label: const Text('Kiểm tra điểm'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primary,
+                  side: BorderSide(color: _primary.withValues(alpha: 0.5)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            if (_loyaltyCustomer != null) ...[
+              const SizedBox(height: 12),
+              _loyaltyLookupResult(),
+            ],
           ],
-          if (_isAddingPoints) ...[
+          if (_isCheckingPoints) ...[
             const SizedBox(height: 12),
             const LinearProgressIndicator(minHeight: 3),
           ],
-          if (_loyaltyResult != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                'Đã cộng ${_loyaltyResult!['pointsAdded']} điểm. Tổng điểm hiện tại: ${_loyaltyResult!['totalPoints']}',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _loyaltyLookupResult() {
+    final exists = _loyaltyCustomer?['exists'] == true;
+    final points = NumberParser.toInt(_loyaltyCustomer?['points']) ?? 0;
+    final maxPoints =
+        NumberParser.toInt(_loyaltyCustomer?['max_redeem_points']) ?? 0;
+    final maxDiscount = NumberParser.toDouble(
+      _loyaltyCustomer?['max_discount'],
+    );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: exists
+            ? _primary.withValues(alpha: 0.08)
+            : Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            exists
+                ? '${_loyaltyCustomer?['name'] ?? 'Khách hàng'} • $points điểm'
+                : (_loyaltyCustomer?['message']?.toString() ??
+                      'Khách hàng chưa có điểm'),
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          if (exists) ...[
+            const SizedBox(height: 6),
+            Text(
+              maxPoints >= 100
+                  ? 'Có thể dùng tối đa $maxPoints điểm (${_formatCurrency(maxDiscount)})'
+                  : 'Chưa đủ 100 điểm để sử dụng giảm giá',
             ),
+            if (maxPoints >= 100) ...[
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _usePoints,
+                title: const Text(
+                  'Sử dụng điểm',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _usePoints = value == true;
+                    if (_usePoints && _pointsToUseController.text.isEmpty) {
+                      _pointsToUseController.text = maxPoints.toString();
+                    }
+                    if (!_usePoints) _pointsToUseController.clear();
+                  });
+                },
+              ),
+              if (_usePoints) ...[
+                TextField(
+                  controller: _pointsToUseController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Số điểm sử dụng (bội số 100)',
+                    helperText: 'Tối đa $maxPoints điểm',
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 10),
+                _moneyRow('Sau voucher', _finalTotal),
+                _moneyRow('Giảm bằng điểm', -_pointsDiscount),
+                _moneyRow('Còn phải trả', _payableTotal, isTotal: true),
+              ],
+            ],
           ],
         ],
       ),
@@ -1195,8 +1369,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const SizedBox(height: 14),
           _moneyRow('Tạm tính', widget.totalAmount),
           if (_discountAmount > 0) _moneyRow('Giảm giá', -_discountAmount),
+          if (_pointsDiscount > 0)
+            _moneyRow('Giảm bằng điểm', -_pointsDiscount),
           const Divider(height: 24),
-          _moneyRow('Tổng thanh toán', _finalTotal, isTotal: true),
+          _moneyRow('Tổng thanh toán', _payableTotal, isTotal: true),
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(12),

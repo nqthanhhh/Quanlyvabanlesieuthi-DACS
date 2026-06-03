@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const loyalty = require("./loyalty.service");
 
 async function ordersColumns(connection) {
   const [rows] = await connection.execute(
@@ -61,11 +62,18 @@ async function getOrderForPayment(orderId, connection = pool) {
     ? "transfer_content"
     : "NULL AS transfer_content";
   const paidAtSelect = columns.has("paid_at") ? "paid_at" : "NULL AS paid_at";
+  const pointsUsedSelect = columns.has("points_used") ? "points_used" : "0 AS points_used";
+  const pointsEarnedSelect = columns.has("points_earned") ? "points_earned" : "0 AS points_earned";
+  const pointsDiscountSelect = columns.has("points_discount")
+    ? "points_discount"
+    : "0 AS points_discount";
   const [rows] = await connection.execute(
     `SELECT order_id, customer_id, employee_id, ${orderTypeSelect}, ${deliveryMethodSelect},
             total_amount, discount_amount, final_amount,
             ${paymentMethodSelect}, payment_status, status, ${orderStatusSelect},
-            ${transactionSelect}, ${transferContentSelect}, ${paidAtSelect}, created_at
+            ${transactionSelect}, ${transferContentSelect}, ${paidAtSelect},
+            ${pointsUsedSelect}, ${pointsEarnedSelect}, ${pointsDiscountSelect},
+            created_at
      FROM orders
      WHERE order_id = ?
      LIMIT 1`,
@@ -128,6 +136,8 @@ async function markOrderPaid(connection, orderId, { transactionId, gateway = "vn
     transactionId,
     paidAt: new Date(),
   });
+
+  await loyalty.finalizePaidOrderLoyalty(connection, orderId);
 
   return { ok: true, alreadyPaid: false, order };
 }

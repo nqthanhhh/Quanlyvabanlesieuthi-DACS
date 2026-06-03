@@ -1,6 +1,7 @@
 const express = require("express");
 const pool = require("../config/db");
 const { requireAuth, requireRoles } = require("../middlewares/auth.middleware");
+const loyalty = require("../services/loyalty.service");
 
 const router = express.Router();
 
@@ -86,6 +87,9 @@ function normalizeOrder(row) {
     paymentStatus: row.payment_status || row.latest_payment_status,
     paymentMethod,
     transferContent: row.transfer_content || null,
+    pointsUsed: Number(row.points_used || 0),
+    pointsEarned: Number(row.points_earned || 0),
+    pointsDiscount: Number(row.points_discount || 0),
     deliveryMethod: row.delivery_method,
     shippingAddress: row.shipping_address,
     transactionId: row.transaction_id || null,
@@ -893,6 +897,9 @@ router.get("/:id/payment-status", requireAuth, async (req, res) => {
         paidAt: order.paidAt || latestPayment.paid_at || null,
         transferContent: order.transferContent || null,
         totalAmount: order.totalAmount,
+        pointsUsed: order.pointsUsed || 0,
+        pointsEarned: order.pointsEarned || 0,
+        pointsDiscount: order.pointsDiscount || 0,
         isPaid: ["paid", "success"].includes(paymentStatus),
         isFailed: paymentStatus === "failed",
         isPending: !["paid", "success", "failed"].includes(paymentStatus),
@@ -1015,6 +1022,10 @@ router.post("/", async (req, res) => {
       transfer_content,
       qr_content,
       paid_at,
+      customer_phone,
+      customer_name,
+      use_points = false,
+      points_to_use = 0,
     } = req.body;
 
     // DEBUG: Log dữ liệu nhận được
@@ -1023,6 +1034,9 @@ router.post("/", async (req, res) => {
       discount_amount,
       user_id,
       customer_id,
+      customer_phone,
+      use_points,
+      points_to_use,
       employee_id,
       items_count: items?.length,
     });
@@ -1091,7 +1105,7 @@ router.post("/", async (req, res) => {
     const columns = await ordersColumns(connection);
     const requestUserId =
       Number(user_id || customer_id || req.get("x-user-id")) || null;
-    const customerId = customer_id || (order_type === "online" ? requestUserId : null);
+    let customerId = customer_id || (order_type === "online" ? requestUserId : null);
     const normalizedOrderStatus = normalizeOrderStatusValue(
       order_status || status,
       order_type,
@@ -1127,6 +1141,41 @@ router.post("/", async (req, res) => {
       normalizedItems.push({ productId, quantity, price, subtotal });
     }
 
+    const amountAfterVoucher = Math.max(0, total - finalDiscountAmount);
+    let pointsUsed = 0;
+    let pointsDiscount = 0;
+    let loyaltyCustomer = null;
+    const loyaltyPhone = loyalty.normalizePhone(customer_phone);
+    const wantsLoyalty =
+      Boolean(loyaltyPhone) ||
+      Boolean(customer_name) ||
+      use_points === true ||
+      use_points === "true" ||
+      Number(points_to_use || 0) > 0;
+
+    if (wantsLoyalty) {
+      loyaltyCustomer = await loyalty.ensureCustomerByPhone(connection, {
+        customerName: customer_name || "Khách hàng",
+        phone: loyaltyPhone,
+      });
+      customerId = loyaltyCustomer.user_id;
+    }
+
+    if (use_points === true || use_points === "true" || Number(points_to_use || 0) > 0) {
+      if (!loyaltyCustomer) {
+        throw new Error("Vui lòng tra khách hàng trước khi dùng điểm");
+      }
+      const redeem = loyalty.validateRedeem({
+        pointsToUse: Number(points_to_use || 0),
+        availablePoints: Number(loyaltyCustomer.points || 0),
+        amountAfterVoucher,
+      });
+      pointsUsed = redeem.pointsUsed;
+      pointsDiscount = redeem.pointsDiscount;
+    }
+
+    const finalAmount = Math.max(0, amountAfterVoucher - pointsDiscount);
+
     const insertColumns = [];
     const insertParams = [];
     const addColumn = (column, value) => {
@@ -1141,7 +1190,10 @@ router.post("/", async (req, res) => {
     addColumn("order_type", order_type);
     addColumn("total_amount", total);
     addColumn("discount_amount", finalDiscountAmount);
-    addColumn("final_amount", total - finalDiscountAmount);
+    if (columns.has("points_used")) addColumn("points_used", pointsUsed);
+    if (columns.has("points_earned")) addColumn("points_earned", 0);
+    if (columns.has("points_discount")) addColumn("points_discount", pointsDiscount);
+    addColumn("final_amount", finalAmount);
     if (columns.has("payment_method")) addColumn("payment_method", payment_method);
     addColumn("status", normalizedOrderStatus);
     addColumn("payment_status", normalizedPaymentStatus);
@@ -1197,7 +1249,7 @@ router.post("/", async (req, res) => {
     const paymentParams = [
       orderResult.insertId,
       payment_method,
-      total - finalDiscountAmount,
+      finalAmount,
       normalizedPaymentStatus,
     ];
     if (paymentColumns.has("transaction_id")) {
@@ -1215,6 +1267,10 @@ router.post("/", async (req, res) => {
        VALUES (${paymentInsertColumns.map(() => "?").join(", ")})`,
       paymentParams,
     );
+
+    if (["paid", "success"].includes(String(normalizedPaymentStatus || "").toLowerCase())) {
+      await loyalty.finalizePaidOrderLoyalty(connection, orderResult.insertId);
+    }
 
     await connection.commit();
     const order = await fetchOrder(orderResult.insertId);

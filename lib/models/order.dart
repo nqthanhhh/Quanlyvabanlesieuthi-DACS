@@ -64,6 +64,18 @@ class Order extends HiveObject {
   @HiveField(18)
   String? transferContent;
 
+  @HiveField(19)
+  int pointsUsed;
+
+  @HiveField(20)
+  int pointsEarned;
+
+  @HiveField(21)
+  double pointsDiscount;
+
+  @HiveField(22)
+  String? customerPhone;
+
   Order({
     required this.id,
     required this.orderDate,
@@ -84,6 +96,10 @@ class Order extends HiveObject {
     this.paidAt,
     this.qrContent,
     this.transferContent,
+    this.pointsUsed = 0,
+    this.pointsEarned = 0,
+    this.pointsDiscount = 0,
+    this.customerPhone,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -142,6 +158,22 @@ class Order extends HiveObject {
       transferContent: TypeConverters.toNullableString(
         json['transfer_content'] ?? json['transferContent'],
       ),
+      pointsUsed:
+          TypeConverters.toNullableInt(
+            json['points_used'] ?? json['pointsUsed'],
+          ) ??
+          0,
+      pointsEarned:
+          TypeConverters.toNullableInt(
+            json['points_earned'] ?? json['pointsEarned'],
+          ) ??
+          0,
+      pointsDiscount: TypeConverters.toDouble(
+        json['points_discount'] ?? json['pointsDiscount'] ?? 0,
+      ),
+      customerPhone: TypeConverters.toNullableString(
+        json['customer_phone'] ?? json['customerPhone'] ?? json['phone'],
+      ),
     );
   }
 
@@ -163,6 +195,13 @@ class Order extends HiveObject {
       'paid_at': paidAt?.toIso8601String(),
       'qr_content': qrContent,
       'transfer_content': transferContent,
+      'points_used': pointsUsed,
+      'points_earned': pointsEarned,
+      'points_discount': pointsDiscount,
+      'customer_phone': customerPhone,
+      'customer_name': customerName,
+      'use_points': pointsUsed > 0,
+      'points_to_use': pointsUsed,
       'items': items.map((e) => e.toJson()).toList(),
     };
   }

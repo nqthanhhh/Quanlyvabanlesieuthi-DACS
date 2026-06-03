@@ -25,6 +25,7 @@ class AddProductScreen extends StatefulWidget {
 }
 
 class _AddProductScreenState extends State<AddProductScreen> {
+  static const String _allInventoryCategory = 'Tất cả';
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _idController;
   late TextEditingController _nameController;
@@ -33,6 +34,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   late TextEditingController _stockQuantityController;
   bool _isProcessing = false;
   String? _selectedInventoryId;
+  String _selectedInventoryCategory = _allInventoryCategory;
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryId;
 
@@ -82,6 +84,137 @@ class _AddProductScreenState extends State<AddProductScreen> {
     } catch (_) {
       if (mounted) setState(() => _categories = []);
     }
+  }
+
+  int? _categoryIdOf(Map<String, dynamic> category) {
+    final id = category['category_id'];
+    if (id is int) return id;
+    if (id is num) return id.toInt();
+    return int.tryParse(id?.toString() ?? '');
+  }
+
+  String _inventoryCategoryName(InventoryItem item) {
+    final categoryId = item.categoryId;
+    if (categoryId == null) return 'Chưa phân loại';
+
+    for (final category in _categories) {
+      if (_categoryIdOf(category) == categoryId) {
+        final name = category['category_name']?.toString().trim();
+        if (name != null && name.isNotEmpty) return name;
+      }
+    }
+
+    return 'Danh mục $categoryId';
+  }
+
+  List<String> _inventoryCategoryFilterOptions(List<InventoryItem> items) {
+    final names =
+        items
+            .map(_inventoryCategoryName)
+            .where((name) => name.trim().isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return [_allInventoryCategory, ...names];
+  }
+
+  Widget _buildInventorySuggestionTile(InventoryItem item) {
+    final bool isSelected = _selectedInventoryId == item.id;
+    final leading = _inventoryThumbnail(item);
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(
+        vertical: 4.0,
+        horizontal: 8.0,
+      ),
+      leading: isSelected
+          ? const Icon(Icons.check_circle, color: Colors.green)
+          : leading,
+      title: Text(item.name),
+      subtitle: Text(
+        'Mã vạch / mã nội bộ: ${item.id} • Tồn: ${item.stockQuantity} ${item.unit}',
+      ),
+      trailing: ElevatedButton(
+        onPressed: _isProcessing
+            ? null
+            : () => _chooseQuantityFromInventory(item),
+        child: const Text('Chọn'),
+      ),
+      onTap: _isProcessing ? null : () => _chooseQuantityFromInventory(item),
+    );
+  }
+
+  Widget _buildGroupedInventorySuggestions(
+    List<InventoryItem> items,
+    Map<String, List<InventoryItem>> groupedItems,
+    List<String> categoryOptions,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Các sản phẩm từ kho',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 38,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: categoryOptions
+                .map(
+                  (category) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(category),
+                      selected: _selectedInventoryCategory == category,
+                      onSelected: (_) {
+                        setState(() {
+                          _selectedInventoryCategory = category;
+                        });
+                      },
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: math.min(
+            items.length * 86.0 + groupedItems.length * 38.0,
+            460.0,
+          ),
+          child: ListView(
+            children: groupedItems.entries.expand((entry) {
+              return <Widget>[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  color: Colors.blue.shade50,
+                  child: Text(
+                    '${entry.key} (${entry.value.length})',
+                    style: TextStyle(
+                      color: Colors.blue.shade800,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                ...entry.value.expand(
+                  (item) => <Widget>[
+                    _buildInventorySuggestionTile(item),
+                    const Divider(height: 1),
+                  ],
+                ),
+              ];
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
   }
 
   @override
@@ -431,57 +564,52 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                   if (items.isEmpty) return const SizedBox.shrink();
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Các sản phẩm từ kho',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      // make the suggestion list taller when there are more items
-                      SizedBox(
-                        height: math.min(items.length * 80.0 + 8.0, 420.0),
-                        child: ListView.separated(
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, idx) {
-                            final it = items[idx];
-                            final bool isSelected =
-                                _selectedInventoryId == it.id;
+                  final categoryOptions = _inventoryCategoryFilterOptions(
+                    items,
+                  );
+                  if (!categoryOptions.contains(_selectedInventoryCategory)) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        setState(() {
+                          _selectedInventoryCategory = _allInventoryCategory;
+                        });
+                      }
+                    });
+                  }
 
-                            final leading = _inventoryThumbnail(it);
+                  final filteredItems =
+                      _selectedInventoryCategory == _allInventoryCategory
+                      ? items
+                      : items
+                            .where(
+                              (item) =>
+                                  _inventoryCategoryName(item) ==
+                                  _selectedInventoryCategory,
+                            )
+                            .toList();
 
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 4.0,
-                                horizontal: 8.0,
-                              ),
-                              leading: isSelected
-                                  ? const Icon(
-                                      Icons.check_circle,
-                                      color: Colors.green,
-                                    )
-                                  : leading,
-                              title: Text(it.name),
-                              subtitle: Text(
-                                'Mã vạch / mã nội bộ: ${it.id} • Tồn: ${it.stockQuantity} ${it.unit}',
-                              ),
-                              trailing: ElevatedButton(
-                                onPressed: _isProcessing
-                                    ? null
-                                    : () => _chooseQuantityFromInventory(it),
-                                child: const Text('Chọn'),
-                              ),
-                              onTap: _isProcessing
-                                  ? null
-                                  : () => _chooseQuantityFromInventory(it),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
+                  filteredItems.sort((a, b) {
+                    final categoryCompare = _inventoryCategoryName(
+                      a,
+                    ).compareTo(_inventoryCategoryName(b));
+                    if (categoryCompare != 0) return categoryCompare;
+                    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+                  });
+
+                  final groupedItems = <String, List<InventoryItem>>{};
+                  for (final item in filteredItems) {
+                    groupedItems
+                        .putIfAbsent(
+                          _inventoryCategoryName(item),
+                          () => <InventoryItem>[],
+                        )
+                        .add(item);
+                  }
+
+                  return _buildGroupedInventorySuggestions(
+                    filteredItems,
+                    groupedItems,
+                    categoryOptions,
                   );
                 },
               ),

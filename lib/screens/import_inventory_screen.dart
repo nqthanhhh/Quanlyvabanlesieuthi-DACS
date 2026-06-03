@@ -31,6 +31,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
   final TextEditingController _importPriceController = TextEditingController();
   final TextEditingController _unitController = TextEditingController();
   final TextEditingController _qtyController = TextEditingController(text: '0');
+  final TextEditingController _categoryController = TextEditingController();
 
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryId;
@@ -49,9 +50,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
         _categories = categories;
         _selectedCategoryId =
             _selectedCategoryId ??
-            (categories.isNotEmpty
-                ? categories.first['category_id'] as int
-                : null);
+            (categories.isNotEmpty ? _categoryIdOf(categories.first) : null);
       });
     } catch (_) {
       if (!mounted) return;
@@ -59,6 +58,93 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
         _categories = [];
         _selectedCategoryId = null;
       });
+    }
+  }
+
+  int? _categoryIdOf(Map<String, dynamic> category) {
+    final id = category['category_id'];
+    if (id is int) return id;
+    if (id is num) return id.toInt();
+    return int.tryParse(id?.toString() ?? '');
+  }
+
+  Future<void> _createCategory() async {
+    _categoryController.clear();
+    final formKey = GlobalKey<FormState>();
+    final name = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Thêm danh mục mới'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: _categoryController,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Tên danh mục',
+              border: OutlineInputBorder(),
+            ),
+            validator: (v) {
+              final value = v?.trim() ?? '';
+              if (value.isEmpty) return 'Nhập tên danh mục';
+              final exists = _categories.any(
+                (c) =>
+                    c['category_name']?.toString().trim().toLowerCase() ==
+                    value.toLowerCase(),
+              );
+              if (exists) return 'Danh mục đã tồn tại';
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(null),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.of(
+                  dialogContext,
+                ).pop(_categoryController.text.trim());
+              }
+            },
+            child: const Text('Thêm'),
+          ),
+        ],
+      ),
+    );
+
+    if (name == null || name.isEmpty) return;
+
+    setState(() => _processing = true);
+    try {
+      final created = await ApiService.createCategory(name);
+      final createdId = _categoryIdOf(created);
+      await _loadCategories();
+      if (!mounted) return;
+      setState(() {
+        if (createdId != null) {
+          _selectedCategoryId = createdId;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã thêm danh mục "$name"'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lỗi khi thêm danh mục: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _processing = false);
     }
   }
 
@@ -75,6 +161,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
     _importPriceController.dispose();
     _unitController.dispose();
     _qtyController.dispose();
+    _categoryController.dispose();
     super.dispose();
   }
 
@@ -635,7 +722,13 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int>(
-                    value: _selectedCategoryId,
+                    key: ValueKey(_selectedCategoryId),
+                    initialValue:
+                        _categories.any(
+                          (c) => _categoryIdOf(c) == _selectedCategoryId,
+                        )
+                        ? _selectedCategoryId
+                        : null,
                     decoration: const InputDecoration(
                       labelText: 'Danh mục sản phẩm',
                       border: OutlineInputBorder(),
@@ -643,7 +736,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                     items: _categories
                         .map(
                           (c) => DropdownMenuItem<int>(
-                            value: c['category_id'] as int,
+                            value: _categoryIdOf(c),
                             child: Text(c['category_name'].toString()),
                           ),
                         )
@@ -651,6 +744,15 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
                     onChanged: (v) => setState(() => _selectedCategoryId = v),
                     validator: (v) =>
                         v == null ? 'Vui lòng chọn danh mục' : null,
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _processing ? null : _createCategory,
+                      icon: const Icon(Icons.add_circle_outline),
+                      label: const Text('Thêm danh mục mới'),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(

@@ -50,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _currentUserEmail;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _selectedCategory = 'Tất cả';
+  String _selectedCategory = _allCategoryLabel;
   HomeFilterOption _filterOption = HomeFilterOption.bestSeller;
   RoleBottomTab _currentBottomTab = RoleBottomTab.home;
   // *** INFINITE SCROLL LOGIC ***
@@ -62,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const Color _primaryGreen = Color(0xFF1B7F4D);
   static const Color _surface = Color(0xFFF6F7F9);
+  static const String _allCategoryLabel = 'Tất cả';
 
   bool get _isGuest => DBService.currentUserId() == null;
 
@@ -290,6 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedCategory = _allCategoryLabel;
     _loadCurrentUserCart();
     _scrollController.addListener(_onScroll);
     _searchController.addListener(_onSearchChanged);
@@ -368,7 +370,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _categoryOf(Product product) {
-    final explicit = (product.categoryName ?? '').trim().toLowerCase();
+    final explicitLabel = (product.categoryName ?? '').trim();
+    if (explicitLabel.isNotEmpty) {
+      return explicitLabel;
+    }
+    final explicit = explicitLabel.toLowerCase();
     if (explicit.contains('trái') || explicit.contains('hoa quả')) {
       return 'Trái cây';
     }
@@ -409,10 +415,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'Khác';
   }
 
+  List<String> _categoryFilterOptions() {
+    final names = <String>{};
+
+    for (final product in DBService.products().values) {
+      final name = _categoryOf(product).trim();
+      if (name.isNotEmpty && name != _allCategoryLabel) {
+        names.add(name);
+      }
+    }
+
+    final ordered = names.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return [_allCategoryLabel, ...ordered];
+  }
+
   List<Product> _applyFilters(List<Product> items) {
     Iterable<Product> result = items.where((p) => p.isActive);
 
-    if (_selectedCategory != 'Tất cả') {
+    if (_selectedCategory != _allCategoryLabel) {
       result = result.where((p) => _categoryOf(p) == _selectedCategory);
     }
 
@@ -693,25 +714,29 @@ class _HomeScreenState extends State<HomeScreen> {
         _buildMenuItem(
           icon: Icons.inventory_2_outlined,
           title: 'Quản lý sản phẩm',
-          onTap: () {
+          onTap: () async {
             Navigator.of(context).pop();
-            Navigator.of(context).push(
+            await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const ProductManagementScreen(),
               ),
             );
+            if (!mounted) return;
+            setState(() {});
           },
         ),
         _buildMenuItem(
           icon: Icons.inventory,
           title: 'Quản lý kho hàng',
-          onTap: () {
+          onTap: () async {
             Navigator.of(context).pop();
-            Navigator.of(context).push(
+            await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const InventoryManagementScreen(),
               ),
             );
+            if (!mounted) return;
+            setState(() {});
           },
         ),
       ]);
@@ -1168,7 +1193,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 38,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
-                      children: ['Tất cả', 'Trái cây', 'Đồ uống', 'Gia vị']
+                      children: _categoryFilterOptions()
                           .map(
                             (category) => Padding(
                               padding: const EdgeInsets.only(right: 8),

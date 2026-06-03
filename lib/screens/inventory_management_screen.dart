@@ -26,7 +26,39 @@ class InventoryManagementScreen extends StatefulWidget {
 
 class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
-  String _selectedCategory = 'Tất cả';
+  static const String _allCategoryLabel = 'Tất cả';
+  String _selectedCategory = _allCategoryLabel;
+  Map<int, String> _categoryNamesById = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await ApiService.fetchCategories();
+      if (!mounted) return;
+      setState(() {
+        _categoryNamesById = {
+          for (final category in categories)
+            if (_categoryIdOf(category) != null)
+              _categoryIdOf(category)!:
+                  category['category_name']?.toString().trim() ?? '',
+        }..removeWhere((_, name) => name.isEmpty);
+      });
+    } catch (_) {
+      if (mounted) setState(() => _categoryNamesById = {});
+    }
+  }
+
+  int? _categoryIdOf(Map<String, dynamic> category) {
+    final id = category['category_id'];
+    if (id is int) return id;
+    if (id is num) return id.toInt();
+    return int.tryParse(id?.toString() ?? '');
+  }
 
   @override
   void dispose() {
@@ -63,6 +95,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const ImportInventoryScreen()));
+    if (!mounted) return;
+    await _loadCategories();
   }
 
   void _onHistoryInventoryPressed() async {
@@ -355,6 +389,13 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   }
 
   String _inventoryCategory(InventoryItem item, List<Product> products) {
+    final itemCategoryId = item.categoryId;
+    if (itemCategoryId != null) {
+      final name = _categoryNamesById[itemCategoryId]?.trim();
+      if (name != null && name.isNotEmpty) return name;
+      return 'Danh mục $itemCategoryId';
+    }
+
     Product? mappedProduct;
     for (final p in products) {
       if (p.barcode == item.id || p.id == item.id) {
@@ -615,21 +656,21 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
               final items = box.values.toList();
               final categories =
                   <String>{
-                    'Tất cả',
+                    _allCategoryLabel,
                     ...items.whereType<InventoryItem>().map(
                       (it) => _inventoryCategory(it, products),
                     ),
                   }.toList()..sort((a, b) {
-                    if (a == 'Tất cả') return -1;
-                    if (b == 'Tất cả') return 1;
+                    if (a == _allCategoryLabel) return -1;
+                    if (b == _allCategoryLabel) return 1;
                     return a.compareTo(b);
                   });
 
-              if (_selectedCategory != 'Tất cả' &&
+              if (_selectedCategory != _allCategoryLabel &&
                   !categories.contains(_selectedCategory)) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted) {
-                    setState(() => _selectedCategory = 'Tất cả');
+                    setState(() => _selectedCategory = _allCategoryLabel);
                   }
                 });
               }
@@ -679,7 +720,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                 }).toList();
 
                 List<InventoryItem> displayItems = items;
-                if (_selectedCategory != 'Tất cả') {
+                if (_selectedCategory != _allCategoryLabel) {
                   displayItems = items
                       .where(
                         (it) =>

@@ -149,6 +149,8 @@ router.put("/items/:id", async (req, res) => {
       unit,
       stock,
       stockQuantity,
+      category_id,
+      categoryId,
       status,
     } = req.body;
     const nextImportPrice = import_price ?? importPrice;
@@ -166,8 +168,9 @@ router.put("/items/:id", async (req, res) => {
            import_price = COALESCE(?, import_price),
            unit = COALESCE(?, unit),
            stock = COALESCE(?, stock),
+           category_id = COALESCE(?, category_id),
            status = COALESCE(?, status)
-       WHERE inventory_item_id = ?`,
+       WHERE inventory_item_id = ? OR barcode = ?`,
       [
         barcode || null,
         item_name || name || null,
@@ -178,13 +181,17 @@ router.put("/items/:id", async (req, res) => {
         stock == null && stockQuantity == null
           ? null
           : Number(stock ?? stockQuantity),
+        category_id == null && categoryId == null
+          ? null
+          : Number(category_id ?? categoryId),
         status || null,
+        req.params.id,
         req.params.id,
       ],
     );
     const [rows] = await pool.execute(
-      "SELECT * FROM inventory_items WHERE inventory_item_id = ?",
-      [req.params.id],
+      "SELECT * FROM inventory_items WHERE inventory_item_id = ? OR barcode = ?",
+      [req.params.id, req.params.id],
     );
     if (rows.length === 0) {
       return res

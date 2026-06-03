@@ -10,6 +10,7 @@ import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../utils/constants.dart';
+import '../utils/product_asset_resolver.dart';
 import 'edit_inventory_item_screen.dart';
 import 'inventory_check_screen.dart';
 import 'inventory_history_screen.dart'; // Màn hình lịch sử xuất nhập kho
@@ -253,10 +254,14 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   }
 
   Widget _buildInventoryImage(InventoryItem item) {
-    final stored = ApiService.resolveBackendUrl(
-      (DBService.productImages().get(item.id) ?? item.imageUrl ?? '')
-          .toString(),
-    );
+    final storedRaw =
+        (DBService.productImages().get(item.id) ?? item.imageUrl ?? '')
+            .toString();
+    final stored = ApiService.resolveBackendUrl(storedRaw);
+
+    if (storedRaw.trim().startsWith('assets/')) {
+      return _inventoryAssetImage(item, storedRaw.trim());
+    }
 
     if (stored.startsWith('http')) {
       return ClipRRect(
@@ -266,7 +271,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
           width: 48,
           height: 48,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _inventoryPlaceholderIcon(),
+          errorBuilder: (_, __, ___) => _inventoryAssetImage(item),
         ),
       );
     }
@@ -283,11 +288,25 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
       } catch (_) {}
     }
 
-    return _inventoryPlaceholderIcon();
+    return _inventoryAssetImage(item);
   }
 
-  Widget _inventoryPlaceholderIcon() {
-    return Icon(Icons.inventory_2_outlined, color: Colors.blue.shade700);
+  Widget _inventoryAssetImage(InventoryItem item, [String? preferredAsset]) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.asset(
+        preferredAsset ?? ProductAssetResolver.forInventoryItem(item),
+        width: 48,
+        height: 48,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Image.asset(
+          ProductAssetResolver.defaultProductAsset,
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
   }
 
   Widget _inventoryInfoChip(

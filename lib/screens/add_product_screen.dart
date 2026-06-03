@@ -9,6 +9,7 @@ import '../models/product.dart';
 import '../models/inventory_item.dart';
 import '../services/db_service.dart';
 import '../services/api_service.dart';
+import '../utils/product_asset_resolver.dart';
 
 class AddProductScreen extends StatefulWidget {
   final Product? product;
@@ -212,6 +213,54 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+  Widget _inventoryThumbnail(InventoryItem item) {
+    final storedRaw =
+        (DBService.productImages().get(item.id) ?? item.imageUrl ?? '')
+            .toString();
+    final stored = ApiService.resolveBackendUrl(storedRaw);
+
+    Widget assetImage([String? preferredAsset]) {
+      return Image.asset(
+        preferredAsset ?? ProductAssetResolver.forInventoryItem(item),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Image.asset(
+          ProductAssetResolver.defaultProductAsset,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+
+    Widget framed(Widget child) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(width: 56, height: 56, child: child),
+      );
+    }
+
+    if (storedRaw.trim().startsWith('assets/')) {
+      return framed(assetImage(storedRaw.trim()));
+    }
+    if (stored.startsWith('http')) {
+      return framed(
+        Image.network(
+          stored,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => assetImage(),
+        ),
+      );
+    }
+    if (stored.isNotEmpty) {
+      try {
+        final file = File(stored);
+        if (file.existsSync()) {
+          return framed(Image.file(file, fit: BoxFit.cover));
+        }
+      } catch (_) {}
+    }
+
+    return framed(assetImage());
+  }
+
   Future<void> _saveProduct() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -401,43 +450,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             final bool isSelected =
                                 _selectedInventoryId == it.id;
 
-                            final imgPath = DBService.productImages().get(
-                              it.id,
-                            );
-                            Widget leading;
-                            try {
-                              if (imgPath != null &&
-                                  imgPath.isNotEmpty &&
-                                  File(imgPath).existsSync()) {
-                                leading = ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: SizedBox(
-                                    width: 56,
-                                    height: 56,
-                                    child: Image.file(
-                                      File(imgPath),
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                );
-                              } else {
-                                leading = CircleAvatar(
-                                  child: Text(
-                                    it.name.isNotEmpty
-                                        ? it.name[0].toUpperCase()
-                                        : '?',
-                                  ),
-                                );
-                              }
-                            } catch (_) {
-                              leading = CircleAvatar(
-                                child: Text(
-                                  it.name.isNotEmpty
-                                      ? it.name[0].toUpperCase()
-                                      : '?',
-                                ),
-                              );
-                            }
+                            final leading = _inventoryThumbnail(it);
 
                             return ListTile(
                               contentPadding: const EdgeInsets.symmetric(

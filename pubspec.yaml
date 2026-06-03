@@ -50,3 +50,4 @@ flutter:
   # PHẦN KHAI BÁO ASSETS ĐÚNG CẤU TRÚC
   assets:
     - assets/images/
+    - assets/products/

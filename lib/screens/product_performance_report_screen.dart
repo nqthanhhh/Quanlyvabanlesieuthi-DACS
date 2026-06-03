@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../utils/product_asset_resolver.dart';
 import '../utils/type_converters.dart';
 
 enum _PerformanceRange { today, sevenDays, thirtyDays, month }
@@ -1268,12 +1269,18 @@ class _ProductThumb extends StatelessWidget {
     final resolvedUrl = imageUrl.startsWith('/')
         ? '${ApiService.baseUrl}$imageUrl'
         : imageUrl;
-    final fallback = Container(
+    final fallbackAsset = ProductAssetResolver.forMap(product);
+    final fallback = Image.asset(
+      fallbackAsset,
       width: size,
       height: size,
-      color: const Color(0xFFE9F5EF),
-      alignment: Alignment.center,
-      child: const Icon(Icons.inventory_2_outlined, color: Color(0xFF146C43)),
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => Image.asset(
+        ProductAssetResolver.defaultProductAsset,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+      ),
     );
 
     return ClipRRect(
@@ -1281,7 +1288,9 @@ class _ProductThumb extends StatelessWidget {
       child: SizedBox(
         width: size,
         height: size,
-        child: resolvedUrl.startsWith('http')
+        child: imageUrl.startsWith('assets/')
+            ? fallback
+            : resolvedUrl.startsWith('http')
             ? Image.network(
                 resolvedUrl,
                 fit: BoxFit.cover,

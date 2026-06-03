@@ -4,6 +4,8 @@ import '../models/order.dart';
 import '../models/order_line.dart';
 import '../models/product.dart';
 import '../services/db_service.dart';
+import '../utils/product_asset_resolver.dart';
+import '../widgets/product_image_widget.dart';
 
 class OrderDetailScreen extends StatelessWidget {
   final Order order;
@@ -15,7 +17,7 @@ class OrderDetailScreen extends StatelessWidget {
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
       (match) => '${match[1]}.',
     );
-    return '$text₫';
+    return '$textâ‚«';
   }
 
   String _formatDate(DateTime date) {
@@ -29,43 +31,22 @@ class OrderDetailScreen extends StatelessWidget {
     );
   }
 
-  String _statusText(String status) {
-    switch (status.toLowerCase()) {
-      case 'waiting_confirm':
-      case 'pending':
-        return 'Chờ xác nhận';
-      case 'confirmed':
-        return 'Đã xác nhận';
-      case 'shipping':
-      case 'preparing':
-        return 'Đang giao';
-      case 'completed':
-      case 'hoàn thành':
-        return 'Thành công';
-      case 'rejected':
-      case 'cancelled':
-        return 'Đã từ chối';
-      default:
-        return status.isEmpty ? 'Chưa rõ' : status;
-    }
-  }
-
   Color _statusColor(String status) {
     final value = status.toLowerCase();
-    if (value.contains('hoàn') ||
+    if (value.contains('hoÃ n') ||
         value.contains('completed') ||
         value.contains('paid')) {
       return Colors.green;
     }
-    if (value.contains('chờ') ||
+    if (value.contains('chá»') ||
         value.contains('pending') ||
         value.contains('confirm') ||
         value.contains('processing') ||
-        value.contains('đang')) {
+        value.contains('Ä‘ang')) {
       return Colors.orange;
     }
-    if (value.contains('hủy') ||
-        value.contains('từ chối') ||
+    if (value.contains('há»§y') ||
+        value.contains('tá»« chá»‘i') ||
         value.contains('cancel') ||
         value.contains('reject') ||
         value.contains('rejected')) {
@@ -78,7 +59,7 @@ class OrderDetailScreen extends StatelessWidget {
     final product = _productForLine(item);
     final name = item.productName.isNotEmpty
         ? item.productName
-        : product?.name ?? 'Sản phẩm';
+        : product?.name ?? 'Sáº£n pháº©m';
     final total = item.quantity * item.pricePerUnit;
 
     return Padding(
@@ -86,6 +67,8 @@ class OrderDetailScreen extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _productThumbnail(product),
+          const SizedBox(width: 10),
           Text(
             'x${item.quantity}',
             style: const TextStyle(
@@ -128,18 +111,18 @@ class OrderDetailScreen extends StatelessWidget {
   String _paymentMethodLabel(String? value) {
     switch ((value ?? '').toLowerCase()) {
       case 'cash':
-        return 'Tiền mặt';
+        return 'Tiá»n máº·t';
       case 'card':
-        return 'Thẻ';
+        return 'Tháº»';
       case 'bank_transfer':
       case 'transfer':
-        return 'Chuyển khoản';
+        return 'Chuyá»ƒn khoáº£n';
       case 'momo':
         return 'MoMo';
       case 'cod':
         return 'COD';
       case 'ewallet':
-        return 'QR mô phỏng (demo)';
+        return 'QR mÃ´ phá»ng (demo)';
       case 'vnpay':
         return 'VNPay';
       default:
@@ -151,13 +134,13 @@ class OrderDetailScreen extends StatelessWidget {
     switch ((value ?? '').toLowerCase()) {
       case 'paid':
       case 'success':
-        return 'Đã thanh toán';
+        return 'ÄÃ£ thanh toÃ¡n';
       case 'pending':
-        return 'Chờ thanh toán';
+        return 'Chá» thanh toÃ¡n';
       case 'failed':
-        return 'Thanh toán lỗi';
+        return 'Thanh toÃ¡n lá»—i';
       case 'refunded':
-        return 'Đã hoàn tiền';
+        return 'ÄÃ£ hoÃ n tiá»n';
       default:
         return value == null || value.trim().isEmpty ? '-' : value;
     }
@@ -170,7 +153,7 @@ class OrderDetailScreen extends StatelessWidget {
         return AlertDialog(
           title: const Center(
             child: Text(
-              'HÓA ĐƠN BÁN HÀNG',
+              'HÃ“A ÄÆ N BÃN HÃ€NG',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
             ),
           ),
@@ -180,24 +163,27 @@ class OrderDetailScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Center(
-                  child: Text('CỬA HÀNG ABC', style: TextStyle(fontSize: 16)),
+                  child: Text(
+                    'Cá»¬A HÃ€NG ABC',
+                    style: TextStyle(fontSize: 16),
+                  ),
                 ),
                 const Center(
                   child: Text(
-                    'Địa chỉ: 123 Đường XYZ',
+                    'Äá»‹a chá»‰: 123 ÄÆ°á»ng XYZ',
                     style: TextStyle(fontSize: 12),
                   ),
                 ),
                 const SizedBox(height: 15),
                 Text(
-                  'Mã đơn: ${order.id}',
+                  'MÃ£ Ä‘Æ¡n: ${order.id}',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                Text('Khách hàng: ${order.customerName}'),
-                Text('Ngày: ${_formatDate(order.orderDate.toLocal())}'),
+                Text('KhÃ¡ch hÃ ng: ${order.customerName}'),
+                Text('NgÃ y: ${_formatDate(order.orderDate.toLocal())}'),
                 const Divider(),
                 const Text(
-                  'SẢN PHẨM',
+                  'Sáº¢N PHáº¨M',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 5),
@@ -207,29 +193,33 @@ class OrderDetailScreen extends StatelessWidget {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text('${item.productName} (x${item.quantity})'),
+                          child: Text(
+                            '${item.productName} (x${item.quantity})',
+                          ),
                         ),
-                        Text(_formatCurrency(item.quantity * item.pricePerUnit)),
+                        Text(
+                          _formatCurrency(item.quantity * item.pricePerUnit),
+                        ),
                       ],
                     ),
                   ),
                 ),
                 const Divider(),
-                _invoiceLine('Tạm tính', _formatCurrency(_itemsSubtotal())),
+                _invoiceLine('Táº¡m tÃ­nh', _formatCurrency(_itemsSubtotal())),
                 if (order.discountAmount > 0)
                   _invoiceLine(
-                    'Giảm giá',
+                    'Giáº£m giÃ¡',
                     '-${_formatCurrency(order.discountAmount)}',
                   ),
                 _invoiceLine(
-                  'Tổng thanh toán',
+                  'Tá»•ng thanh toÃ¡n',
                   _formatCurrency(order.totalAmount),
                   isEmphasis: true,
                 ),
                 const SizedBox(height: 15),
                 const Center(
                   child: Text(
-                    'Cảm ơn quý khách!',
+                    'Cáº£m Æ¡n quÃ½ khÃ¡ch!',
                     style: TextStyle(fontStyle: FontStyle.italic),
                   ),
                 ),
@@ -239,14 +229,14 @@ class OrderDetailScreen extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Đóng'),
+              child: const Text('ÄÃ³ng'),
             ),
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Đang gửi lệnh in... (Mô phỏng)'),
+                    content: Text('Äang gá»­i lá»‡nh in... (MÃ´ phá»ng)'),
                   ),
                 );
               },
@@ -266,13 +256,12 @@ class OrderDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = _statusColor(order.status);
-    final statusText = _statusText(order.status);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F7FB),
       appBar: AppBar(
         title: const Text(
-          'Chi tiết đơn hàng',
+          'Chi tiáº¿t Ä‘Æ¡n hÃ ng',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -294,7 +283,7 @@ class OrderDetailScreen extends StatelessWidget {
               onPressed: () => _showInvoiceDialog(context),
               icon: const Icon(Icons.print, color: Colors.white),
               label: const Text(
-                'In hóa đơn',
+                'In hÃ³a Ä‘Æ¡n',
                 style: TextStyle(color: Colors.white, fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
@@ -327,7 +316,7 @@ class OrderDetailScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Đơn #${order.id}',
+                    'ÄÆ¡n #${order.id}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -344,7 +333,7 @@ class OrderDetailScreen extends StatelessWidget {
               ),
             ),
             _statusPill(
-              order.status.isEmpty ? 'Chưa có trạng thái' : order.status,
+              order.status.isEmpty ? 'ChÆ°a cÃ³ tráº¡ng thÃ¡i' : order.status,
               statusColor,
             ),
           ],
@@ -366,7 +355,7 @@ class OrderDetailScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Tóm tắt đơn hàng',
+              'TÃ³m táº¯t Ä‘Æ¡n hÃ ng',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 18),
@@ -374,28 +363,30 @@ class OrderDetailScreen extends StatelessWidget {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Center(
-                  child: Text('Đơn hàng chưa có dữ liệu sản phẩm.'),
+                  child: Text(
+                    'ÄÆ¡n hÃ ng chÆ°a cÃ³ dá»¯ liá»‡u sáº£n pháº©m.',
+                  ),
                 ),
               )
             else ...[
               ...order.items.map(_buildLineItem),
               const SizedBox(height: 8),
               _summaryLine(
-                'Tổng (${_totalQuantity()} món)',
+                'Tá»•ng (${_totalQuantity()} mÃ³n)',
                 _formatCurrency(_itemsSubtotal()),
                 isEmphasis: true,
               ),
               if (order.discountAmount > 0) ...[
                 const SizedBox(height: 18),
                 _summaryLine(
-                  'Giảm giá',
+                  'Giáº£m giÃ¡',
                   '-${_formatCurrency(order.discountAmount)}',
                   valueColor: Colors.green.shade700,
                 ),
               ],
               const SizedBox(height: 18),
               _summaryLine(
-                'Tổng thanh toán',
+                'Tá»•ng thanh toÃ¡n',
                 _formatCurrency(order.totalAmount),
                 isEmphasis: true,
               ),
@@ -405,6 +396,7 @@ class OrderDetailScreen extends StatelessWidget {
       ),
     );
   }
+
   Widget _buildOrderInfoCard() {
     return Card(
       elevation: 0,
@@ -418,29 +410,31 @@ class OrderDetailScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Thông tin đơn hàng',
+              'ThÃ´ng tin Ä‘Æ¡n hÃ ng',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 16),
             _infoLine(
-              'Ghi chú',
-              order.note?.trim().isNotEmpty == true ? order.note! : 'Không có',
+              'Ghi chÃº',
+              order.note?.trim().isNotEmpty == true
+                  ? order.note!
+                  : 'KhÃ´ng cÃ³',
             ),
-            _infoLine('Mã đơn hàng', order.id),
+            _infoLine('MÃ£ Ä‘Æ¡n hÃ ng', order.id),
             _infoLine(
-              'Thời gian đặt hàng',
+              'Thá»i gian Ä‘áº·t hÃ ng',
               _formatDate(order.orderDate.toLocal()),
             ),
-            _infoLine('Thanh toán', _paymentMethodLabel(order.paymentMethod)),
+            _infoLine('Thanh toÃ¡n', _paymentMethodLabel(order.paymentMethod)),
             _infoLine(
-              'Trạng thái thanh toán',
+              'Tráº¡ng thÃ¡i thanh toÃ¡n',
               _paymentStatusLabel(order.paymentStatus),
             ),
             _infoLine(
-              'Nhận hàng',
+              'Nháº­n hÃ ng',
               order.shippingAddress?.trim().isNotEmpty == true
                   ? order.shippingAddress!
-                  : 'Tại cửa hàng',
+                  : 'Táº¡i cá»­a hÃ ng',
             ),
           ],
         ),
@@ -449,26 +443,25 @@ class OrderDetailScreen extends StatelessWidget {
   }
 
   Widget _productThumbnail(Product? product) {
-    final imageUrl = product?.imageUrl;
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
         width: 52,
         height: 52,
         color: Colors.blue.shade50,
-        child: imageUrl != null && imageUrl.startsWith('http')
-            ? Image.network(
-                imageUrl,
+        child: product == null
+            ? Image.asset(
+                ProductAssetResolver.defaultProductAsset,
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _productIcon(),
               )
-            : _productIcon(),
+            : ProductImageWidget(
+                product: product,
+                assetFallback: ProductAssetResolver.forProduct,
+                height: 52,
+                fit: BoxFit.cover,
+              ),
       ),
     );
-  }
-
-  Widget _productIcon() {
-    return Icon(Icons.shopping_bag_outlined, color: Colors.blue.shade700);
   }
 
   Widget _summaryLine(

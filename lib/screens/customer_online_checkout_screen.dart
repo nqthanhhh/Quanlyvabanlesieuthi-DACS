@@ -5,6 +5,8 @@ import '../models/voucher.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/voucher_service.dart';
+import '../utils/product_asset_resolver.dart';
+import '../widgets/product_image_widget.dart';
 import '../widgets/slide_page_route.dart';
 import 'orders_screen.dart';
 import 'vnpay_payment_screen.dart';
@@ -538,7 +540,13 @@ class _CustomerOnlineCheckoutScreenState
                 ),
               ],
             ),
-            child: const Icon(Icons.shopping_bag_outlined, color: _primary),
+            clipBehavior: Clip.antiAlias,
+            child: ProductImageWidget(
+              product: product,
+              assetFallback: ProductAssetResolver.forProduct,
+              height: 68,
+              fit: BoxFit.cover,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -855,7 +863,8 @@ class _CustomerOnlineCheckoutScreenState
             value: 'ewallet',
             icon: Icons.qr_code_2_outlined,
             title: 'QR mô phỏng (demo)',
-            subtitle: 'Chỉ dùng demo: đánh dấu đã thanh toán ngay, không qua cổng thật.',
+            subtitle:
+                'Chỉ dùng demo: đánh dấu đã thanh toán ngay, không qua cổng thật.',
           ),
           if (_paymentMethod == 'ewallet') _fakeQr(amount),
         ],

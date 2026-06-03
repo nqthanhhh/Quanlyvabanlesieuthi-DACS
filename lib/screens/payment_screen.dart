@@ -10,6 +10,8 @@ import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/voucher_service.dart';
 import '../utils/payment_config.dart';
+import '../utils/product_asset_resolver.dart';
+import '../widgets/product_image_widget.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 import 'bank_transfer_qr_screen.dart';
@@ -63,6 +65,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _wantsLoyaltyPoints = false;
   bool _isAddingPoints = false;
   Map<String, dynamic>? _loyaltyResult;
+
+  String _imageFor(Product product) {
+    return ProductAssetResolver.forProduct(product);
+  }
+
+  Widget _productImage(Product product) {
+    return SizedBox(
+      width: 46,
+      height: 46,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: ProductImageWidget(
+          product: product,
+          assetFallback: _imageFor,
+          height: 46,
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -761,19 +783,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Widget _invoiceCard() {
+    final productsById = {
+      for (final product in DBService.products().values.cast<Product>())
+        product.id: product,
+    };
+    final invoiceEntries = widget.originalCart.entries
+        .where((entry) => productsById.containsKey(entry.key))
+        .toList();
+
     return _sectionCard(
       title: 'Sản phẩm trong hóa đơn',
       subtitle: '${widget.cartForDisplay.length} dòng sản phẩm',
       icon: Icons.receipt_long_outlined,
       child: Column(
-        children: widget.cartForDisplay.entries.map((entry) {
+        children: invoiceEntries.map((entry) {
+          final product = productsById[entry.key]!;
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
+                _productImage(product),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    entry.key,
+                    product.name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w700),

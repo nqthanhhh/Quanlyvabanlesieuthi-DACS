@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../utils/product_asset_resolver.dart';
+import '../widgets/product_image_widget.dart';
 
 class EditProductScreen extends StatefulWidget {
   final Product product;
@@ -67,9 +69,9 @@ class _EditProductScreenState extends State<EditProductScreen> {
   Future<void> _saveChanges() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedCategoryId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng chọn danh mục')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Vui lòng chọn danh mục')));
       return;
     }
 
@@ -100,8 +102,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
         (c) => c['category_id'] == _selectedCategoryId,
       );
       if (matched.isNotEmpty) {
-        widget.product.categoryName =
-            matched.first['category_name']?.toString();
+        widget.product.categoryName = matched.first['category_name']
+            ?.toString();
       }
 
       await DBService.updateProductRemote(widget.product);
@@ -132,8 +134,6 @@ class _EditProductScreenState extends State<EditProductScreen> {
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
-    final imageStored =
-        (DBService.productImages().get(p.id) ?? p.imageUrl ?? '').toString();
 
     return Scaffold(
       appBar: AppBar(
@@ -148,28 +148,27 @@ class _EditProductScreenState extends State<EditProductScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (imageStored.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: AspectRatio(
-                    aspectRatio: 2,
-                    child: imageStored.startsWith('http')
-                        ? Image.network(imageStored, fit: BoxFit.cover)
-                        : Container(
-                            color: Colors.blue.shade50,
-                            child: const Icon(Icons.image, size: 48),
-                          ),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: AspectRatio(
+                  aspectRatio: 2,
+                  child: ProductImageWidget(
+                    product: p,
+                    assetFallback: ProductAssetResolver.forProduct,
+                    fit: BoxFit.cover,
                   ),
                 ),
-              if (imageStored.isNotEmpty) const SizedBox(height: 16),
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
                   labelText: 'Tên sản phẩm *',
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Nhập tên sản phẩm' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Nhập tên sản phẩm'
+                    : null,
               ),
               const SizedBox(height: 12),
               TextFormField(

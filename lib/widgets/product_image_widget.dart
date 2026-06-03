@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../utils/product_asset_resolver.dart';
 
 /// Hiển thị ảnh sản phẩm: URL mạng, file local, hoặc asset fallback.
 class ProductImageWidget extends StatelessWidget {
@@ -29,7 +30,9 @@ class ProductImageWidget extends StatelessWidget {
     final stored = ApiService.resolveBackendUrl(storedRaw);
 
     Widget image;
-    if (stored.isNotEmpty && stored.startsWith('http')) {
+    if (storedRaw.trim().startsWith('assets/')) {
+      image = _assetImage(storedRaw.trim());
+    } else if (stored.isNotEmpty && stored.startsWith('http')) {
       image = Image.network(
         stored,
         fit: fit,
@@ -61,17 +64,23 @@ class ProductImageWidget extends StatelessWidget {
     return image;
   }
 
-  Widget _assetImage() {
+  Widget _assetImage([String? preferredAsset]) {
+    final resolvedAsset = ProductAssetResolver.forProduct(product);
+    final asset =
+        preferredAsset ??
+        (resolvedAsset == ProductAssetResolver.defaultProductAsset
+            ? assetFallback(product)
+            : resolvedAsset);
     return Image.asset(
-      assetFallback(product),
+      asset,
       fit: fit,
       width: double.infinity,
       height: height,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, __, ___) => Image.asset(
+        ProductAssetResolver.defaultProductAsset,
+        fit: fit,
+        width: double.infinity,
         height: height,
-        color: Colors.grey.shade100,
-        alignment: Alignment.center,
-        child: const Icon(Icons.image, size: 36, color: Colors.black26),
       ),
     );
   }

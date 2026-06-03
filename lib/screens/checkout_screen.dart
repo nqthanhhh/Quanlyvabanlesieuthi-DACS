@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../utils/product_asset_resolver.dart';
+import '../widgets/product_image_widget.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
 import '../widgets/slide_page_route.dart';
 import 'employee.dart';
@@ -35,6 +37,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   late final Map<String, int> _editableCart;
   String? _currentUserEmail;
+
+  String _imageFor(Product product) {
+    return ProductAssetResolver.forProduct(product);
+  }
+
+  Widget _productImage(Product product) {
+    return SizedBox(
+      width: 58,
+      height: 58,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ProductImageWidget(
+          product: product,
+          assetFallback: _imageFor,
+          height: 58,
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -308,22 +330,35 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              product.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-                color: _ink,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '${_formatCurrency(product.price)} / ${product.unit}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.black54),
+            Row(
+              children: [
+                _productImage(product),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: _ink,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${_formatCurrency(product.price)} / ${product.unit}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             Row(

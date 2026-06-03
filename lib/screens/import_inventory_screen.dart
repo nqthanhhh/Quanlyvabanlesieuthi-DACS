@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/inventory_item.dart'; // <<< IMPORT InventoryItem
 import '../models/product.dart';
 import '../services/api_service.dart';
+import '../utils/product_asset_resolver.dart';
 import '../services/db_service.dart'; // <<< Đảm bảo bạn có DBService và hàm inventoryHistory()
 
 class ImportInventoryScreen extends StatefulWidget {
@@ -338,10 +339,14 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
   }
 
   Widget _buildInventoryThumbnail(InventoryItem item) {
-    final stored = ApiService.resolveBackendUrl(
-      (DBService.productImages().get(item.id) ?? item.imageUrl ?? '')
-          .toString(),
-    );
+    final storedRaw =
+        (DBService.productImages().get(item.id) ?? item.imageUrl ?? '')
+            .toString();
+    final stored = ApiService.resolveBackendUrl(storedRaw);
+
+    if (storedRaw.trim().startsWith('assets/')) {
+      return _buildInventoryAsset(item, preferredAsset: storedRaw.trim());
+    }
 
     if (stored.startsWith('http')) {
       return SizedBox(
@@ -352,7 +357,7 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
           child: Image.network(
             stored,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildInventoryAvatar(item.name),
+            errorBuilder: (_, __, ___) => _buildInventoryAsset(item),
           ),
         ),
       );
@@ -374,12 +379,24 @@ class _ImportInventoryScreenState extends State<ImportInventoryScreen> {
       } catch (_) {}
     }
 
-    return _buildInventoryAvatar(item.name);
+    return _buildInventoryAsset(item);
   }
 
-  Widget _buildInventoryAvatar(String name) {
-    return CircleAvatar(
-      child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
+  Widget _buildInventoryAsset(InventoryItem item, {String? preferredAsset}) {
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.asset(
+          preferredAsset ?? ProductAssetResolver.forInventoryItem(item),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Image.asset(
+            ProductAssetResolver.defaultProductAsset,
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
     );
   }
 

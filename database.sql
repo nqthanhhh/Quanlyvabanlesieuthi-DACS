@@ -1,6 +1,6 @@
--- NOTE (SAFE INIT):
--- File này được thiết kế để import nhiều lần mà KHÔNG làm mất dữ liệu hiện có.
--- Nếu bạn muốn xoá sạch dữ liệu và tạo lại từ đầu, hãy chạy `database_reset.sql` trước.
+﻿-- NOTE (SAFE INIT):
+-- File nÃ y Ä‘Æ°á»£c thiáº¿t káº¿ Ä‘á»ƒ import nhiá»u láº§n mÃ  KHÃ”NG lÃ m máº¥t dá»¯ liá»‡u hiá»‡n cÃ³.
+-- Náº¿u báº¡n muá»‘n xoÃ¡ sáº¡ch dá»¯ liá»‡u vÃ  táº¡o láº¡i tá»« Ä‘áº§u, hÃ£y cháº¡y `database_reset.sql` trÆ°á»›c.
 
 CREATE DATABASE IF NOT EXISTS mini_supermarket
 CHARACTER SET utf8mb4
@@ -8,7 +8,7 @@ COLLATE utf8mb4_unicode_ci;
 
 USE mini_supermarket;
 
--- Không DROP TABLE ở đây để tránh mất dữ liệu khi import lại.
+-- KhÃ´ng DROP TABLE á»Ÿ Ä‘Ã¢y Ä‘á»ƒ trÃ¡nh máº¥t dá»¯ liá»‡u khi import láº¡i.
 
 CREATE TABLE IF NOT EXISTS roles (
   role_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   inventory_item_id INT AUTO_INCREMENT PRIMARY KEY,
   barcode VARCHAR(50) NOT NULL UNIQUE,
   item_name VARCHAR(150) NOT NULL,
-  category_id INT NULL, -- <== THÊM DÒNG NÀY VÀO ĐÂY
+  category_id INT NULL, -- <== THÃŠM DÃ’NG NÃ€Y VÃ€O ÄÃ‚Y
   image_url VARCHAR(255),
   price DECIMAL(10,2) NOT NULL,
   import_price DECIMAL(10,2) NULL,
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_id INT,
   employee_id INT,
   shift_id INT,
-  voucher_id INT, -- Thêm cột này vào đây
+  voucher_id INT, -- ThÃªm cá»™t nÃ y vÃ o Ä‘Ã¢y
   order_type VARCHAR(30) NOT NULL,
   delivery_method VARCHAR(30) DEFAULT 'pickup',
   total_amount DECIMAL(10,2) NOT NULL,
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS orders (
     ON UPDATE CASCADE
     ON DELETE SET NULL,
 
-  -- Thêm khóa ngoại voucher vào đây
+  -- ThÃªm khÃ³a ngoáº¡i voucher vÃ o Ä‘Ã¢y
   CONSTRAINT fk_orders_vouchers
     FOREIGN KEY (voucher_id)
     REFERENCES vouchers(voucher_id)
@@ -465,9 +465,9 @@ VALUES
 ('Khach hang', 'c@gmail.com', '0900000003', '$2b$10$kB30S.076z6zgyr1G8hmguFXQ4S0csQQNBRIo7BIpN2W8aXejiHaG', '$2b$10$kB30S.076z6zgyr1G8hmguFXQ4S0csQQNBRIo7BIpN2W8aXejiHaG', 'Tai khoan khach hang', (SELECT role_id FROM roles WHERE role_name = 'customer'), 'active');
 INSERT IGNORE INTO categories(category_name)
 VALUES
-('Đồ uống'),
-('Trái cây'),
-('Gia vị xốt Dh Foods');
+('Äá»“ uá»‘ng'),
+('TrÃ¡i cÃ¢y'),
+('Gia vá»‹ xá»‘t Dh Foods');
 
 INSERT IGNORE INTO products (
   product_name,
@@ -482,42 +482,42 @@ INSERT IGNORE INTO products (
   status
 )
 VALUES
--- Nhóm 1: Trái cây
-('Chuối', 'PROD001', 'Chuối tươi ngon', 'url_chuoi.jpg', 25000, 'Kg', 100, 10, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
-('Dâu tây', 'PROD002', 'Dâu tây Đà Lạt', 'url_dautay.jpg', 120000, 'Hộp', 50, 5, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
-('Táo', 'PROD003', 'Táo nhập khẩu', 'url_tao.jpg', 60000, 'Kg', 80, 10, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
-('Dứa (Thơm)', 'PROD004', 'Dứa mật ngọt', 'url_dua.jpg', 15000, 'Quả', 40, 5, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
-('Dưa hấu', 'PROD005', 'Dưa hấu Long An', 'url_duahau.jpg', 20000, 'Kg', 150, 15, (SELECT category_id FROM categories WHERE category_name = 'Trái cây'), 'active'),
--- Nhóm 2: Gia vị xốt Dh Foods
-('Xốt Thái sả tắc', 'PROD006', 'Xốt Dh Foods vị Thái', 'url_xotthai.jpg', 35000, 'Chai', 60, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
-('Xốt BBQ', 'PROD007', 'Xốt ướp BBQ Dh Foods', 'url_bbq.jpg', 45000, 'Chai', 40, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
-('Muối ớt chanh Nha Trang', 'PROD008', 'Muối chấm hải sản', 'url_muoiot.jpg', 18000, 'Chai', 100, 10, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
-('Xốt kim quất', 'PROD009', 'Xốt kim quất Dh Foods', 'url_kimquat.jpg', 35000, 'Chai', 50, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
-('Xốt trứng muối', 'PROD010', 'Xốt trứng muối béo ngậy', 'url_trungmuoi.jpg', 55000, 'Chai', 30, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vị xốt Dh Foods'), 'active'),
--- Nhóm 3: Đồ uống
-('Trà TH true TEA', 'PROD011', 'Trà xanh/Ô long TH', 'url_thtea.jpg', 10000, 'Chai', 200, 20, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active'),
-('Trà đào và hạt chia Fuze Tea', 'PROD012', 'Trà đào hạt chia', 'url_fuzetea.jpg', 12000, 'Chai', 120, 20, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active'),
-('Trà xanh C2 hương chanh', 'PROD013', 'Trà xanh C2', 'url_c2.jpg', 8000, 'Chai', 300, 50, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active'),
-('Trà đá TRADA hương hoa nhài', 'PROD014', 'Trà đá lon TRADA', 'url_trada.jpg', 10000, 'Lon', 100, 15, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active'),
-('Trà xanh Lipton vị chanh mật ong', 'PROD015', 'Lipton chai tiện lợi', 'url_lipton.jpg', 12000, 'Chai', 150, 20, (SELECT category_id FROM categories WHERE category_name = 'Đồ uống'), 'active');
+-- NhÃ³m 1: TrÃ¡i cÃ¢y
+('Chuá»‘i', 'PROD001', 'Chuá»‘i tÆ°Æ¡i ngon', 'assets/images/chuoi.png', 25000, 'Kg', 100, 10, (SELECT category_id FROM categories WHERE category_name = 'TrÃ¡i cÃ¢y'), 'active'),
+('DÃ¢u tÃ¢y', 'PROD002', 'DÃ¢u tÃ¢y ÄÃ  Láº¡t', 'assets/images/dautay.jpg', 120000, 'Há»™p', 50, 5, (SELECT category_id FROM categories WHERE category_name = 'TrÃ¡i cÃ¢y'), 'active'),
+('TÃ¡o', 'PROD003', 'TÃ¡o nháº­p kháº©u', 'assets/images/tao.png', 60000, 'Kg', 80, 10, (SELECT category_id FROM categories WHERE category_name = 'TrÃ¡i cÃ¢y'), 'active'),
+('Dá»©a (ThÆ¡m)', 'PROD004', 'Dá»©a máº­t ngá»t', 'assets/images/dua.jpg', 15000, 'Quáº£', 40, 5, (SELECT category_id FROM categories WHERE category_name = 'TrÃ¡i cÃ¢y'), 'active'),
+('DÆ°a háº¥u', 'PROD005', 'DÆ°a háº¥u Long An', 'assets/images/duahau.jpg', 20000, 'Kg', 150, 15, (SELECT category_id FROM categories WHERE category_name = 'TrÃ¡i cÃ¢y'), 'active'),
+-- NhÃ³m 2: Gia vá»‹ xá»‘t Dh Foods
+('Xá»‘t ThÃ¡i sáº£ táº¯c', 'PROD006', 'Xá»‘t Dh Foods vá»‹ ThÃ¡i', 'assets/images/xotthaixatac.jpg', 35000, 'Chai', 60, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vá»‹ xá»‘t Dh Foods'), 'active'),
+('Xá»‘t BBQ', 'PROD007', 'Xá»‘t Æ°á»›p BBQ Dh Foods', 'assets/images/XotBBQ.png', 45000, 'Chai', 40, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vá»‹ xá»‘t Dh Foods'), 'active'),
+('Muá»‘i á»›t chanh Nha Trang', 'PROD008', 'Muá»‘i cháº¥m háº£i sáº£n', 'assets/images/muoiotchanh.png', 18000, 'Chai', 100, 10, (SELECT category_id FROM categories WHERE category_name = 'Gia vá»‹ xá»‘t Dh Foods'), 'active'),
+('Xá»‘t kim quáº¥t', 'PROD009', 'Xá»‘t kim quáº¥t Dh Foods', 'assets/images/xotkimquat.jpg', 35000, 'Chai', 50, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vá»‹ xá»‘t Dh Foods'), 'active'),
+('Xá»‘t trá»©ng muá»‘i', 'PROD010', 'Xá»‘t trá»©ng muá»‘i bÃ©o ngáº­y', 'assets/images/sottrungmuoi.png', 55000, 'Chai', 30, 5, (SELECT category_id FROM categories WHERE category_name = 'Gia vá»‹ xá»‘t Dh Foods'), 'active'),
+-- NhÃ³m 3: Äá»“ uá»‘ng
+('TrÃ  TH true TEA', 'PROD011', 'TrÃ  xanh/Ã” long TH', 'assets/images/trathtruetea.jpg', 10000, 'Chai', 200, 20, (SELECT category_id FROM categories WHERE category_name = 'Äá»“ uá»‘ng'), 'active'),
+('TrÃ  Ä‘Ã o vÃ  háº¡t chia Fuze Tea', 'PROD012', 'TrÃ  Ä‘Ã o háº¡t chia', 'assets/images/tradaohatchia.jpg', 12000, 'Chai', 120, 20, (SELECT category_id FROM categories WHERE category_name = 'Äá»“ uá»‘ng'), 'active'),
+('TrÃ  xanh C2 hÆ°Æ¡ng chanh', 'PROD013', 'TrÃ  xanh C2', 'assets/images/C2.jpg', 8000, 'Chai', 300, 50, (SELECT category_id FROM categories WHERE category_name = 'Äá»“ uá»‘ng'), 'active'),
+('TrÃ  Ä‘Ã¡ TRADA hÆ°Æ¡ng hoa nhÃ i', 'PROD014', 'TrÃ  Ä‘Ã¡ lon TRADA', 'assets/images/trahoanhai.png', 10000, 'Lon', 100, 15, (SELECT category_id FROM categories WHERE category_name = 'Äá»“ uá»‘ng'), 'active'),
+('TrÃ  xanh Lipton vá»‹ chanh máº­t ong', 'PROD015', 'Lipton chai tiá»‡n lá»£i', 'assets/images/trachanhmatong.jpg', 12000, 'Chai', 150, 20, (SELECT category_id FROM categories WHERE category_name = 'Äá»“ uá»‘ng'), 'active');
 
 INSERT IGNORE INTO inventory_items (barcode, item_name, image_url, price, import_price, unit, stock, status)
 VALUES
-('PROD001', 'Chuối', 'url_chuoi.jpg', 25000, 15000, 'Kg', 100, 'available'),
-('PROD002', 'Dâu tây', 'url_dautay.jpg', 120000, 80000, 'Hộp', 50, 'available'),
-('PROD003', 'Táo', 'url_tao.jpg', 60000, 40000, 'Kg', 80, 'available'),
-('PROD004', 'Dứa (Thơm)', 'url_dua.jpg', 15000, 8000, 'Quả', 40, 'available'),
-('PROD005', 'Dưa hấu', 'url_duahau.jpg', 20000, 12000, 'Kg', 150, 'available'),
-('PROD006', 'Xốt Thái sả tắc', 'url_xotthai.jpg', 35000, 25000, 'Chai', 60, 'available'),
-('PROD007', 'Xốt BBQ', 'url_bbq.jpg', 45000, 32000, 'Chai', 40, 'available'),
-('PROD008', 'Muối ớt chanh Nha Trang', 'url_muoiot.jpg', 18000, 12000, 'Chai', 100, 'available'),
-('PROD009', 'Xốt kim quất', 'url_kimquat.jpg', 35000, 25000, 'Chai', 50, 'available'),
-('PROD010', 'Xốt trứng muối', 'url_trungmuoi.jpg', 55000, 40000, 'Chai', 30, 'available'),
-('PROD011', 'Trà TH true TEA', 'url_thtea.jpg', 10000, 7000, 'Chai', 200, 'available'),
-('PROD012', 'Trà đào và hạt chia Fuze Tea', 'url_fuzetea.jpg', 12000, 8500, 'Chai', 120, 'available'),
-('PROD013', 'Trà xanh C2 hương chanh', 'url_c2.jpg', 8000, 5500, 'Chai', 300, 'available'),
-('PROD014', 'Trà đá TRADA hương hoa nhài', 'url_trada.jpg', 10000, 6500, 'Lon', 100, 'available'),
-('PROD015', 'Trà xanh Lipton vị chanh mật ong', 'url_lipton.jpg', 12000, 8000, 'Chai', 150, 'available');
+('PROD001', 'Chuá»‘i', 'assets/images/chuoi.png', 25000, 15000, 'Kg', 100, 'available'),
+('PROD002', 'DÃ¢u tÃ¢y', 'assets/images/dautay.jpg', 120000, 80000, 'Há»™p', 50, 'available'),
+('PROD003', 'TÃ¡o', 'assets/images/tao.png', 60000, 40000, 'Kg', 80, 'available'),
+('PROD004', 'Dá»©a (ThÆ¡m)', 'assets/images/dua.jpg', 15000, 8000, 'Quáº£', 40, 'available'),
+('PROD005', 'DÆ°a háº¥u', 'assets/images/duahau.jpg', 20000, 12000, 'Kg', 150, 'available'),
+('PROD006', 'Xá»‘t ThÃ¡i sáº£ táº¯c', 'assets/images/xotthaixatac.jpg', 35000, 25000, 'Chai', 60, 'available'),
+('PROD007', 'Xá»‘t BBQ', 'assets/images/XotBBQ.png', 45000, 32000, 'Chai', 40, 'available'),
+('PROD008', 'Muá»‘i á»›t chanh Nha Trang', 'assets/images/muoiotchanh.png', 18000, 12000, 'Chai', 100, 'available'),
+('PROD009', 'Xá»‘t kim quáº¥t', 'assets/images/xotkimquat.jpg', 35000, 25000, 'Chai', 50, 'available'),
+('PROD010', 'Xá»‘t trá»©ng muá»‘i', 'assets/images/sottrungmuoi.png', 55000, 40000, 'Chai', 30, 'available'),
+('PROD011', 'TrÃ  TH true TEA', 'assets/images/trathtruetea.jpg', 10000, 7000, 'Chai', 200, 'available'),
+('PROD012', 'TrÃ  Ä‘Ã o vÃ  háº¡t chia Fuze Tea', 'assets/images/tradaohatchia.jpg', 12000, 8500, 'Chai', 120, 'available'),
+('PROD013', 'TrÃ  xanh C2 hÆ°Æ¡ng chanh', 'assets/images/C2.jpg', 8000, 5500, 'Chai', 300, 'available'),
+('PROD014', 'TrÃ  Ä‘Ã¡ TRADA hÆ°Æ¡ng hoa nhÃ i', 'assets/images/trahoanhai.png', 10000, 6500, 'Lon', 100, 'available'),
+('PROD015', 'TrÃ  xanh Lipton vá»‹ chanh máº­t ong', 'assets/images/trachanhmatong.jpg', 12000, 8000, 'Chai', 150, 'available');
 UPDATE inventory_items ii
 JOIN products p ON p.barcode = ii.barcode
 SET ii.category_id = p.category_id

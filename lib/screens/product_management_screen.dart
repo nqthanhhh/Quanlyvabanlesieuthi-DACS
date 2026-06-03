@@ -5,6 +5,7 @@ import '../services/db_service.dart';
 import 'edit_product_screen.dart';
 import 'add_product_screen.dart';
 import 'product_detail_screen.dart';
+import '../utils/product_asset_resolver.dart';
 import '../utils/product_stock_utils.dart';
 import '../widgets/product_image_widget.dart';
 
@@ -33,7 +34,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     };
   }
 
-  String _assetFallback(Product p) => 'assets/images/anh1.png';
+  String _assetFallback(Product p) => ProductAssetResolver.forProduct(p);
 
   String _getCategoryName(Product product) {
     final categoryName = product.categoryName?.trim();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'register_screen.dart';
 import 'password_login_screen.dart';
 
@@ -17,6 +18,43 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  void _showDemoSocialLogin(String provider) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Đăng nhập $provider đang để demo giao diện')),
+    );
+  }
+
+  Widget _socialIconButton({
+    required String provider,
+    required String assetName,
+  }) {
+    return Tooltip(
+      message: provider,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(32),
+        onTap: () => _showDemoSocialLogin(provider),
+        child: Container(
+          width: 56,
+          height: 56,
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 8,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: SvgPicture.asset(assetName),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -57,6 +95,38 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 0),
                       const SizedBox(height: 24),
+                      Row(
+                        children: const [
+                          Expanded(child: Divider()),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 10),
+                            child: Text('Hoặc đăng nhập bằng'),
+                          ),
+                          Expanded(child: Divider()),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _socialIconButton(
+                            provider: 'Google',
+                            assetName:
+                                'assets/images/material-icon-theme_google.svg',
+                          ),
+                          const SizedBox(width: 18),
+                          _socialIconButton(
+                            provider: 'Facebook',
+                            assetName: 'assets/images/Vector.svg',
+                          ),
+                          const SizedBox(width: 18),
+                          _socialIconButton(
+                            provider: 'Apple',
+                            assetName: 'assets/images/ic_baseline-apple.svg',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 26),
                       ElevatedButton(
                         onPressed: () => Navigator.of(context).push(
                           MaterialPageRoute(

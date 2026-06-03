@@ -17,7 +17,7 @@ class OrderDetailScreen extends StatelessWidget {
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
       (match) => '${match[1]}.',
     );
-    return '$textâ‚«';
+    return '$text₫';
   }
 
   String _formatDate(DateTime date) {
@@ -31,22 +31,44 @@ class OrderDetailScreen extends StatelessWidget {
     );
   }
 
+  String _statusText(String status) {
+    switch (status.toLowerCase()) {
+      case 'waiting_confirm':
+      case 'pending':
+        return 'Chờ xác nhận';
+      case 'confirmed':
+        return 'Đã xác nhận';
+      case 'shipping':
+      case 'preparing':
+        return 'Đang giao';
+      case 'completed':
+      case 'hoàn thành':
+        return 'Hoàn thành';
+      case 'rejected':
+      case 'cancelled':
+        return 'Đã từ chối';
+      default:
+        return status.isEmpty ? 'Chưa có trạng thái' : status;
+    }
+  }
+
   Color _statusColor(String status) {
     final value = status.toLowerCase();
-    if (value.contains('hoÃ n') ||
+    if (value.contains('hoàn') ||
+        value.contains('thành') ||
         value.contains('completed') ||
         value.contains('paid')) {
       return Colors.green;
     }
-    if (value.contains('chá»') ||
+    if (value.contains('chờ') ||
         value.contains('pending') ||
         value.contains('confirm') ||
         value.contains('processing') ||
-        value.contains('Ä‘ang')) {
+        value.contains('đang')) {
       return Colors.orange;
     }
-    if (value.contains('há»§y') ||
-        value.contains('tá»« chá»‘i') ||
+    if (value.contains('hủy') ||
+        value.contains('từ chối') ||
         value.contains('cancel') ||
         value.contains('reject') ||
         value.contains('rejected')) {
@@ -59,7 +81,7 @@ class OrderDetailScreen extends StatelessWidget {
     final product = _productForLine(item);
     final name = item.productName.isNotEmpty
         ? item.productName
-        : product?.name ?? 'Sáº£n pháº©m';
+        : product?.name ?? 'Sản phẩm';
     final total = item.quantity * item.pricePerUnit;
 
     return Padding(
@@ -111,18 +133,18 @@ class OrderDetailScreen extends StatelessWidget {
   String _paymentMethodLabel(String? value) {
     switch ((value ?? '').toLowerCase()) {
       case 'cash':
-        return 'Tiá»n máº·t';
+        return 'Tiền mặt';
       case 'card':
-        return 'Tháº»';
+        return 'Thẻ';
       case 'bank_transfer':
       case 'transfer':
-        return 'Chuyá»ƒn khoáº£n';
+        return 'Chuyển khoản';
       case 'momo':
         return 'MoMo';
       case 'cod':
         return 'COD';
       case 'ewallet':
-        return 'QR mÃ´ phá»ng (demo)';
+        return 'QR mô phỏng (demo)';
       case 'vnpay':
         return 'VNPay';
       default:
@@ -134,13 +156,13 @@ class OrderDetailScreen extends StatelessWidget {
     switch ((value ?? '').toLowerCase()) {
       case 'paid':
       case 'success':
-        return 'ÄÃ£ thanh toÃ¡n';
+        return 'Đã thanh toán';
       case 'pending':
-        return 'Chá» thanh toÃ¡n';
+        return 'Chờ thanh toán';
       case 'failed':
-        return 'Thanh toÃ¡n lá»—i';
+        return 'Thanh toán lỗi';
       case 'refunded':
-        return 'ÄÃ£ hoÃ n tiá»n';
+        return 'Đã hoàn tiền';
       default:
         return value == null || value.trim().isEmpty ? '-' : value;
     }
@@ -153,7 +175,7 @@ class OrderDetailScreen extends StatelessWidget {
         return AlertDialog(
           title: const Center(
             child: Text(
-              'HÃ“A ÄÆ N BÃN HÃ€NG',
+              'HÓA ĐƠN BÁN HÀNG',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
             ),
           ),
@@ -163,27 +185,24 @@ class OrderDetailScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Center(
-                  child: Text(
-                    'Cá»¬A HÃ€NG ABC',
-                    style: TextStyle(fontSize: 16),
-                  ),
+                  child: Text('CỬA HÀNG ABC', style: TextStyle(fontSize: 16)),
                 ),
                 const Center(
                   child: Text(
-                    'Äá»‹a chá»‰: 123 ÄÆ°á»ng XYZ',
+                    'Địa chỉ: 123 Đường XYZ',
                     style: TextStyle(fontSize: 12),
                   ),
                 ),
                 const SizedBox(height: 15),
                 Text(
-                  'MÃ£ Ä‘Æ¡n: ${order.id}',
+                  'Mã đơn: ${order.id}',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                Text('KhÃ¡ch hÃ ng: ${order.customerName}'),
-                Text('NgÃ y: ${_formatDate(order.orderDate.toLocal())}'),
+                Text('Khách hàng: ${order.customerName}'),
+                Text('Ngày: ${_formatDate(order.orderDate.toLocal())}'),
                 const Divider(),
                 const Text(
-                  'Sáº¢N PHáº¨M',
+                  'SẢN PHẨM',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 5),
@@ -205,21 +224,21 @@ class OrderDetailScreen extends StatelessWidget {
                   ),
                 ),
                 const Divider(),
-                _invoiceLine('Táº¡m tÃ­nh', _formatCurrency(_itemsSubtotal())),
+                _invoiceLine('Tạm tính', _formatCurrency(_itemsSubtotal())),
                 if (order.discountAmount > 0)
                   _invoiceLine(
-                    'Giáº£m giÃ¡',
+                    'Giảm giá',
                     '-${_formatCurrency(order.discountAmount)}',
                   ),
                 _invoiceLine(
-                  'Tá»•ng thanh toÃ¡n',
+                  'Tổng thanh toán',
                   _formatCurrency(order.totalAmount),
                   isEmphasis: true,
                 ),
                 const SizedBox(height: 15),
                 const Center(
                   child: Text(
-                    'Cáº£m Æ¡n quÃ½ khÃ¡ch!',
+                    'Cảm ơn quý khách!',
                     style: TextStyle(fontStyle: FontStyle.italic),
                   ),
                 ),
@@ -229,14 +248,14 @@ class OrderDetailScreen extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('ÄÃ³ng'),
+              child: const Text('Đóng'),
             ),
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Äang gá»­i lá»‡nh in... (MÃ´ phá»ng)'),
+                    content: Text('Đang gửi lệnh in... (Mô phỏng)'),
                   ),
                 );
               },
@@ -261,7 +280,7 @@ class OrderDetailScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFF6F7FB),
       appBar: AppBar(
         title: const Text(
-          'Chi tiáº¿t Ä‘Æ¡n hÃ ng',
+          'Chi tiết đơn hàng',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -283,7 +302,7 @@ class OrderDetailScreen extends StatelessWidget {
               onPressed: () => _showInvoiceDialog(context),
               icon: const Icon(Icons.print, color: Colors.white),
               label: const Text(
-                'In hÃ³a Ä‘Æ¡n',
+                'In hóa đơn',
                 style: TextStyle(color: Colors.white, fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
@@ -316,7 +335,7 @@ class OrderDetailScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'ÄÆ¡n #${order.id}',
+                    'Đơn #${order.id}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -332,10 +351,7 @@ class OrderDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
-            _statusPill(
-              order.status.isEmpty ? 'ChÆ°a cÃ³ tráº¡ng thÃ¡i' : order.status,
-              statusColor,
-            ),
+            _statusPill(_statusText(order.status), statusColor),
           ],
         ),
       ),
@@ -355,7 +371,7 @@ class OrderDetailScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'TÃ³m táº¯t Ä‘Æ¡n hÃ ng',
+              'Tóm tắt đơn hàng',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 18),
@@ -363,30 +379,28 @@ class OrderDetailScreen extends StatelessWidget {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Center(
-                  child: Text(
-                    'ÄÆ¡n hÃ ng chÆ°a cÃ³ dá»¯ liá»‡u sáº£n pháº©m.',
-                  ),
+                  child: Text('Đơn hàng chưa có dữ liệu sản phẩm.'),
                 ),
               )
             else ...[
               ...order.items.map(_buildLineItem),
               const SizedBox(height: 8),
               _summaryLine(
-                'Tá»•ng (${_totalQuantity()} mÃ³n)',
+                'Tổng (${_totalQuantity()} món)',
                 _formatCurrency(_itemsSubtotal()),
                 isEmphasis: true,
               ),
               if (order.discountAmount > 0) ...[
                 const SizedBox(height: 18),
                 _summaryLine(
-                  'Giáº£m giÃ¡',
+                  'Giảm giá',
                   '-${_formatCurrency(order.discountAmount)}',
                   valueColor: Colors.green.shade700,
                 ),
               ],
               const SizedBox(height: 18),
               _summaryLine(
-                'Tá»•ng thanh toÃ¡n',
+                'Tổng thanh toán',
                 _formatCurrency(order.totalAmount),
                 isEmphasis: true,
               ),
@@ -410,31 +424,29 @@ class OrderDetailScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'ThÃ´ng tin Ä‘Æ¡n hÃ ng',
+              'Thông tin đơn hàng',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 16),
             _infoLine(
-              'Ghi chÃº',
-              order.note?.trim().isNotEmpty == true
-                  ? order.note!
-                  : 'KhÃ´ng cÃ³',
+              'Ghi chú',
+              order.note?.trim().isNotEmpty == true ? order.note! : 'Không có',
             ),
-            _infoLine('MÃ£ Ä‘Æ¡n hÃ ng', order.id),
+            _infoLine('Mã đơn hàng', order.id),
             _infoLine(
-              'Thá»i gian Ä‘áº·t hÃ ng',
+              'Thời gian đặt hàng',
               _formatDate(order.orderDate.toLocal()),
             ),
-            _infoLine('Thanh toÃ¡n', _paymentMethodLabel(order.paymentMethod)),
+            _infoLine('Thanh toán', _paymentMethodLabel(order.paymentMethod)),
             _infoLine(
-              'Tráº¡ng thÃ¡i thanh toÃ¡n',
+              'Trạng thái thanh toán',
               _paymentStatusLabel(order.paymentStatus),
             ),
             _infoLine(
-              'Nháº­n hÃ ng',
+              'Nhận hàng',
               order.shippingAddress?.trim().isNotEmpty == true
                   ? order.shippingAddress!
-                  : 'Táº¡i cá»­a hÃ ng',
+                  : 'Tại cửa hàng',
             ),
           ],
         ),
@@ -553,7 +565,7 @@ class OrderDetailScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(

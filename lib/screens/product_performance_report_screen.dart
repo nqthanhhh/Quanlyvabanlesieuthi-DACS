@@ -22,6 +22,8 @@ class _ProductPerformanceReportScreenState
     extends State<ProductPerformanceReportScreen> {
   static const Color _surface = Color(0xFFF5F7FA);
   static const Color _primary = Color(0xFF146C43);
+  static const Color _bestSeller = Color(0xFFFF6B00);
+  static const Color _bestSellerDark = Color(0xFFC2410C);
 
   late Future<Map<String, dynamic>> _future;
   _PerformanceRange _range = _PerformanceRange.thirtyDays;
@@ -500,15 +502,32 @@ class _ProductPerformanceReportScreenState
         ? 'Bán chạy'
         : 'Bán nhiều tiền';
 
+    final isBestSellerMode = _topProductMode == _TopProductMode.quantity;
+
     return _SectionCard(
       title: 'Danh sách sản phẩm',
-      trailing: Text(
-        title,
-        style: TextStyle(
-          color: _primary,
-          fontWeight: FontWeight.w800,
-          fontSize: 12,
-        ),
+      borderColor: isBestSellerMode
+          ? _bestSeller.withValues(alpha: 0.38)
+          : Colors.grey.shade200,
+      gradient: isBestSellerMode
+          ? const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFFFF7ED), Color(0xFFFFFBEB), Colors.white],
+            )
+          : null,
+      boxShadow: isBestSellerMode
+          ? [
+              BoxShadow(
+                color: _bestSeller.withValues(alpha: 0.16),
+                blurRadius: 22,
+                offset: const Offset(0, 8),
+              ),
+            ]
+          : null,
+      trailing: _StatusBadge(
+        label: isBestSellerMode ? 'TOP BÁN CHẠY' : title,
+        color: isBestSellerMode ? _bestSellerDark : _primary,
       ),
       child: Column(
         children: [
@@ -900,8 +919,18 @@ class _SectionCard extends StatelessWidget {
   final String title;
   final Widget child;
   final Widget? trailing;
+  final Color? borderColor;
+  final Gradient? gradient;
+  final List<BoxShadow>? boxShadow;
 
-  const _SectionCard({required this.title, required this.child, this.trailing});
+  const _SectionCard({
+    required this.title,
+    required this.child,
+    this.trailing,
+    this.borderColor,
+    this.gradient,
+    this.boxShadow,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -909,9 +938,11 @@ class _SectionCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: gradient == null ? Colors.white : null,
+        gradient: gradient,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: borderColor ?? Colors.grey.shade200),
+        boxShadow: boxShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1060,52 +1091,109 @@ class _SalesProductTile extends StatelessWidget {
         ? '${_formatCurrency(revenue)} · $ordersCount đơn'
         : '$sold sản phẩm · $ordersCount đơn';
 
+    final isBestSellerMode = mode == _TopProductMode.quantity;
+    final accentColor = isBestSellerMode
+        ? const Color(0xFFFF6B00)
+        : const Color(0xFF146C43);
+    final borderColor = isBestSellerMode
+        ? (rank == 1 ? const Color(0xFFFF6B00) : const Color(0xFFFDBA74))
+        : Colors.grey.shade200;
+    final tileGradient = isBestSellerMode
+        ? LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: rank == 1
+                ? const [Color(0xFFFFEDD5), Color(0xFFFFF7ED)]
+                : const [Color(0xFFFFFBEB), Colors.white],
+          )
+        : null;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(10),
+        padding: EdgeInsets.all(rank == 1 && isBestSellerMode ? 12 : 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tileGradient == null ? Colors.white : null,
+          gradient: tileGradient,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(
+            color: borderColor,
+            width: rank == 1 && isBestSellerMode ? 1.6 : 1,
+          ),
+          boxShadow: isBestSellerMode && rank <= 3
+              ? [
+                  BoxShadow(
+                    color: accentColor.withValues(
+                      alpha: rank == 1 ? 0.18 : 0.1,
+                    ),
+                    blurRadius: rank == 1 ? 18 : 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ]
+              : null,
         ),
         child: Row(
           children: [
-            _RankBadge(rank: rank),
+            _RankBadge(
+              rank: rank,
+              color: accentColor,
+              featured: isBestSellerMode,
+            ),
             const SizedBox(width: 10),
-            _ProductThumb(product: product, size: 50),
+            _ProductThumb(
+              product: product,
+              size: rank == 1 && isBestSellerMode ? 56 : 50,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      if (isBestSellerMode && rank <= 3) ...[
+                        const SizedBox(width: 6),
+                        _StatusBadge(
+                          label: rank == 1 ? 'HOT NHẤT' : 'BÁN CHẠY',
+                          color: accentColor,
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 104),
+              constraints: const BoxConstraints(maxWidth: 110),
               child: Text(
                 titleValue,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.right,
-                style: const TextStyle(fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: isBestSellerMode
+                      ? const Color(0xFFC2410C)
+                      : Colors.black,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
           ],
@@ -1304,23 +1392,34 @@ class _ProductThumb extends StatelessWidget {
 
 class _RankBadge extends StatelessWidget {
   final int rank;
+  final Color color;
+  final bool featured;
 
-  const _RankBadge({required this.rank});
+  const _RankBadge({
+    required this.rank,
+    this.color = const Color(0xFF146C43),
+    this.featured = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final isChampion = featured && rank == 1;
+
     return Container(
       width: 42,
       height: 42,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: const Color(0xFF146C43).withValues(alpha: 0.12),
+        color: isChampion ? color : color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(10),
+        border: featured
+            ? Border.all(color: color.withValues(alpha: 0.45))
+            : null,
       ),
       child: Text(
         '#$rank',
-        style: const TextStyle(
-          color: Color(0xFF146C43),
+        style: TextStyle(
+          color: isChampion ? Colors.white : color,
           fontWeight: FontWeight.w900,
         ),
       ),

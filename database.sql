@@ -238,19 +238,6 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS invoices (
-  invoice_id INT AUTO_INCREMENT PRIMARY KEY,
-  order_id INT NOT NULL UNIQUE,
-  issued_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  total DECIMAL(10,2) NOT NULL,
-
-  CONSTRAINT fk_invoices_orders
-    FOREIGN KEY (order_id)
-    REFERENCES orders(order_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE
-) ENGINE=InnoDB;
-
 CREATE TABLE IF NOT EXISTS inventory_logs (
   log_id INT AUTO_INCREMENT PRIMARY KEY,
   inventory_item_id INT NOT NULL,
@@ -277,35 +264,6 @@ CREATE TABLE IF NOT EXISTS inventory_logs (
   CONSTRAINT fk_inventory_logs_employee
     FOREIGN KEY (employee_id)
     REFERENCES users(user_id)
-    ON UPDATE CASCADE
-    ON DELETE RESTRICT
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS discount_codes (
-  discount_id INT AUTO_INCREMENT PRIMARY KEY,
-  code VARCHAR(50) NOT NULL UNIQUE,
-  discount_type VARCHAR(20) NOT NULL,
-  discount_value DECIMAL(10,2) NOT NULL,
-  start_date DATE,
-  end_date DATE,
-  status VARCHAR(20) DEFAULT 'active'
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS order_discounts (
-  order_discount_id INT AUTO_INCREMENT PRIMARY KEY,
-  order_id INT NOT NULL,
-  discount_id INT NOT NULL,
-  discount_amount DECIMAL(10,2) NOT NULL,
-
-  CONSTRAINT fk_order_discounts_orders
-    FOREIGN KEY (order_id)
-    REFERENCES orders(order_id)
-    ON UPDATE CASCADE
-    ON DELETE CASCADE,
-
-  CONSTRAINT fk_order_discounts_discount_codes
-    FOREIGN KEY (discount_id)
-    REFERENCES discount_codes(discount_id)
     ON UPDATE CASCADE
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
@@ -405,15 +363,6 @@ CREATE TABLE IF NOT EXISTS work_shifts (
     REFERENCES users(user_id)
     ON UPDATE CASCADE
     ON DELETE RESTRICT
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS notifications (
-  notification_id INT AUTO_INCREMENT PRIMARY KEY,
-  title VARCHAR(150) NOT NULL,
-  message VARCHAR(255) NOT NULL,
-  type VARCHAR(50),
-  is_read BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
 -- VOUCHER TABLES

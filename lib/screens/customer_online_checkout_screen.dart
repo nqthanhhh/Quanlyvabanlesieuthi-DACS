@@ -10,6 +10,7 @@ import '../utils/payment_config.dart';
 import '../utils/product_asset_resolver.dart';
 import '../widgets/product_image_widget.dart';
 import '../widgets/slide_page_route.dart';
+import '../widgets/vietnam_address_form.dart';
 import 'bank_transfer_qr_screen.dart';
 import 'orders_screen.dart';
 import 'vnpay_payment_screen.dart';
@@ -37,12 +38,15 @@ class _CustomerOnlineCheckoutScreenState
   static const Color _card = Colors.white;
   static const Color _ink = Color(0xFF111827);
 
-  final TextEditingController _addressController = TextEditingController();
   final TextEditingController _voucherController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
   late final Map<String, int> _cart;
 
   String _deliveryMethod = 'pickup';
+  String _addressSource = 'account';
+  String _accountAddress = '';
+  String? _newAddress;
+  DateTime? _pickupTime;
   String _paymentMethod = 'cash';
   bool _isApplyingVoucher = false;
   bool _isLoadingSavedVouchers = true;
@@ -57,12 +61,12 @@ class _CustomerOnlineCheckoutScreenState
     super.initState();
     _cart = Map<String, int>.from(widget.cart)
       ..removeWhere((key, value) => value <= 0);
+    _loadAccountAddress();
     _loadSavedVouchers();
   }
 
   @override
   void dispose() {
-    _addressController.dispose();
     _voucherController.dispose();
     _noteController.dispose();
     super.dispose();
@@ -98,6 +102,63 @@ class _CustomerOnlineCheckoutScreenState
     final raw = DBService.settings().get('current_user_id');
     if (raw is int) return raw;
     return int.tryParse(raw?.toString() ?? '');
+  }
+
+  void _loadAccountAddress() {
+    final userId = _currentUserId();
+    final email = DBService.currentUserEmail();
+    for (final user in DBService.users().values) {
+      if ((userId != null && user.userId == userId) ||
+          (email != null && user.email == email)) {
+        _accountAddress = user.address.trim();
+        break;
+      }
+    }
+    if (_accountAddress.isEmpty) _addressSource = 'new';
+  }
+
+  String? get _selectedShippingAddress {
+    if (_deliveryMethod != 'delivery') return null;
+    return _addressSource == 'account' ? _accountAddress : _newAddress;
+  }
+
+  String _formatPickupTime(DateTime value) {
+    final day = value.day.toString().padLeft(2, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$hour:$minute, $day/$month/${value.year}';
+  }
+
+  Future<void> _selectPickupTime() async {
+    final now = DateTime.now();
+    final initial = _pickupTime ?? now.add(const Duration(hours: 1));
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 14)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (time == null || !mounted) return;
+    final selected = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    if (!selected.isAfter(now)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thời gian nhận phải ở trong tương lai')),
+      );
+      return;
+    }
+    setState(() => _pickupTime = selected);
   }
 
   Future<void> _loadSavedVouchers() async {
@@ -235,10 +296,22 @@ class _CustomerOnlineCheckoutScreenState
       ).showSnackBar(const SnackBar(content: Text('Giỏ hàng đang trống')));
       return;
     }
-    if (_deliveryMethod == 'delivery' &&
-        _addressController.text.trim().isEmpty) {
+    if (_deliveryMethod == 'pickup' && _pickupTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng nhập địa chỉ giao hàng')),
+        const SnackBar(content: Text('Vui lòng chọn thời gian nhận tại quầy')),
+      );
+      return;
+    }
+    if (_deliveryMethod == 'delivery' &&
+        (_selectedShippingAddress?.trim().isEmpty ?? true)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _addressSource == 'account'
+                ? 'Tài khoản chưa có địa chỉ giao hàng'
+                : 'Vui lòng nhập đầy đủ địa chỉ giao hàng mới',
+          ),
+        ),
       );
       return;
     }
@@ -273,9 +346,8 @@ class _CustomerOnlineCheckoutScreenState
         userId: userId,
         deliveryMethod: _deliveryMethod,
         paymentMethod: _paymentMethod,
-        shippingAddress: _deliveryMethod == 'delivery'
-            ? _addressController.text.trim()
-            : null,
+        shippingAddress: _selectedShippingAddress,
+        pickupTime: _deliveryMethod == 'pickup' ? _pickupTime : null,
         voucherCode: _voucherCode,
         note: _noteController.text,
       );
@@ -417,8 +489,6 @@ class _CustomerOnlineCheckoutScreenState
       children: [
         _heroHeader(),
         const SizedBox(height: 14),
-        _progressSteps(),
-        const SizedBox(height: 14),
         _sectionCard(
           title: 'Sản phẩm trong giỏ',
           subtitle: '${_itemsCount()} sản phẩm',
@@ -439,7 +509,9 @@ class _CustomerOnlineCheckoutScreenState
           title: 'Nhận hàng',
           subtitle: _deliveryMethod == 'delivery'
               ? 'Dự kiến giao trong 24-48h'
-              : 'Sẵn sàng nhận tại quầy sau khi xác nhận',
+              : _pickupTime == null
+              ? 'Chọn thời gian bạn đến nhận hàng'
+              : 'Nhận lúc ${_formatPickupTime(_pickupTime!)}',
           icon: Icons.local_shipping_outlined,
           child: _deliveryOptions(),
         ),
@@ -531,44 +603,6 @@ class _CustomerOnlineCheckoutScreenState
           ),
         ],
       ),
-    );
-  }
-
-  Widget _progressSteps() {
-    const steps = [
-      ('Giỏ hàng', Icons.shopping_bag_outlined),
-      ('Nhận hàng', Icons.local_shipping_outlined),
-      ('Thanh toán', Icons.verified_outlined),
-    ];
-    return Row(
-      children: [
-        for (var i = 0; i < steps.length; i++) ...[
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: _card,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
-              ),
-              child: Column(
-                children: [
-                  Icon(steps[i].$2, color: i == 0 ? _primary : _accent),
-                  const SizedBox(height: 4),
-                  Text(
-                    steps[i].$1,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (i < steps.length - 1) const SizedBox(width: 8),
-        ],
-      ],
     );
   }
 
@@ -861,95 +895,194 @@ class _CustomerOnlineCheckoutScreenState
   }
 
   Widget _deliveryOptions() {
-    return RadioGroup<String>(
-      groupValue: _deliveryMethod,
-      onChanged: (value) => setState(() => _deliveryMethod = value ?? 'pickup'),
-      child: Column(
-        children: [
-          _optionTile(
-            value: 'pickup',
-            icon: Icons.storefront_outlined,
-            title: 'Nhận tại cửa hàng',
-            subtitle: 'Nhận đơn tại quầy sau khi nhân viên xác nhận.',
-          ),
-          const SizedBox(height: 10),
-          _optionTile(
-            value: 'delivery',
-            icon: Icons.local_shipping_outlined,
-            title: 'Giao tận nhà',
-            subtitle: 'Dự kiến 24-48h, nhân viên sẽ liên hệ trước khi giao.',
-          ),
-          if (_deliveryMethod == 'delivery') ...[
-            const SizedBox(height: 12),
-            TextField(
-              controller: _addressController,
-              decoration: InputDecoration(
-                labelText: 'Địa chỉ giao hàng',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+    return Column(
+      children: [
+        _optionTile(
+          selected: _deliveryMethod == 'pickup',
+          onTap: () => setState(() => _deliveryMethod = 'pickup'),
+          icon: Icons.storefront_outlined,
+          title: 'Nhận tại cửa hàng',
+          subtitle: 'Nhận đơn tại quầy sau khi nhân viên xác nhận.',
+        ),
+        if (_deliveryMethod == 'pickup') ...[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _selectPickupTime,
+            icon: const Icon(Icons.schedule_outlined),
+            label: Text(
+              _pickupTime == null
+                  ? 'Chọn thời gian nhận tại quầy'
+                  : 'Nhận lúc ${_formatPickupTime(_pickupTime!)}',
+            ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+              alignment: Alignment.centerLeft,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              minLines: 2,
-              maxLines: 3,
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        _optionTile(
+          selected: _deliveryMethod == 'delivery',
+          onTap: () => setState(() => _deliveryMethod = 'delivery'),
+          icon: Icons.local_shipping_outlined,
+          title: 'Giao tận nhà',
+          subtitle: 'Dự kiến 24-48h, nhân viên sẽ liên hệ trước khi giao.',
+        ),
+        if (_deliveryMethod == 'delivery') ...[
+          const SizedBox(height: 12),
+          _addressChoice(
+            value: 'account',
+            title: 'Địa chỉ tài khoản',
+            subtitle: _accountAddress.isEmpty
+                ? 'Tài khoản chưa có địa chỉ'
+                : _accountAddress,
+            enabled: _accountAddress.isNotEmpty,
+          ),
+          const SizedBox(height: 8),
+          _addressChoice(
+            value: 'new',
+            title: 'Nhập địa chỉ mới',
+            subtitle: 'Chọn tỉnh, quận/huyện, phường/xã và số nhà',
+          ),
+          if (_addressSource == 'new') ...[
+            const SizedBox(height: 14),
+            VietnamAddressForm(
+              onAddressChanged: (address) => _newAddress = address,
             ),
           ],
         ],
+      ],
+    );
+  }
+
+  Widget _addressChoice({
+    required String value,
+    required String title,
+    required String subtitle,
+    bool enabled = true,
+  }) {
+    final selected = _addressSource == value;
+    return InkWell(
+      onTap: enabled ? () => setState(() => _addressSource = value) : null,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected
+              ? _primary.withValues(alpha: 0.08)
+              : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? _primary : Colors.black12),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+              color: enabled
+                  ? (selected ? _primary : Colors.black45)
+                  : Colors.black26,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: enabled ? _ink : Colors.black38,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: enabled ? Colors.black54 : Colors.black38,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _paymentOptions() {
-    return RadioGroup<String>(
-      groupValue: _paymentMethod,
-      onChanged: (value) => setState(() => _paymentMethod = value ?? 'cash'),
-      child: Column(
-        children: [
-          _optionTile(
-            value: 'cash',
-            icon: Icons.payments_outlined,
-            title: 'Tiền mặt',
-            subtitle: 'Thanh toán khi nhận hàng hoặc tại quầy.',
-          ),
-          const SizedBox(height: 10),
-          _optionTile(
-            value: 'vnpay',
-            icon: Icons.account_balance_outlined,
-            title: 'Thanh toán online VNPay',
-            subtitle: 'Mở cổng VNPay sandbox, xác nhận tự động qua IPN.',
-          ),
-          const SizedBox(height: 10),
-          _optionTile(
-            value: 'bank_transfer',
-            icon: Icons.qr_code_2_outlined,
-            title: 'Chuyển khoản QR',
-            subtitle: 'Quét VietQR MB Bank, tự xác nhận qua SePay webhook.',
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        _optionTile(
+          selected: _paymentMethod == 'cash',
+          onTap: () => setState(() => _paymentMethod = 'cash'),
+          icon: Icons.payments_outlined,
+          title: 'Tiền mặt',
+          subtitle: 'Thanh toán khi nhận hàng hoặc tại quầy.',
+        ),
+        const SizedBox(height: 10),
+        _optionTile(
+          selected: _paymentMethod == 'bank_transfer',
+          onTap: () => setState(() => _paymentMethod = 'bank_transfer'),
+          icon: Icons.qr_code_2_outlined,
+          title: 'Chuyển khoản QR',
+          subtitle: 'Quét QR để thanh toán',
+        ),
+      ],
     );
   }
 
   Widget _optionTile({
-    required String value,
+    required bool selected,
+    required VoidCallback onTap,
     required IconData icon,
     required String title,
     required String subtitle,
   }) {
-    final selected = value == _deliveryMethod || value == _paymentMethod;
-    return Container(
-      decoration: BoxDecoration(
-        color: selected ? _primary.withValues(alpha: 0.08) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: selected ? _primary : Colors.black.withValues(alpha: 0.08),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? _primary.withValues(alpha: 0.08) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? _primary : Colors.black.withValues(alpha: 0.08),
+          ),
         ),
-      ),
-      child: RadioListTile<String>(
-        value: value,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-        secondary: Icon(icon, color: selected ? _primary : Colors.black54),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: Text(subtitle),
+        child: Row(
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+              color: selected ? _primary : Colors.black45,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(subtitle, style: const TextStyle(color: Colors.black54)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(icon, color: selected ? _primary : Colors.black54),
+          ],
+        ),
       ),
     );
   }
@@ -1000,7 +1133,9 @@ class _CustomerOnlineCheckoutScreenState
                 child: Text(
                   _deliveryMethod == 'delivery'
                       ? 'Dự kiến giao: 24-48h'
-                      : 'Nhận tại cửa hàng sau khi xác nhận',
+                      : _pickupTime == null
+                      ? 'Chưa chọn thời gian nhận tại cửa hàng'
+                      : 'Nhận lúc ${_formatPickupTime(_pickupTime!)}',
                   style: const TextStyle(color: Colors.black54),
                 ),
               ),

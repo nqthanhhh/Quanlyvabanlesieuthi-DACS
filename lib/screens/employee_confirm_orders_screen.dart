@@ -227,6 +227,28 @@ class _EmployeeConfirmOrdersScreenState
     return text.isEmpty ? fallback : text;
   }
 
+  String _formatDateTime(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return '';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return '';
+    final date = parsed.isUtc
+        ? parsed.toLocal()
+        : DateTime.utc(
+            parsed.year,
+            parsed.month,
+            parsed.day,
+            parsed.hour,
+            parsed.minute,
+            parsed.second,
+          ).toLocal();
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute, $day/$month/${date.year}';
+  }
+
   String _orderTypeLabel(String type) {
     switch (type) {
       case 'store_pickup':
@@ -468,6 +490,11 @@ class _EmployeeConfirmOrdersScreenState
                       fallback: 'Nhận tại cửa hàng',
                     ),
                   ),
+                  if ((order['pickup_time'] ?? '').toString().isNotEmpty)
+                    _metaChip(
+                      Icons.schedule_outlined,
+                      'Nhận lúc ${_formatDateTime(order['pickup_time'])}',
+                    ),
                 ],
               ),
               const Divider(height: 26),

@@ -693,6 +693,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
     const deliveryMethod = String(req.body.delivery_method || req.body.deliveryMethod || "pickup").trim();
     const paymentMethod = String(req.body.payment_method || req.body.paymentMethod || "cash").trim();
     const shippingAddress = String(req.body.shipping_address || req.body.shippingAddress || "").trim();
+    const pickupTimeRaw = req.body.pickup_time || req.body.pickupTime;
+    const pickupTime = pickupTimeRaw ? new Date(pickupTimeRaw) : null;
     const note = req.body.note ? String(req.body.note).trim() : null;
     const voucherId = Number(req.body.voucher_id || req.body.voucherId) || null;
     const voucherCode = req.body.voucher_code || req.body.voucherCode
@@ -707,6 +709,15 @@ router.post("/checkout", requireAuth, async (req, res) => {
     }
     if (deliveryMethod === "delivery" && !shippingAddress) {
       return res.status(400).json({ success: false, message: "Vui lòng nhập địa chỉ giao hàng" });
+    }
+    if (
+      deliveryMethod === "pickup" &&
+      (!pickupTime || Number.isNaN(pickupTime.getTime()) || pickupTime <= new Date())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng chọn thời gian nhận tại quầy hợp lệ",
+      });
     }
     if (!["cash", "ewallet", "vnpay", "bank_transfer"].includes(paymentMethod)) {
       return res.status(400).json({ success: false, message: "Phương thức thanh toán không hợp lệ" });
@@ -795,7 +806,14 @@ router.post("/checkout", requireAuth, async (req, res) => {
     addColumn("payment_status", paymentStatus);
     if (columns.has("order_status")) addColumn("order_status", orderStatus);
     addColumn("shipping_address", deliveryMethod === "delivery" ? shippingAddress : null);
-    addColumn("note", note);
+    if (columns.has("pickup_time")) {
+      addColumn("pickup_time", deliveryMethod === "pickup" ? pickupTime : null);
+    }
+    const effectiveNote =
+      deliveryMethod === "pickup" && !columns.has("pickup_time")
+        ? `${note ? `${note}\n` : ""}Thời gian nhận tại quầy: ${pickupTime.toLocaleString("vi-VN")}`
+        : note;
+    addColumn("note", effectiveNote);
 
     const insertValues = insertColumns.map(() => "?").join(", ");
     const [orderResult] = await connection.execute(

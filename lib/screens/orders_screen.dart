@@ -216,6 +216,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return '$d/$m/${date.year} $h:$min';
   }
 
+  String _formatPickupTime(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return '';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return '';
+    final date = parsed.isUtc
+        ? parsed.toLocal()
+        : DateTime.utc(
+            parsed.year,
+            parsed.month,
+            parsed.day,
+            parsed.hour,
+            parsed.minute,
+            parsed.second,
+          ).toLocal();
+    final d = date.day.toString().padLeft(2, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final h = date.hour.toString().padLeft(2, '0');
+    final min = date.minute.toString().padLeft(2, '0');
+    return '$d/$m/${date.year} $h:$min';
+  }
+
   String _paymentLabel(String? status) {
     switch (status) {
       case 'paid':
@@ -399,6 +421,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final paymentStatus = (order['payment_status'] ?? '').toString();
     final orderType = (order['order_type'] ?? '').toString();
     final address = (order['shipping_address'] ?? '').toString().trim();
+    final pickupTime = (order['pickup_time'] ?? '').toString().trim();
     final rejectionReason = (order['rejection_reason'] ?? '').toString().trim();
     final orderId = (order['order_id'] ?? order['id']).toString();
     final canMarkReceived = status == 'shipping' && orderType == 'delivery';
@@ -458,6 +481,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                   if (address.isNotEmpty)
                     _metaChip(Icons.location_on_outlined, address),
+                  if (pickupTime.isNotEmpty)
+                    _metaChip(
+                      Icons.schedule_outlined,
+                      'Nhận lúc ${_formatPickupTime(pickupTime)}',
+                    ),
                 ],
               ),
               if (status == 'rejected' && rejectionReason.isNotEmpty) ...[

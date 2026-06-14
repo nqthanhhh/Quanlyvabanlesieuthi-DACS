@@ -1090,6 +1090,7 @@ class ApiService {
     required String deliveryMethod,
     required String paymentMethod,
     String? shippingAddress,
+    DateTime? pickupTime,
     String? voucherCode,
     String? note,
   }) async {
@@ -1101,6 +1102,8 @@ class ApiService {
             'delivery_method': deliveryMethod,
             'payment_method': paymentMethod,
             if (shippingAddress != null) 'shipping_address': shippingAddress,
+            if (pickupTime != null)
+              'pickup_time': pickupTime.toUtc().toIso8601String(),
             if (voucherCode != null && voucherCode.trim().isNotEmpty)
               'voucher_code': voucherCode.trim().toUpperCase(),
             if (note != null && note.trim().isNotEmpty) 'note': note.trim(),

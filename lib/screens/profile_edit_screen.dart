@@ -1,12 +1,10 @@
-import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../services/db_service.dart';
+import '../services/vietnam_address_service.dart';
 import '../models/user.dart';
 
 class ProfileEditScreen extends StatefulWidget {
@@ -138,8 +136,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     });
 
     try {
-      final rawData = await _fetchAddressJson();
-      final provinces = (rawData as List)
+      final rawData = await VietnamAddressService.load();
+      final provinces = rawData
           .whereType<Map>()
           .map((item) => _Province.fromJson(Map<String, dynamic>.from(item)))
           .toList();
@@ -150,13 +148,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         _matchSavedAddressToOptions();
         _isLoadingAddressData = false;
       });
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() {
-        _addressDataError =
-            'Không tải được danh sách tự động. Bạn vẫn có thể nhập địa chỉ thủ công.';
-        _isLoadingAddressData = false;
-      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -165,31 +156,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         _isLoadingAddressData = false;
       });
     }
-  }
-
-  Future<dynamic> _fetchAddressJson() async {
-    const urls = [
-      'https://provinces.open-api.vn/api/?depth=3',
-      'http://provinces.open-api.vn/api/?depth=3',
-    ];
-
-    Object? lastError;
-    for (final url in urls) {
-      try {
-        final response = await http
-            .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 18));
-        if (response.statusCode == 200) {
-          return jsonDecode(utf8.decode(response.bodyBytes));
-        }
-        lastError = 'HTTP ${response.statusCode}';
-      } catch (e) {
-        lastError = e;
-      }
-    }
-
-    if (lastError is TimeoutException) throw lastError;
-    throw Exception(lastError ?? 'Không tải được danh sách địa chỉ');
   }
 
   void _parseSavedAddress(String address) {

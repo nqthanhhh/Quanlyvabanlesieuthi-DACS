@@ -597,14 +597,14 @@ router.post("/checkout", requireAuth, async (req, res) => {
     if (deliveryMethod === "delivery" && !shippingAddress) {
       return res.status(400).json({ success: false, message: "Vui lòng nhập địa chỉ giao hàng" });
     }
-    if (!["cash", "ewallet", "vnpay"].includes(paymentMethod)) {
+    if (!["cash", "ewallet", "vnpay", "bank_transfer"].includes(paymentMethod)) {
       return res.status(400).json({ success: false, message: "Phương thức thanh toán không hợp lệ" });
     }
 
     await connection.beginTransaction();
 
     const [carts] = await connection.execute(
-      "SELECT cart_id FROM carts WHERE user_id = ? LIMIT 1 FOR UPDATE",
+      "SELECT cart_id FROM carts WHERE user_id = ? ORDER BY cart_id DESC LIMIT 1 FOR UPDATE",
       [customerId],
     );
     if (carts.length === 0) {
@@ -692,6 +692,15 @@ router.post("/checkout", requireAuth, async (req, res) => {
       insertParams,
     );
 
+    const generatedTransferContent =
+      paymentMethod === "bank_transfer" ? `DH${orderResult.insertId}` : null;
+    if (generatedTransferContent && columns.has("transfer_content")) {
+      await connection.execute(
+        "UPDATE orders SET transfer_content = ? WHERE order_id = ?",
+        [generatedTransferContent, orderResult.insertId],
+      );
+    }
+
     for (const item of normalizedItems) {
       await connection.execute(
         `INSERT INTO order_items (order_id, product_id, quantity, price, subtotal)
@@ -713,7 +722,7 @@ router.post("/checkout", requireAuth, async (req, res) => {
         paymentStatus,
         paymentMethod === "ewallet"
           ? `FAKE_QR_ORDER_${orderResult.insertId}_${Math.round(finalAmount)}`
-          : null,
+          : generatedTransferContent,
         paymentStatus === "paid" ? new Date() : null,
       ],
     );
@@ -735,14 +744,20 @@ router.post("/checkout", requireAuth, async (req, res) => {
           paymentMethod === "ewallet"
             ? `FAKE_QR_ORDER_${orderResult.insertId}_${Math.round(finalAmount)}`
             : null,
+        transferContent: generatedTransferContent,
         requiresVnpayPayment: paymentMethod === "vnpay",
       },
     });
   } catch (error) {
     await connection.rollback();
-    res.status(500).json({
+    const isBusinessError =
+      error.message &&
+      (error.message.startsWith("Không đủ tồn kho") ||
+        error.message.includes("Giỏ hàng đang trống") ||
+        error.message.includes("không hợp lệ"));
+    res.status(isBusinessError ? 400 : 500).json({
       success: false,
-      message: "Lỗi checkout đơn hàng online",
+      message: isBusinessError ? error.message : "Lỗi checkout đơn hàng online",
       error: error.message,
     });
   } finally {
@@ -1148,7 +1163,6 @@ router.post("/", async (req, res) => {
     const loyaltyPhone = loyalty.normalizePhone(customer_phone);
     const wantsLoyalty =
       Boolean(loyaltyPhone) ||
-      Boolean(customer_name) ||
       use_points === true ||
       use_points === "true" ||
       Number(points_to_use || 0) > 0;
@@ -1279,11 +1293,21 @@ router.post("/", async (req, res) => {
       .json({ success: true, message: "Đã tạo đơn hàng", data: order });
   } catch (error) {
     await connection.rollback();
+    const isBusinessError =
+      error.message &&
+      (error.message.startsWith("Không đủ tồn kho") ||
+        error.message.includes("không hợp lệ") ||
+        error.message.includes("không tìm thấy") ||
+        error.message.includes("không tồn tại") ||
+        error.message.includes("không còn hoạt động") ||
+        error.message.includes("đã hết hạn") ||
+        error.message.includes("đã hết lượt") ||
+        error.message.includes("Vui lòng"));
     res
-      .status(500)
+      .status(isBusinessError ? 400 : 500)
       .json({
         success: false,
-        message: "Lỗi tạo đơn hàng",
+        message: isBusinessError ? error.message : "Lỗi tạo đơn hàng",
         error: error.message,
       });
   } finally {

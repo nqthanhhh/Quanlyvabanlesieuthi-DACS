@@ -126,6 +126,22 @@ CREATE TABLE IF NOT EXISTS cart_items (
     ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS vouchers (
+  voucher_id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  description TEXT,
+  discount_type ENUM('fixed', 'percent') NOT NULL,
+  discount_value DECIMAL(10,2) NOT NULL,
+  min_order_amount DECIMAL(10,2) DEFAULT 0,
+  max_discount DECIMAL(10,2) DEFAULT NULL,
+  usage_limit INT DEFAULT NULL,
+  used_count INT DEFAULT 0,
+  expiry_date DATE DEFAULT NULL,
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS orders (
   order_id INT AUTO_INCREMENT PRIMARY KEY,
   customer_id INT,
@@ -340,7 +356,7 @@ CREATE TABLE IF NOT EXISTS employee_day_overrides (
   UNIQUE KEY uk_employee_work_date (employee_id, work_date),
   CONSTRAINT fk_day_override_employee
     FOREIGN KEY (employee_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
+    ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_day_override_set_by
     FOREIGN KEY (set_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL
@@ -363,23 +379,6 @@ CREATE TABLE IF NOT EXISTS work_shifts (
     REFERENCES users(user_id)
     ON UPDATE CASCADE
     ON DELETE RESTRICT
-) ENGINE=InnoDB;
-
--- VOUCHER TABLES
-CREATE TABLE IF NOT EXISTS vouchers (
-  voucher_id INT AUTO_INCREMENT PRIMARY KEY,
-  code VARCHAR(50) NOT NULL UNIQUE,
-  description TEXT,
-  discount_type ENUM('fixed', 'percent') NOT NULL,
-  discount_value DECIMAL(10,2) NOT NULL,
-  min_order_amount DECIMAL(10,2) DEFAULT 0,
-  max_discount DECIMAL(10,2) DEFAULT NULL,
-  usage_limit INT DEFAULT NULL,
-  used_count INT DEFAULT 0,
-  expiry_date DATE DEFAULT NULL,
-  status VARCHAR(20) DEFAULT 'active',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS user_vouchers (

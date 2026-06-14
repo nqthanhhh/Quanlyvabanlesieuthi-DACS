@@ -8,6 +8,9 @@ class PaymentConfig {
 
   static String transferContent(String orderCode) {
     final normalized = orderCode.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    if (normalized.toUpperCase().startsWith(transferPrefix)) {
+      return normalized.toUpperCase();
+    }
     return '$transferPrefix$normalized';
   }
 

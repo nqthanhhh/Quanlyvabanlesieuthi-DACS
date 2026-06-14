@@ -5,9 +5,11 @@ import '../models/voucher.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/voucher_service.dart';
+import '../utils/payment_config.dart';
 import '../utils/product_asset_resolver.dart';
 import '../widgets/product_image_widget.dart';
 import '../widgets/slide_page_route.dart';
+import 'bank_transfer_qr_screen.dart';
 import 'orders_screen.dart';
 import 'vnpay_payment_screen.dart';
 
@@ -283,6 +285,49 @@ class _CustomerOnlineCheckoutScreenState
         return;
       }
 
+      if (_paymentMethod == 'bank_transfer') {
+        final transferContent =
+            order.transferContent ?? PaymentConfig.transferContent(order.id);
+        final qrContent = PaymentConfig.qrContent(
+          orderCode: transferContent,
+          amount: order.totalAmount,
+        );
+        final navigator = Navigator.of(context);
+        final messenger = ScaffoldMessenger.of(context);
+        final result = await navigator.push<BankTransferQrResult>(
+          buildSlidePageRoute(
+            BankTransferQrScreen(
+              orderCode: order.id,
+              amount: order.totalAmount,
+              qrContent: qrContent,
+              transferContent: transferContent,
+              userId: userId,
+            ),
+          ),
+        );
+
+        if (!mounted) return;
+        if (result?.confirmed == true) {
+          if (!result!.paidAutomatically) {
+            await ApiService.confirmBankTransferManual(
+              userId: userId,
+              orderId: int.parse(order.id),
+            );
+            if (!mounted) return;
+          }
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Thanh toán QR thành công')),
+          );
+          navigator.pushReplacement(buildSlidePageRoute(const OrdersScreen()));
+        } else {
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Đơn đang chờ thanh toán QR')),
+          );
+          navigator.pushReplacement(buildSlidePageRoute(const OrdersScreen()));
+        }
+        return;
+      }
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đặt hàng thành công')));
@@ -388,7 +433,7 @@ class _CustomerOnlineCheckoutScreenState
           title: 'Thanh toán',
           subtitle: 'Chọn phương thức phù hợp',
           icon: Icons.payments_outlined,
-          child: _paymentOptions(finalTotal),
+          child: _paymentOptions(),
         ),
         _sectionCard(
           title: 'Ghi chú',
@@ -839,7 +884,7 @@ class _CustomerOnlineCheckoutScreenState
     );
   }
 
-  Widget _paymentOptions(double amount) {
+  Widget _paymentOptions() {
     return RadioGroup<String>(
       groupValue: _paymentMethod,
       onChanged: (value) => setState(() => _paymentMethod = value ?? 'cash'),
@@ -860,13 +905,11 @@ class _CustomerOnlineCheckoutScreenState
           ),
           const SizedBox(height: 10),
           _optionTile(
-            value: 'ewallet',
+            value: 'bank_transfer',
             icon: Icons.qr_code_2_outlined,
-            title: 'QR mô phỏng (demo)',
-            subtitle:
-                'Chỉ dùng demo: đánh dấu đã thanh toán ngay, không qua cổng thật.',
+            title: 'Chuyển khoản QR',
+            subtitle: 'Quét VietQR MB Bank, tự xác nhận qua SePay webhook.',
           ),
-          if (_paymentMethod == 'ewallet') _fakeQr(amount),
         ],
       ),
     );
@@ -1098,38 +1141,6 @@ class _CustomerOnlineCheckoutScreenState
     );
   }
 
-  Widget _fakeQr(double amount) {
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _accent.withValues(alpha: 0.16)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 92,
-            height: 92,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: CustomPaint(painter: _FakeQrPainter()),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'QR demo\nONLINE-${DateTime.now().millisecondsSinceEpoch}\n${_formatCurrency(amount)}',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _emptyState() {
     return Center(
       child: Padding(
@@ -1178,28 +1189,4 @@ class _CustomerOnlineCheckoutScreenState
       ),
     );
   }
-}
-
-class _FakeQrPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.black87;
-    final cell = size.width / 9;
-    for (var y = 0; y < 9; y++) {
-      for (var x = 0; x < 9; x++) {
-        if ((x * 3 + y * 5 + x * y) % 4 == 0 ||
-            (x < 3 && y < 3) ||
-            (x > 5 && y < 3) ||
-            (x < 3 && y > 5)) {
-          canvas.drawRect(
-            Rect.fromLTWH(x * cell, y * cell, cell * 0.82, cell * 0.82),
-            paint,
-          );
-        }
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

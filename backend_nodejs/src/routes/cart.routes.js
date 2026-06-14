@@ -6,7 +6,7 @@ const router = express.Router();
 
 async function getOrCreateCart(connection, userId) {
   const [existing] = await connection.execute(
-    'SELECT cart_id FROM carts WHERE user_id = ? LIMIT 1',
+    'SELECT cart_id FROM carts WHERE user_id = ? ORDER BY cart_id DESC LIMIT 1',
     [userId]
   );
   if (existing.length > 0) return existing[0].cart_id;
@@ -19,7 +19,10 @@ function currentUserId(req) {
 }
 
 async function fetchCartPayload(userId) {
-  const [carts] = await pool.execute('SELECT cart_id FROM carts WHERE user_id = ? LIMIT 1', [userId]);
+  const [carts] = await pool.execute(
+    'SELECT cart_id FROM carts WHERE user_id = ? ORDER BY cart_id DESC LIMIT 1',
+    [userId]
+  );
   if (carts.length === 0) {
     return { user_id: userId, items: [] };
   }

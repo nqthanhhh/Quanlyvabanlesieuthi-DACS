@@ -247,10 +247,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
     required String? qrContent,
     required String? note,
   }) {
-    final rawUserId = DBService.settings().get('current_user_id');
-    final currentUserId = rawUserId is int
-        ? rawUserId
-        : int.tryParse(rawUserId?.toString() ?? '');
     return Order(
       id: transactionId,
       orderDate: DateTime.now(),
@@ -258,7 +254,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       customerName: _wantsLoyaltyPoints
           ? _loyaltyNameController.text.trim()
           : 'Khách lẻ',
-      customerId: _wantsLoyaltyPoints ? null : currentUserId,
+      customerId: null,
       status: 'completed',
       paymentMethod: paymentMethod,
       paymentStatus: 'paid',
@@ -279,10 +275,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Order _buildPendingBankOrder() {
-    final rawUserId = DBService.settings().get('current_user_id');
-    final currentUserId = rawUserId is int
-        ? rawUserId
-        : int.tryParse(rawUserId?.toString() ?? '');
     return Order(
       id: 'PENDING-${DateTime.now().millisecondsSinceEpoch}',
       orderDate: DateTime.now(),
@@ -290,7 +282,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       customerName: _wantsLoyaltyPoints
           ? _loyaltyNameController.text.trim()
           : 'Khách lẻ',
-      customerId: _wantsLoyaltyPoints ? null : currentUserId,
+      customerId: null,
       status: 'pending',
       paymentMethod: 'bank_transfer',
       paymentStatus: 'pending',

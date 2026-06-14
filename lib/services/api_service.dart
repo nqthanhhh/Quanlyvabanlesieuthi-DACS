@@ -126,8 +126,9 @@ class ApiService {
         ? <String, dynamic>{}
         : jsonDecode(utf8.decode(response.bodyBytes));
     if (response.statusCode >= 400) {
-      final message = body is Map && body['message'] != null
-          ? body['message'].toString()
+      final message = body is Map
+          ? (body['error'] ?? body['message'] ?? 'Lỗi API ${response.statusCode}')
+              .toString()
           : 'Lỗi API ${response.statusCode}';
       throw ApiException(message);
     }
@@ -1077,7 +1078,7 @@ class ApiService {
   }) async {
     final response = await http
         .post(
-          _uri('/orders/checkout'),
+          _uri('/api/orders/checkout'),
           headers: _userHeadersFor(userId),
           body: jsonEncode({
             'delivery_method': deliveryMethod,

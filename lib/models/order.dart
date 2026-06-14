@@ -153,7 +153,7 @@ class Order extends HiveObject {
       ),
       paidAt: TypeConverters.toLocalDateTime(json['paid_at'] ?? json['paidAt']),
       qrContent: TypeConverters.toNullableString(
-        json['qr_content'] ?? json['qrContent'],
+        json['qr_content'] ?? json['qrContent'] ?? json['fakeQrContent'],
       ),
       transferContent: TypeConverters.toNullableString(
         json['transfer_content'] ?? json['transferContent'],

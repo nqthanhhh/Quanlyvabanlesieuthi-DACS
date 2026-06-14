@@ -14,6 +14,20 @@ function requireEnv(name) {
   return String(value).trim();
 }
 
+function envOrDevFallback(name, fallback) {
+  const value = process.env[name];
+  if (value && String(value).trim()) {
+    return String(value).trim();
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return requireEnv(name);
+  }
+
+  console.warn(`[VNPay] ${name} chưa có trong .env, dùng cấu hình sandbox demo cho môi trường dev.`);
+  return fallback;
+}
+
 function sortAndEncodeParams(params) {
   const entries = Object.keys(params)
     .filter((key) => params[key] !== undefined && params[key] !== null && params[key] !== "")
@@ -39,12 +53,13 @@ function formatVnpDate(date = new Date()) {
 }
 
 function getConfig() {
+  const localBackendUrl = `http://localhost:${process.env.PORT || 3000}`;
   return {
-    tmnCode: requireEnv("VNP_TMN_CODE"),
-    hashSecret: requireEnv("VNP_HASH_SECRET"),
-    paymentUrl: requireEnv("VNP_URL"),
-    returnUrl: requireEnv("VNP_RETURN_URL"),
-    ipnUrl: requireEnv("VNP_IPN_URL"),
+    tmnCode: envOrDevFallback("VNP_TMN_CODE", "2QXUI4J4"),
+    hashSecret: envOrDevFallback("VNP_HASH_SECRET", "1H4TV13VE5Y61RJ8Y1L86I6Q2Q8ZV8V4"),
+    paymentUrl: envOrDevFallback("VNP_URL", "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"),
+    returnUrl: envOrDevFallback("VNP_RETURN_URL", `${localBackendUrl}/api/payments/vnpay-return`),
+    ipnUrl: envOrDevFallback("VNP_IPN_URL", `${localBackendUrl}/api/payments/vnpay-ipn`),
   };
 }
 

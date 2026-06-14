@@ -85,6 +85,90 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  Future<void> _showCancelDialog(Map<String, dynamic> order) async {
+    var enteredReason = '';
+    String? validationMessage;
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Hủy đơn hàng'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Vui lòng nhập lý do bạn muốn hủy đơn.'),
+              const SizedBox(height: 12),
+              TextField(
+                autofocus: true,
+                maxLength: 255,
+                maxLines: 3,
+                onChanged: (value) => enteredReason = value,
+                decoration: InputDecoration(
+                  labelText: 'Lý do hủy',
+                  hintText: 'Ví dụ: Tôi muốn thay đổi sản phẩm',
+                  errorText: validationMessage,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Đóng'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () {
+                final value = enteredReason.trim();
+                if (value.isEmpty) {
+                  setDialogState(
+                    () => validationMessage = 'Vui lòng nhập lý do hủy',
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, value);
+              },
+              child: const Text('Xác nhận hủy'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (reason == null || !mounted) return;
+    await _cancelOrder(order, reason);
+  }
+
+  Future<void> _cancelOrder(Map<String, dynamic> order, String reason) async {
+    final userId = _currentUserId();
+    final orderId = (order['order_id'] ?? order['id']).toString();
+    if (userId == null || orderId.isEmpty) return;
+
+    setState(() => _busyOrderId = orderId);
+    try {
+      final updated = await ApiService.cancelMyOrder(
+        userId: userId,
+        orderId: orderId,
+        reason: reason,
+      );
+      await _cacheUpdatedOrder(updated);
+      await _loadOrders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đã hủy đơn hàng')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException ? e.message : e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _busyOrderId = null);
+    }
+  }
+
   Future<void> _cacheUpdatedOrder(Map<String, dynamic> order) async {
     if (order.isEmpty) return;
     final updatedOrder = Order.fromJson(order);
@@ -159,9 +243,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return 'confirmed';
       case 'shipping':
       case 'completed':
+      case 'cancelled':
         return raw;
       case 'rejected':
-      case 'cancelled':
         return 'rejected';
       default:
         return raw.isEmpty ? 'pending' : raw;
@@ -176,6 +260,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return 'Đã xác nhận';
       case 'rejected':
         return 'Đã từ chối';
+      case 'cancelled':
+        return 'Đã hủy';
       case 'shipping':
         return 'Đang giao';
       case 'completed':
@@ -187,7 +273,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   bool _isHistoryOrder(Map<String, dynamic> order) {
     final status = _displayStatus(order);
-    return status == 'completed' || status == 'rejected';
+    return status == 'completed' ||
+        status == 'rejected' ||
+        status == 'cancelled';
   }
 
   List<Map<String, dynamic>> _ordersForTab(int tabIndex) {
@@ -203,6 +291,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       case 'completed':
         return Colors.green;
       case 'rejected':
+      case 'cancelled':
         return Colors.red;
       case 'shipping':
         return Colors.blue;
@@ -313,6 +402,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final rejectionReason = (order['rejection_reason'] ?? '').toString().trim();
     final orderId = (order['order_id'] ?? order['id']).toString();
     final canMarkReceived = status == 'shipping' && orderType == 'delivery';
+    final canCancel = const [
+      'pending',
+      'confirmed',
+      'shipping',
+    ].contains(status);
     final isBusy = _busyOrderId == orderId;
     final items = ((order['items'] as List?) ?? const [])
         .whereType<Map>()
@@ -387,6 +481,27 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                 ),
               ],
+              if (status == 'cancelled' && rejectionReason.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.red.withValues(alpha: 0.18),
+                    ),
+                  ),
+                  child: Text(
+                    'Lý do hủy: $rejectionReason',
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
               const Divider(height: 26),
               ...items.map(_itemRow),
               const Divider(height: 26),
@@ -407,6 +522,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                 ],
               ),
+              if (canCancel) ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: isBusy ? null : () => _showCancelDialog(order),
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: const Text('Hủy đơn hàng'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               if (canMarkReceived) ...[
                 const SizedBox(height: 14),
                 SizedBox(

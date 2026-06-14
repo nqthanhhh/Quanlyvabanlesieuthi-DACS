@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../utils/constants.dart';
 import '../utils/product_asset_resolver.dart';
 import '../widgets/product_image_widget.dart';
 import '../widgets/role_bottom_navigation_bar.dart';
@@ -108,6 +109,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     final total = _calculateTotal(productsById);
+    if (total > AppConstants.maxPaymentAmount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(AppConstants.maxPaymentAmountMessage),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     final detailedCart = <String, int>{};
     for (final entry in _editableCart.entries) {
       final product = productsById[entry.key];

@@ -284,7 +284,7 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
             ),
           ),
           Expanded(
-            child: widget.role == 'employee'
+            child: widget.role == 'employee' || widget.role == 'admin'
                 ? DefaultTabController(
                     length: 2,
                     child: Column(

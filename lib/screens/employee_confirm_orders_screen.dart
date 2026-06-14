@@ -249,7 +249,7 @@ class _EmployeeConfirmOrdersScreenState
       case 'preparing':
         return 'shipping';
       case 'cancelled':
-        return 'rejected';
+        return 'cancelled';
       default:
         return raw.isEmpty ? 'pending' : raw;
     }
@@ -262,7 +262,8 @@ class _EmployeeConfirmOrdersScreenState
       if (tabIndex == 1) {
         return status == 'confirmed' || status == 'shipping';
       }
-      return status == 'rejected';
+      if (tabIndex == 2) return status == 'rejected';
+      return status == 'cancelled';
     }).toList();
   }
 
@@ -286,6 +287,8 @@ class _EmployeeConfirmOrdersScreenState
         return 'Thành công';
       case 'rejected':
         return 'Đã từ chối';
+      case 'cancelled':
+        return 'Đã hủy';
       default:
         return status;
     }
@@ -299,6 +302,7 @@ class _EmployeeConfirmOrdersScreenState
       case 'shipping':
         return _primary;
       case 'rejected':
+      case 'cancelled':
         return _danger;
       default:
         return const Color(0xFFF59E0B);
@@ -322,7 +326,7 @@ class _EmployeeConfirmOrdersScreenState
         ],
       ),
       body: DefaultTabController(
-        length: 3,
+        length: 4,
         child: Column(
           children: [
             const Material(
@@ -331,16 +335,28 @@ class _EmployeeConfirmOrdersScreenState
                 labelColor: _primary,
                 unselectedLabelColor: Colors.black54,
                 indicatorColor: _primary,
+                labelPadding: EdgeInsets.zero,
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+                unselectedLabelStyle: TextStyle(fontSize: 12),
                 tabs: [
                   Tab(text: 'Chờ xác nhận'),
                   Tab(text: 'Đã xác nhận'),
                   Tab(text: 'Đã từ chối'),
+                  Tab(text: 'Đã hủy'),
                 ],
               ),
             ),
             Expanded(
               child: TabBarView(
-                children: [_ordersTab(0), _ordersTab(1), _ordersTab(2)],
+                children: [
+                  _ordersTab(0),
+                  _ordersTab(1),
+                  _ordersTab(2),
+                  _ordersTab(3),
+                ],
               ),
             ),
           ],
@@ -478,6 +494,16 @@ class _EmployeeConfirmOrdersScreenState
                 const SizedBox(height: 12),
                 Text(
                   'Lý do từ chối: $rejectionReason',
+                  style: const TextStyle(
+                    color: _danger,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              if (status == 'cancelled' && rejectionReason.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Lý do hủy: $rejectionReason',
                   style: const TextStyle(
                     color: _danger,
                     fontWeight: FontWeight.w700,

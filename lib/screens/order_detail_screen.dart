@@ -45,8 +45,9 @@ class OrderDetailScreen extends StatelessWidget {
       case 'hoàn thành':
         return 'Hoàn thành';
       case 'rejected':
-      case 'cancelled':
         return 'Đã từ chối';
+      case 'cancelled':
+        return 'Đã hủy';
       default:
         return status.isEmpty ? 'Chưa có trạng thái' : status;
     }

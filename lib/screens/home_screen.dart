@@ -539,8 +539,260 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  List<Widget> _buildAdminDrawerMenuItems() {
+    Widget menuIcon(IconData icon) {
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF7F2),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: const Color(0xFF2F855A), size: 22),
+      );
+    }
+
+    Widget menuCard({required Widget child}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      );
+    }
+
+    Widget childItem({
+      required IconData icon,
+      required String title,
+      required VoidCallback onTap,
+    }) {
+      return Container(
+        color: const Color(0xFFF6FBF8),
+        child: ListTile(
+          contentPadding: const EdgeInsets.only(left: 28, right: 18),
+          leading: Icon(icon, size: 20, color: _primaryGreen),
+          title: Text(
+            title,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          trailing: const Icon(
+            Icons.chevron_right,
+            color: Colors.black26,
+            size: 19,
+          ),
+          onTap: onTap,
+        ),
+      );
+    }
+
+    return [
+      menuCard(
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          leading: menuIcon(Icons.dashboard_outlined),
+          title: const Text(
+            'Tổng quan',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          children: [
+            childItem(
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'Doanh thu và lợi nhuận',
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const RevenueOverviewScreen(),
+                  ),
+                );
+              },
+            ),
+            childItem(
+              icon: Icons.bar_chart_outlined,
+              title: 'Hiệu suất sản phẩm',
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ProductPerformanceReportScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+      menuCard(
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          leading: menuIcon(Icons.admin_panel_settings_outlined),
+          title: const Text(
+            'Quản lý',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          children: [
+            childItem(
+              icon: Icons.inventory_2_outlined,
+              title: 'Sản phẩm',
+              onTap: () async {
+                Navigator.of(context).pop();
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ProductManagementScreen(),
+                  ),
+                );
+                if (!mounted) return;
+                setState(() {});
+              },
+            ),
+            childItem(
+              icon: Icons.inventory_outlined,
+              title: 'Kho hàng',
+              onTap: () async {
+                Navigator.of(context).pop();
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const InventoryManagementScreen(),
+                  ),
+                );
+                if (!mounted) return;
+                setState(() {});
+              },
+            ),
+            childItem(
+              icon: Icons.people_alt_outlined,
+              title: 'Nhân sự',
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  buildSlidePageRoute(
+                    EmployeeManagementScreen(role: widget.role),
+                  ),
+                );
+              },
+            ),
+            childItem(
+              icon: Icons.groups_outlined,
+              title: 'Khách hàng',
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CustomerManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            childItem(
+              icon: Icons.card_giftcard_outlined,
+              title: 'Voucher',
+              onTap: () {
+                Navigator.of(context).pop();
+                final token = DBService.settings().get('auth_token') ?? '';
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        AdminVouchersScreen(token: token.toString()),
+                  ),
+                );
+              },
+            ),
+            childItem(
+              icon: Icons.schedule_outlined,
+              title: 'Ca làm',
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        WorkShiftManagementScreen(role: widget.role),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+      menuCard(
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 9,
+          ),
+          leading: menuIcon(Icons.receipt_long_outlined),
+          title: const Text(
+            'Lịch sử đơn hàng',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          trailing: const Icon(
+            Icons.chevron_right,
+            color: Colors.black26,
+            size: 20,
+          ),
+          onTap: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(
+              buildSlidePageRoute(OrderManagementScreen(role: widget.role)),
+            );
+          },
+        ),
+      ),
+      menuCard(
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 9,
+          ),
+          leading: menuIcon(Icons.lock_outline),
+          title: const Text(
+            'Thông tin bảo mật',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          trailing: const Icon(
+            Icons.chevron_right,
+            color: Colors.black26,
+            size: 20,
+          ),
+          onTap: () async {
+            Navigator.of(context).pop();
+            if (!await _requireLogin(
+              message: 'Vui lòng đăng nhập để xem thông tin bảo mật',
+            )) {
+              return;
+            }
+            if (!mounted) return;
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SecurityInfoScreen()),
+            );
+          },
+        ),
+      ),
+    ];
+  }
+
   // Tách Menu Items
   List<Widget> _buildDrawerMenuItems() {
+    if (widget.role == 'admin') {
+      return _buildAdminDrawerMenuItems();
+    }
+
     // Hàm helper để tạo item menu đồng bộ với thiết kế của ProfileViewScreen
     Widget _buildMenuItem({
       required IconData icon,
@@ -621,73 +873,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ];
 
-    // Nếu là ADMIN
-    if (widget.role == 'admin') {
-      items.insertAll(0, [
-        _buildMenuItem(
-          icon: Icons.account_balance_wallet_outlined,
-          title: 'Xem doanh thu và lợi nhuận',
-          onTap: () {
-            Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RevenueOverviewScreen()),
-            );
-          },
-        ),
-        _buildMenuItem(
-          icon: Icons.bar_chart_outlined,
-          title: 'Xem báo cáo hiệu suất sản phẩm',
-          onTap: () {
-            Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const ProductPerformanceReportScreen(),
-              ),
-            );
-          },
-        ),
-        _buildMenuItem(
-          icon: Icons.schedule_outlined,
-          title: 'Quản lý ca làm',
-          onTap: () {
-            Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => WorkShiftManagementScreen(role: widget.role),
-              ),
-            );
-          },
-        ),
-        _buildMenuItem(
-          icon: Icons.groups_outlined,
-          title: 'Quản lý khách hàng',
-          onTap: () {
-            Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const CustomerManagementScreen(),
-              ),
-            );
-          },
-        ),
-        _buildMenuItem(
-          icon: Icons.card_giftcard_outlined,
-          title: 'Quản lý mã khuyến mãi',
-          onTap: () {
-            Navigator.of(context).pop();
-            final settings = DBService.settings();
-            final token = settings.get('auth_token') ?? '';
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => AdminVouchersScreen(token: token.toString()),
-              ),
-            );
-          },
-        ),
-      ]);
-    }
     // Nếu là EMPLOYEE
-    else if (widget.role == 'employee') {
+    if (widget.role == 'employee') {
       items.insertAll(0, [
         _buildMenuItem(
           icon: Icons.schedule_outlined,

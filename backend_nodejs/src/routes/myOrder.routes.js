@@ -23,7 +23,6 @@ function currentUserId(req) {
 function displayOrderStatus(row) {
   const status = row.order_status || row.status || "pending";
   if (status === "waiting_confirm") return "pending";
-  if (status === "cancelled") return "rejected";
   return status;
 }
 
@@ -72,7 +71,9 @@ router.get("/", requireAuth, async (req, res) => {
         display_order_status: displayOrderStatus(row),
         rejection_reason:
           row.rejection_reason ||
-          (displayOrderStatus(row) === "rejected" ? row.note : null),
+          (["rejected", "cancelled"].includes(displayOrderStatus(row))
+            ? row.note
+            : null),
         items: items.map((item) => ({
           ...item,
           productId: String(item.product_id),

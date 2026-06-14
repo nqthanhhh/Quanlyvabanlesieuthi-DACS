@@ -9,6 +9,7 @@ import '../models/voucher.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/voucher_service.dart';
+import '../utils/constants.dart';
 import '../utils/payment_config.dart';
 import '../utils/product_asset_resolver.dart';
 import '../widgets/product_image_widget.dart';
@@ -464,6 +465,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   Future<void> _placeOrder() async {
     if (_isProcessing) return;
+
+    if (_payableTotal > AppConstants.maxPaymentAmount) {
+      _showSnack(AppConstants.maxPaymentAmountMessage, success: false);
+      return;
+    }
 
     if (_selectedPaymentMethod == null) {
       _showSnack('Vui lòng chọn phương thức thanh toán', success: false);

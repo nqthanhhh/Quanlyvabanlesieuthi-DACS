@@ -9,6 +9,9 @@ class AppConstants {
   static const int apiTimeoutSeconds = 5;
   static const int shiftTimeoutSeconds = 15;
   static const int checkoutTimeoutSeconds = 12;
+  static const double maxPaymentAmount = 99999999.99;
+  static const String maxPaymentAmountMessage =
+      'Số tiền thanh toán tối đa là 99.999.999,99 VND';
 
   /// Ưu tiên truyền khi chạy:
   /// flutter run --dart-define=API_BASE_URL=http://IP_MAC:3000

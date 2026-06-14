@@ -5,6 +5,7 @@ import '../models/voucher.dart';
 import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/voucher_service.dart';
+import '../utils/constants.dart';
 import '../utils/payment_config.dart';
 import '../utils/product_asset_resolver.dart';
 import '../widgets/product_image_widget.dart';
@@ -207,6 +208,19 @@ class _CustomerOnlineCheckoutScreenState
 
   Future<void> _checkout() async {
     if (_isCheckingOut) return;
+    final products = _productById();
+    final payableTotal = (_subtotal(products) - _discountAmount)
+        .clamp(0, double.infinity)
+        .toDouble();
+    if (payableTotal > AppConstants.maxPaymentAmount) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(AppConstants.maxPaymentAmountMessage),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     final userId = _currentUserId();
     final email = DBService.currentUserEmail();
     if (userId == null || email == null) {

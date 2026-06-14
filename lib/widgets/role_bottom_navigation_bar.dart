@@ -29,43 +29,10 @@ class RoleBottomNavigationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (role == 'admin') return _adminBar();
+    if (role == 'admin') return _employeeBar();
     if (role == 'employee') return _employeeBar();
     if (role == 'customer') return _customerBar();
     return const SizedBox.shrink();
-  }
-
-  Widget _adminBar() {
-    final tabs = [
-      _TabData(RoleBottomTab.home, Icons.home_outlined, Icons.home, 'Home'),
-      _TabData(
-        RoleBottomTab.cart,
-        Icons.shopping_cart_outlined,
-        Icons.shopping_cart,
-        'Thanh toán',
-      ),
-      _TabData(
-        RoleBottomTab.employees,
-        Icons.people_alt_outlined,
-        Icons.people_alt,
-        'Nhân viên',
-      ),
-      _TabData(
-        RoleBottomTab.invoices,
-        Icons.receipt_long_outlined,
-        Icons.receipt_long,
-        'Lịch sử',
-      ),
-
-      _TabData(
-        RoleBottomTab.account,
-        Icons.person_outline,
-        Icons.person,
-        'Tài khoản',
-      ),
-    ];
-
-    return _BarShell(child: _bottomBar(tabs));
   }
 
   Widget _employeeBar() {

@@ -104,7 +104,6 @@ function normalizeOrderStatusValue(status, orderType) {
   if (status === "Hoàn thành" || status === "hoàn thành") {
     return "completed";
   }
-  if (status === "cancelled") return "rejected";
   return status;
 }
 
@@ -568,6 +567,118 @@ router.put("/:id/received", requireAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Lỗi xác nhận nhận hàng",
+      error: error.message,
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+router.put("/:id/cancel", requireAuth, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const customerId = currentUserId(req);
+    const reason = String(
+      req.body.reason || req.body.cancellation_reason || "",
+    ).trim();
+
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng nhập lý do hủy đơn hàng",
+      });
+    }
+    if (reason.length > 255) {
+      return res.status(400).json({
+        success: false,
+        message: "Lý do hủy không được vượt quá 255 ký tự",
+      });
+    }
+
+    await connection.beginTransaction();
+    const [orders] = await connection.execute(
+      `SELECT *
+       FROM orders
+       WHERE order_id = ?
+       FOR UPDATE`,
+      [req.params.id],
+    );
+    if (orders.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đơn hàng",
+      });
+    }
+
+    const order = orders[0];
+    if (Number(order.customer_id) !== Number(customerId)) {
+      await connection.rollback();
+      return res.status(403).json({
+        success: false,
+        message: "Bạn chỉ được hủy đơn hàng của mình",
+      });
+    }
+
+    const currentStatus = normalizeOrderStatusValue(
+      order.order_status || order.status,
+      order.order_type,
+    );
+    if (!["pending", "confirmed", "shipping"].includes(currentStatus)) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: "Đơn hàng ở trạng thái hiện tại không thể hủy",
+      });
+    }
+
+    const [items] = await connection.execute(
+      `SELECT product_id, quantity
+       FROM order_items
+       WHERE order_id = ?
+       FOR UPDATE`,
+      [req.params.id],
+    );
+    for (const item of items) {
+      await connection.execute(
+        "UPDATE products SET stock = stock + ? WHERE product_id = ?",
+        [Number(item.quantity), item.product_id],
+      );
+    }
+
+    const columns = await ordersColumns(connection);
+    const setParts = ["status = ?"];
+    const params = ["cancelled"];
+    if (columns.has("order_status")) {
+      setParts.push("order_status = ?");
+      params.push("cancelled");
+    }
+    if (columns.has("rejection_reason")) {
+      setParts.push("rejection_reason = ?");
+      params.push(reason);
+    } else if (columns.has("note")) {
+      setParts.push("note = ?");
+      params.push(reason);
+    }
+    params.push(req.params.id);
+
+    await connection.execute(
+      `UPDATE orders SET ${setParts.join(", ")} WHERE order_id = ?`,
+      params,
+    );
+    await connection.commit();
+
+    const cancelled = await fetchOrder(req.params.id);
+    res.json({
+      success: true,
+      message: "Đã hủy đơn hàng",
+      data: cancelled,
+    });
+  } catch (error) {
+    await connection.rollback();
+    res.status(500).json({
+      success: false,
+      message: "Lỗi hủy đơn hàng",
       error: error.message,
     });
   } finally {

@@ -127,8 +127,10 @@ class ApiService {
         : jsonDecode(utf8.decode(response.bodyBytes));
     if (response.statusCode >= 400) {
       final message = body is Map
-          ? (body['error'] ?? body['message'] ?? 'Lỗi API ${response.statusCode}')
-              .toString()
+          ? (body['error'] ??
+                    body['message'] ??
+                    'Lỗi API ${response.statusCode}')
+                .toString()
           : 'Lỗi API ${response.statusCode}';
       throw ApiException(message);
     }
@@ -635,6 +637,21 @@ class ApiService {
         .put(
           _uri('/orders/$orderId/received'),
           headers: _userHeadersFor(userId),
+        )
+        .timeout(_timeout);
+    return _dataMap(_decode(response));
+  }
+
+  static Future<Map<String, dynamic>> cancelMyOrder({
+    required int userId,
+    required String orderId,
+    required String reason,
+  }) async {
+    final response = await http
+        .put(
+          _uri('/orders/$orderId/cancel'),
+          headers: _userHeadersFor(userId),
+          body: jsonEncode({'reason': reason.trim()}),
         )
         .timeout(_timeout);
     return _dataMap(_decode(response));
